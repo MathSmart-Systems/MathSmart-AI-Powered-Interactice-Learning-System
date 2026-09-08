@@ -12,7 +12,7 @@
 [![Framework](https://img.shields.io/badge/Framework-DepEd_ARAL-orange?style=for-the-badge)](#-aral-pedagogical-framework)
 
 <p align="center">
-  <b>A research-backed, adaptive web application providing personalized diagnostics, targeted remediation, interactive practice, and teacher intervention analytics for Grade 7 learners.</b>
+  <b>A research-backed, adaptive web application providing personalized diagnostics, targeted remediation, interactive practice, and Teacher/Administrator intervention analytics for Grade 6 learners.</b>
 </p>
 
 [Explore Documentation](./docs/SOURCE_OF_TRUTH.md) · [API Reference](./docs/API_ROUTES.md) · [System Diagrams](./docs/DIAGRAMS.md) · [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md)
@@ -44,9 +44,9 @@
 
 ## 🎯 About The Project
 
-**MathSmart** is an intelligent, web-based mathematics learning platform designed to address foundational mathematics gaps among Grade 7 learners. 
+**MathSmart** is an intelligent, web-based mathematics learning platform designed to address foundational mathematics gaps among Grade 6 learners.
 
-Rather than a one-size-fits-all curriculum, MathSmart assesses individual student competencies, pinpoints exact conceptual misunderstandings using AI-assisted diagnostic evaluation, and delivers targeted remediation modules and interactive practice exercises. Teachers and administrators receive real-time mastery heatmaps and intervention suggestions to support in-class learning.
+Rather than a one-size-fits-all curriculum, MathSmart assesses individual student competencies, pinpoints conceptual misunderstandings using deterministic scoring plus Groq-assisted explanations, and delivers targeted remediation modules and interactive practice exercises. The combined Teacher/Administrator role receives real-time mastery heatmaps and intervention suggestions to support in-class learning.
 
 ---
 
@@ -67,7 +67,7 @@ graph LR
     style M fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
 ```
 
-1. **Diagnose**: Adaptive diagnostic tests assess competency baseline across Grade 7 domains (Numbers, Algebra, Geometry, Statistics).
+1. **Diagnose**: Diagnostic tests assess competency baselines across Grade 6 Mathematics domains.
 2. **Remediate**: The system maps learning gaps directly to ARAL modules (Assist, Remediate, Accelerate).
 3. **Practice**: Students reinforce concepts through interactive math activities with instant feedback.
 4. **Monitor**: Continuous evaluation updates mastery records and surfaces intervention alerts to teachers.
@@ -78,12 +78,12 @@ graph LR
 
 | # | Feature | Target User | Description |
 |---|---|---|---|
-| **1** | **Student Profiling** | Students / Teachers | Records learner academic background, grade level, and competency baselines for individualized monitoring. |
+| **1** | **Student Profiling** | Student / Teacher-Administrator | Records learner academic background, grade level, and competency baselines for individualized monitoring. |
 | **2** | **Mathematics Diagnostic Assessment** | Students | Administers adaptive pre-tests, analyzes error patterns, and generates comprehensive student gap profiles. |
 | **3** | **ARAL-Based Learning Modules** | Students | Targeted, bite-sized instructional modules categorized by ARAL tier (*Assist*, *Remediate*, *Accelerate*). |
 | **4** | **Interactive Mathematics Activities** | Students | Interactive question types (multiple choice, numeric inputs, step-by-step math solver) with immediate hints. |
 | **5** | **Progress Monitoring Dashboard** | Students | Visual tracking of completed modules, skill mastery levels, streak counts, and learning badges. |
-| **6** | **Teacher Intervention Dashboard** | Teachers / Admins | Class-wide competency heatmaps, at-risk student identification, and actionable remediation recommendations. |
+| **6** | **Teacher/Administrator Intervention Dashboard** | Teacher-Administrator | School-wide and class-level competency heatmaps, at-risk student identification, and actionable remediation recommendations. |
 
 ---
 
@@ -99,12 +99,12 @@ graph LR
 
 ### Backend API & Math Engine
 - **Framework:** [FastAPI (Python 3.11)](https://fastapi.tiangolo.com/)
-- **Computation / AI Logic:** NumPy, SymPy (symbolic math evaluation), Scikit-learn
+- **Computation / AI Logic:** Deterministic Python services with NumPy/SymPy where appropriate; Groq through a server-side adapter for advisory explanations and insights
 - **Data Validation:** Pydantic v2
 
 ### Database, Auth & Media
 - **Database:** [Supabase (PostgreSQL)](https://supabase.com/)
-- **Authentication:** Supabase Auth (Role-based: `student`, `teacher`, `admin`)
+- **Authentication:** Supabase Auth with exactly two application roles: `student` and `teacher_admin`
 - **Media Storage:** Cloudinary & Supabase Storage
 
 ---
@@ -113,64 +113,70 @@ graph LR
 
 ```text
 MathSmart/
-├── .github/                      # CI/CD workflows and issue templates
-├── backend/                      # FastAPI Python Backend
-│   ├── db/                       # Supabase client & SQL queries
-│   ├── middleware/               # Auth & security middleware
-│   ├── models/                   # Pydantic schemas
-│   ├── routers/                  # API route handlers
-│   └── services/                 # AI gap analysis, scoring, mastery calculation
+├── .github/                      # CI/CD and pull-request templates
+├── backend/                      # FastAPI backend
+│   ├── app/                      # Startup, environment config, dependencies
+│   ├── modules/                  # Business modules
+│   │   ├── auth/
+│   │   ├── students/
+│   │   ├── assessments/
+│   │   ├── competencies/
+│   │   ├── learning_modules/
+│   │   ├── activities/
+│   │   ├── progress/
+│   │   ├── interventions/
+│   │   ├── teacher_admin/
+│   │   ├── reports/
+│   │   ├── settings/
+│   │   └── shared/
+│   ├── middleware/               # Cross-cutting HTTP concerns
+│   └── requirements.txt
 │
-├── docs/                         # Comprehensive Project Specifications
-│   ├── API_ROUTES.md             # Complete REST API specification (30+ endpoints)
-│   ├── DIAGRAMS.md               # Flowcharts, Sequence Diagrams & ERD
-│   ├── IMPLEMENTATION_PLAN.md    # Milestones & 60-day roadmap
-│   ├── PROJECT.md                # System overview & tech stack decisions
-│   └── SOURCE_OF_TRUTH.md        # Authoritative master reference
+├── docs/                         # Project specifications
 │
-├── public/                       # Static public assets
-│   ├── fonts/
-│   └── images/
-│
-├── src/                          # Next.js Frontend Application
-│   ├── app/                      # App Router (Role-Grouped Routing)
-│   │   ├── (admin)/              # Admin routes (users, content, competencies)
-│   │   ├── (auth)/               # Auth routes (login, register)
-│   │   ├── (student)/            # Student portal (dashboard, diagnostic, modules, progress)
-│   │   ├── (teacher)/            # Teacher portal (class, heatmap, interventions)
-│   │   ├── globals.css           # Tailwind v4 theme tokens & CSS variables
-│   │   ├── layout.jsx            # Root application layout
-│   │   └── page.jsx              # Landing & overview page
+├── public/                       # Static assets
+├── src/                          # Next.js frontend
+│   ├── app/                      # Thin App Router composition
+│   │   ├── (auth)/               # Login and registration
+│   │   ├── (student)/student/    # Student URLs and layout
+│   │   └── (teacher-admin)/teacher/ # Combined Teacher/Admin URLs and layout
 │   │
-│   ├── components/               # Component hierarchy
-│   │   ├── charts/               # Progress rings, class heatmaps
-│   │   ├── common/               # General UI components
-│   │   ├── forms/                # Form fields, inputs, selectors
-│   │   ├── layout/               # Header, Sidebar, Navigation
-│   │   ├── modules/              # Module cards, lesson viewers
-│   │   └── ui/                   # shadcn/ui components (New York style)
+│   ├── modules/                  # Independently owned vertical slices
+│   │   ├── auth/
+│   │   ├── student/
+│   │   │   ├── dashboard/
+│   │   │   ├── my-learning/
+│   │   │   ├── activities/
+│   │   │   ├── assessments/
+│   │   │   ├── progress/
+│   │   │   └── profile/
+│   │   ├── teacher-admin/
+│   │   │   ├── dashboard/
+│   │   │   ├── students/
+│   │   │   ├── interventions/
+│   │   │   ├── assessments/
+│   │   │   ├── competencies/
+│   │   │   ├── learning-modules/
+│   │   │   ├── activities/
+│   │   │   ├── question-bank/
+│   │   │   ├── grades-sections/
+│   │   │   ├── reports-analytics/
+│   │   │   └── settings/
+│   │   └── shared/
 │   │
-│   ├── config/                   # App & client configuration
-│   ├── constants/                # Thresholds, domain keys, roles
-│   ├── enums/                    # MasteryLevel, ARALLevel, StudentStatus
-│   ├── hooks/                    # Reusable React hooks
-│   ├── lib/                      # Utilities & helpers (cn function)
-│   ├── models/                   # Frontend data contracts
-│   ├── services/                 # Frontend API client services
-│   ├── styles/                   # Custom component styles
-│   └── utils/                    # Formatters, calculations, validators
+│   ├── components/ui/            # shadcn/Radix primitives
+│   ├── lib/                      # Infrastructure and framework helpers
+│   ├── resources/
+│   └── styles/
 │
-├── tests/                        # Automated tests
-│   ├── backend/
-│   └── frontend/
-│
-├── components.json               # shadcn/ui configuration (New York style)
-├── jsconfig.json                 # Path aliases configuration (@/* -> ./src/*)
-├── next.config.mjs               # Next.js runtime configuration
-├── package.json                  # Frontend dependencies & scripts
-├── postcss.config.mjs            # PostCSS configuration
-└── README.md                     # Project overview (this file)
+└── tests/
+    ├── integration/
+    └── e2e/
+        ├── student/
+        └── teacher-admin/
 ```
+
+See [`src/modules/README.md`](./src/modules/README.md) and [`backend/README.md`](./backend/README.md) for module ownership and import-boundary rules. Feature-local `components`, `hooks`, `services`, `schemas`, `utils`, and tests are created only when needed.
 
 ---
 
@@ -226,6 +232,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 ```
 
+Groq's API credential and selected model are existing server-side values in `.env`. Never expose either value through a `NEXT_PUBLIC_` variable, client bundle, documentation, or logs.
+
 ---
 
 ### 4. Run the Dev Server
@@ -261,7 +269,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Run FastAPI with live reload
-uvicorn main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 ```
 
 FastAPI interactive documentation will be available at [http://localhost:8000/docs](http://localhost:8000/docs).
@@ -303,13 +311,13 @@ Detailed system documentation is available in the [`docs/`](./docs/) directory:
 
 ## 🌿 Git Workflow & Collaboration Guidelines
 
-To maintain code quality across our 5-member development team:
+To maintain code quality across our development team and coding agents:
 
 1. **Branching Strategy**:
-   - `main`: Production-ready, stable releases.
-   - `develop`: Integration branch for active sprint features.
-   - `feature/<feature-name>`: Feature branch created from `develop` (e.g., `feature/diagnostic-test`, `feature/teacher-heatmap`).
-   - `fix/<issue-name>`: Bug fixes.
+   - `main`: Protected, production-ready branch.
+   - `agent/<task-id>-<module>-<description>`: Task branch created from `main` when an issue ID exists.
+   - `agent/<module>-<description>`: Task branch format when no issue ID exists.
+   - Continue an existing unmerged task branch for the same task; never reuse a merged branch.
 
 2. **Commit Conventions**:
    Follow [Conventional Commits](https://www.conventionalcommits.org/):
@@ -319,9 +327,11 @@ To maintain code quality across our 5-member development team:
    - `style: format button and card variants with shadcn`
 
 3. **Pull Request Protocol**:
-   - Never commit directly to `main`.
-   - Ensure `npm run build` succeeds locally before creating a PR.
-   - Require at least 1 peer review approval before merging into `develop`.
+   - Never commit or push directly to `main`; every task branch opens a pull request targeting `main`.
+   - Keep each pull request limited to one assigned task and one active agent.
+   - Require CI and CodeRabbit to pass, with actionable CodeRabbit comments resolved in no more than three fix/review rounds.
+   - Enable squash auto-merge. GitHub merges only after required checks pass, then deletes the task branch.
+   - See `AGENTS.md` for the complete agent and collaboration policy.
 
 ---
 
@@ -329,7 +339,7 @@ To maintain code quality across our 5-member development team:
 
 **Organization:** [MathSmart Systems](https://github.com/MathSmart-Systems)  
 **Project:** MathSmart AI-Powered Interactive Learning System  
-**Framework Alignment:** DepEd Grade 7 Mathematics · ARAL Program  
+**Framework Alignment:** DepEd Grade 6 Mathematics · ARAL Program
 
 ---
 
