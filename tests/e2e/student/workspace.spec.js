@@ -32,7 +32,7 @@ describe("student workspace", () => {
       await page.goto(route);
       await expect(page).toHaveURL(new RegExp(`${route}$`));
       await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
-      await expect(page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { current: "page" })).toHaveCount(1);
+      await expect(page.locator('nav[aria-label="Workspace"] a[aria-current="page"]')).toHaveCount(1);
     }
   });
 
@@ -79,7 +79,11 @@ describe("student workspace", () => {
     await expect(trigger).toHaveAttribute("aria-expanded", "false");
 
     await trigger.click();
-    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    // While the drawer is open the rest of the page is hidden from assistive
+    // technology, so the trigger has to be read including hidden nodes.
+    await expect(
+      page.getByRole("button", { name: "Open workspace menu", includeHidden: true }),
+    ).toHaveAttribute("aria-expanded", "true");
     const drawer = page.getByRole("dialog");
     await expect(drawer).toBeVisible();
 
