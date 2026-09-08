@@ -12,7 +12,7 @@ import {
 
 import { getSupabaseConfig, isSupabaseConfigured } from "./config";
 
-function redirectTo(request, pathname, notice) {
+function redirectTo(request, supabaseResponse, pathname, notice) {
   const url = request.nextUrl.clone();
   url.pathname = pathname;
   url.search = "";
@@ -21,7 +21,20 @@ function redirectTo(request, pathname, notice) {
     url.searchParams.set("notice", notice);
   }
 
-  return NextResponse.redirect(url);
+  const redirectResponse = NextResponse.redirect(url);
+
+  supabaseResponse.cookies.getAll().forEach((cookie) =>
+    redirectResponse.cookies.set(cookie),
+  );
+
+  for (const header of ["cache-control", "expires", "pragma"]) {
+    const value = supabaseResponse.headers.get(header);
+    if (value) {
+      redirectResponse.headers.set(header, value);
+    }
+  }
+
+  return redirectResponse;
 }
 
 /**
@@ -41,14 +54,18 @@ function denyStoredCopies(response) {
 export async function updateSession(request) {
   const { pathname } = request.nextUrl;
   const protectedPath = isProtectedPath(pathname);
+  let supabaseResponse = NextResponse.next({ request });
 
   if (!isSupabaseConfigured()) {
     return protectedPath
-      ? redirectTo(request, LOGIN_PATH, AUTH_NOTICE.CONFIGURATION)
-      : NextResponse.next({ request });
+      ? redirectTo(
+          request,
+          supabaseResponse,
+          LOGIN_PATH,
+          AUTH_NOTICE.CONFIGURATION,
+        )
+      : supabaseResponse;
   }
-
-  let supabaseResponse = NextResponse.next({ request });
 
   const { url, publicKey } = getSupabaseConfig();
 
@@ -91,21 +108,26 @@ export async function updateSession(request) {
   }
 
   if (claimsFailed) {
-    return redirectTo(request, LOGIN_PATH, AUTH_NOTICE.SERVICE);
+    return redirectTo(request, supabaseResponse, LOGIN_PATH, AUTH_NOTICE.SERVICE);
   }
 
   if (!claims) {
-    return redirectTo(request, LOGIN_PATH, AUTH_NOTICE.SESSION_EXPIRED);
+    return redirectTo(
+      request,
+      supabaseResponse,
+      LOGIN_PATH,
+      AUTH_NOTICE.SESSION_EXPIRED,
+    );
   }
 
   const role = parseTrustedRole(claims);
 
   if (!role) {
-    return redirectTo(request, LOGIN_PATH, AUTH_NOTICE.NO_WORKSPACE);
+    return redirectTo(request, supabaseResponse, LOGIN_PATH, AUTH_NOTICE.NO_WORKSPACE);
   }
 
   if (workspaceForPath(pathname) !== role) {
-    return NextResponse.redirect(new URL(homePathForRole(role), request.url));
+    return redirectTo(request, supabaseResponse, homePathForRole(role));
   }
 
   // IMPORTANT: return the supabaseResponse object as it is, so the browser and

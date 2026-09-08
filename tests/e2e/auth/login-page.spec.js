@@ -77,10 +77,15 @@ test.describe("login page", () => {
   test("rejected credentials produce a generic message", async ({ page }) => {
     // The running app is the source of truth for whether Supabase is wired up.
     const configurationWarning = page.getByText("not connected to its sign-in service");
+    const configurationMissing = await configurationWarning.isVisible();
     test.skip(
-      await configurationWarning.isVisible(),
+      configurationMissing && !process.env.CI,
       "The running app has no Supabase configuration.",
     );
+    expect(
+      configurationMissing,
+      "Supabase configuration must be available when authentication tests run in CI.",
+    ).toBe(false);
 
     await page.getByLabel("Email address").fill(`no-such-user-${Date.now()}@example.invalid`);
     await page.getByLabel("Password").fill("not-a-real-password");
