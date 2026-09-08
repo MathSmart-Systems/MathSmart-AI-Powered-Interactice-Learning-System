@@ -35,6 +35,9 @@ These repository rules apply to Codex, OpenCode, Claude Code through `CLAUDE.md`
 
 - Do not create new Markdown files unless the user explicitly requests one. `AGENTS.md` and the Claude adapter `CLAUDE.md` are the initial policy exceptions.
 - Edit existing Markdown only when the request explicitly includes documentation or when an approved change would otherwise leave documented commands or architecture false.
+- The entire `docs/` directory is frozen and read-only. Agents may consult it but must not create, edit, rename, move, or delete anything inside it.
+- A `docs/` change is allowed only when the user explicitly authorizes that specific documentation change and a human maintainer applies the `docs-change-approved` label to its pull request. Agents must not apply or bypass that approval label themselves.
+- If implementation work conflicts with frozen documentation, stop the conflicting change or report the mismatch to the user; do not silently rewrite the documentation.
 - Check `git status` before editing. Preserve unrelated tracked and untracked changes and never stage them with the task.
 - Do not perform unrelated cleanup, dependency upgrades, broad formatting, or refactors.
 - Do not delete, overwrite, move, or rename another contributor's work unless the task explicitly requires it and the exact affected files were inspected first.
