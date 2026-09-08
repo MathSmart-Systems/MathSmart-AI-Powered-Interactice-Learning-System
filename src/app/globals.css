@@ -1,59 +1,43 @@
 @import "tailwindcss";
 
+/*
+ * MathSmart theme.
+ *
+ * The palette comes from a Grade 6 maths notebook: chalk-white grid paper, deep
+ * teal ink, pine green for anything the learner or teacher can act on, and
+ * marking-pen red for problems. Values are HSL channels so Tailwind tokens can
+ * compose them with alpha.
+ */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 100 16% 96%;
+    --foreground: 196 46% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 196 46% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-  }
+    --popover-foreground: 196 46% 12%;
+    --primary: 166 56% 28%;
+    --primary-foreground: 100 16% 98%;
+    --secondary: 100 16% 92%;
+    --secondary-foreground: 196 46% 12%;
+    --muted: 100 16% 92%;
+    --muted-foreground: 159 8% 36%;
+    --accent: 166 56% 28%;
+    --accent-foreground: 100 16% 98%;
+    --destructive: 358 61% 40%;
+    --destructive-foreground: 100 16% 98%;
+    --border: 129 10% 86%;
+    --input: 129 10% 80%;
+    --ring: 166 56% 28%;
+    --radius: 0.375rem;
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    /* Workspace shell */
+    --shell: 196 46% 12%;
+    --shell-foreground: 165 13% 88%;
+    --shell-muted: 176 11% 62%;
+    --shell-border: 196 32% 20%;
+    --shell-accent: 166 46% 62%;
   }
 }
 
@@ -77,13 +61,64 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-shell: hsl(var(--shell));
+  --color-shell-foreground: hsl(var(--shell-foreground));
+  --color-shell-muted: hsl(var(--shell-muted));
+  --color-shell-border: hsl(var(--shell-border));
+  --color-shell-accent: hsl(var(--shell-accent));
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
 }
 
-body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  /* Keyboard focus stays visible everywhere, including on dark surfaces. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .on-shell :focus-visible {
+    outline-color: hsl(var(--shell-accent));
+  }
+}
+
+@layer components {
+  /*
+   * MathSmart signature: 24px graphing-paper ruling. Used on the login page and
+   * nowhere else, so it stays a mark rather than a texture.
+   */
+  .grid-paper {
+    background-image:
+      linear-gradient(to right, hsl(var(--shell-border) / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--shell-border) / 0.55) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .grid-paper-light {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.7) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.7) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
