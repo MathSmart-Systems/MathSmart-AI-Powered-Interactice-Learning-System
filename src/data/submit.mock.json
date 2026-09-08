@@ -1,0 +1,54 @@
+{
+  "assessment_id": "mock-assess-001",
+  "total_score": 28,
+  "max_score": 40,
+  "percentage": 70.0,
+  "domain_scores": [
+    {
+      "domain": "Number Sense",
+      "competency_id": "comp-num-1",
+      "score": 6,
+      "max_score": 8,
+      "percentage": 75.0,
+      "mastery_level": "mastered",
+      "gap_identified": false
+    },
+    {
+      "domain": "Algebra",
+      "competency_id": "comp-alg-1",
+      "score": 5,
+      "max_score": 8,
+      "percentage": 62.5,
+      "mastery_level": "developing",
+      "gap_identified": true
+    },
+    {
+      "domain": "Geometry",
+      "competency_id": "comp-geo-1",
+      "score": 7,
+      "max_score": 8,
+      "percentage": 87.5,
+      "mastery_level": "mastered",
+      "gap_identified": false
+    },
+    {
+      "domain": "Measurement",
+      "competency_id": "comp-meas-1",
+      "score": 4,
+      "max_score": 8,
+      "percentage": 50.0,
+      "mastery_level": "developing",
+      "gap_identified": true
+    },
+    {
+      "domain": "Statistics",
+      "competency_id": "comp-stat-1",
+      "score": 6,
+      "max_score": 8,
+      "percentage": 75.0,
+      "mastery_level": "mastered",
+      "gap_identified": false
+    }
+  ],
+  "module_path": ["mod-001", "mod-002", "mod-003"]
+}

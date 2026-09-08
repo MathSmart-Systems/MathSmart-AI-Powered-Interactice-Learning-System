@@ -28,9 +28,8 @@ import {
   X,
 } from "lucide-react";
 
-import rawQuestions from "@/data/diagnosticQuestions.json";
+import { getQuestions, submitAssessment } from "@/services/assessmentService";
 
-const TOTAL_SECONDS = 20 * 60;
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 
 const TIERS = {
@@ -63,71 +62,6 @@ const TIERS = {
   },
 };
 
-function normalizeQuestions(source) {
-  const list = Array.isArray(source)
-    ? source
-    : Array.isArray(source?.questions)
-      ? source.questions
-      : Array.isArray(source?.items)
-        ? source.items
-        : [];
-
-  return list.map((entry, index) => {
-    const rawOptions = entry?.options ?? entry?.choices ?? [];
-    const options = (Array.isArray(rawOptions) ? rawOptions : []).map(
-      (option, optionIndex) => {
-        if (option !== null && typeof option === "object") {
-          return {
-            key: String(
-              option.id ?? option.key ?? option.value ?? optionIndex,
-            ),
-            label: String(option.text ?? option.label ?? option.value ?? ""),
-          };
-        }
-        return { key: String(optionIndex), label: String(option) };
-      },
-    );
-
-    const rawAnswer =
-      entry?.answer ??
-      entry?.correctAnswer ??
-      entry?.correct_answer ??
-      entry?.correctOption ??
-      entry?.correct ??
-      null;
-
-    let answerKey = null;
-    if (typeof rawAnswer === "number") {
-      answerKey = options[rawAnswer]?.key ?? String(rawAnswer);
-    } else if (typeof rawAnswer === "string") {
-      const trimmed = rawAnswer.trim();
-      const byKey = options.find((option) => option.key === trimmed);
-      const byLabel = options.find((option) => option.label === trimmed);
-      const byLetter = /^[A-Fa-f]$/.test(trimmed)
-        ? options[trimmed.toUpperCase().charCodeAt(0) - 65]
-        : null;
-      answerKey = (byKey ?? byLabel ?? byLetter)?.key ?? null;
-    } else if (rawAnswer !== null && typeof rawAnswer === "object") {
-      answerKey = String(rawAnswer.id ?? rawAnswer.key ?? rawAnswer.value ?? "");
-    }
-
-    return {
-      id: String(entry?.id ?? entry?.code ?? `q-${index + 1}`),
-      number: index + 1,
-      domain: String(entry?.domain ?? entry?.strand ?? "General Mathematics"),
-      competency: String(
-        entry?.competency ?? entry?.skill ?? entry?.topic ?? "Unlabeled competency",
-      ),
-      prompt: String(
-        entry?.question ?? entry?.prompt ?? entry?.text ?? "Untitled question",
-      ),
-      explanation: entry?.explanation ? String(entry.explanation) : null,
-      options,
-      answerKey,
-    };
-  });
-}
-
 function formatClock(totalSeconds) {
   const safe = Math.max(0, totalSeconds);
   const minutes = Math.floor(safe / 60);
@@ -141,26 +75,63 @@ function tierFor(percent) {
   return TIERS.assist;
 }
 
-export default function DiagnosticPage() {
-  const questions = useMemo(() => normalizeQuestions(rawQuestions), []);
-  const total = questions.length;
-
-  const domains = useMemo(() => {
-    const seen = [];
-    for (const question of questions) {
-      if (!seen.includes(question.domain)) seen.push(question.domain);
+function flattenQuestions(domains) {
+  const flat = [];
+  for (const domain of domains) {
+    for (const q of domain.questions) {
+      flat.push({
+        id: q.question_id,
+        number: flat.length + 1,
+        domain: domain.domain,
+        competency: domain.competency_id, // fallback
+        prompt: q.question_text,
+        options: q.options.map((opt) => ({ key: opt, label: opt })),
+        explanation: null, // not provided in mock
+      });
     }
-    return seen;
-  }, [questions]);
+  }
+  return flat;
+}
 
+export default function DiagnosticPage() {
   const [screen, setScreen] = useState("intro");
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [secondsLeft, setSecondsLeft] = useState(TOTAL_SECONDS);
+  const [secondsLeft, setSecondsLeft] = useState(60 * 60);
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [domains, setDomains] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(60 * 60);
+  const [result, setResult] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const scrollAnchor = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getQuestions()
+      .then((data) => {
+        if (cancelled) return;
+        const flat = flattenQuestions(data.domains);
+        setQuestions(flat);
+        setDomains(data.domains.map((d) => d.domain));
+        setTotal(data.total_questions);
+        setTimeLimitSeconds(data.time_limit_minutes * 60);
+        setSecondsLeft(data.time_limit_minutes * 60);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || "Failed to load questions");
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const current = questions[index] ?? null;
   const answeredCount = Object.keys(answers).length;
@@ -173,12 +144,34 @@ export default function DiagnosticPage() {
   const lowTime = secondsLeft <= 60;
 
   const finish = useCallback(
-    (viaTimer = false) => {
+    async (viaTimer = false) => {
+      if (submitting) return;
+      setSubmitting(true);
       setPendingSubmit(false);
       setAutoSubmitted(viaTimer);
-      setScreen("report");
+
+      const timeTaken = Math.round(((timeLimitSeconds - secondsLeft) / 60));
+      const payload = {
+        student_id: "mock-student", // will be replaced by auth later
+        time_taken_minutes: timeTaken,
+        answers: questions.map((q) => ({
+          question_id: q.id,
+          selected_answer: answers[q.id] || "",
+        })),
+      };
+
+      try {
+        const response = await submitAssessment(payload);
+        setResult(response);
+        setScreen("report");
+      } catch (err) {
+        setError(err.message || "Submission failed");
+        setScreen("report"); // show error on report screen?
+      } finally {
+        setSubmitting(false);
+      }
     },
-    [],
+    [submitting, secondsLeft, timeLimitSeconds, questions, answers],
   );
 
   useEffect(() => {
@@ -218,67 +211,14 @@ export default function DiagnosticPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [screen, current]);
 
-  const results = useMemo(() => {
-    if (!total) {
-      return {
-        correct: 0,
-        percent: 0,
-        tier: TIERS.assist,
-        byDomain: [],
-        gaps: [],
-      };
-    }
-
-    let correct = 0;
-    const domainMap = new Map();
-    const gapMap = new Map();
-
-    for (const question of questions) {
-      const picked = answers[question.id];
-      const isCorrect = picked !== undefined && picked === question.answerKey;
-      if (isCorrect) correct += 1;
-
-      const bucket = domainMap.get(question.domain) ?? { correct: 0, total: 0 };
-      bucket.total += 1;
-      if (isCorrect) bucket.correct += 1;
-      domainMap.set(question.domain, bucket);
-
-      if (!isCorrect) {
-        const gap = gapMap.get(question.competency) ?? {
-          competency: question.competency,
-          domain: question.domain,
-          missed: 0,
-          skipped: 0,
-        };
-        gap.missed += 1;
-        if (picked === undefined) gap.skipped += 1;
-        gapMap.set(question.competency, gap);
-      }
-    }
-
-    const percent = Math.round((correct / total) * 100);
-
-    return {
-      correct,
-      percent,
-      tier: tierFor(percent),
-      byDomain: Array.from(domainMap.entries()).map(([domain, value]) => ({
-        domain,
-        correct: value.correct,
-        total: value.total,
-        percent: Math.round((value.correct / value.total) * 100),
-      })),
-      gaps: Array.from(gapMap.values()).sort((a, b) => b.missed - a.missed),
-    };
-  }, [questions, answers, total]);
-
   const beginAssessment = () => {
     setAnswers({});
     setIndex(0);
-    setSecondsLeft(TOTAL_SECONDS);
+    setSecondsLeft(timeLimitSeconds);
     setPendingSubmit(false);
     setAutoSubmitted(false);
     setShowReview(false);
+    setResult(null);
     setScreen("test");
   };
 
@@ -310,26 +250,44 @@ export default function DiagnosticPage() {
     setIndex(target);
   };
 
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-950 px-6 py-24 text-slate-100">
+        <div className="mx-auto flex max-w-md flex-col items-center gap-4 text-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-sky-500 border-t-transparent" />
+          <h1 className="text-2xl font-semibold tracking-tight">Loading assessment...</h1>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-slate-950 px-6 py-24 text-slate-100">
+        <div className="mx-auto flex max-w-md flex-col items-center gap-4 text-center">
+          <AlertCircle className="h-10 w-10 text-amber-400" />
+          <h1 className="text-2xl font-semibold tracking-tight">Something went wrong</h1>
+          <p className="text-sm text-slate-400">{error}</p>
+          <Button
+            variant="outline"
+            className="border-slate-700 bg-transparent text-slate-200 hover:bg-slate-900"
+            onClick={() => window.location.reload()}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Reload
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
   if (!total) {
     return (
       <main className="min-h-screen bg-slate-950 px-6 py-24 text-slate-100">
         <div className="mx-auto flex max-w-md flex-col items-center gap-4 text-center">
-          <AlertCircle className="h-10 w-10 text-amber-400" aria-hidden="true" />
-          <h1 className="text-2xl font-semibold tracking-tight">
-            No diagnostic items found
-          </h1>
-          <p className="text-sm leading-relaxed text-slate-400">
-            The question bank at <code className="text-slate-300">@/data/diagnosticQuestions.json</code>{" "}
-            is empty or malformed. Seed it, then reload this page.
-          </p>
-          <Button
-            variant="outline"
-            className="border-slate-700 bg-transparent text-slate-200 hover:bg-slate-900 hover:text-slate-50"
-            onClick={() => window.location.reload()}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-            Reload
-          </Button>
+          <AlertCircle className="h-10 w-10 text-amber-400" />
+          <h1 className="text-2xl font-semibold tracking-tight">No diagnostic items found</h1>
+          <p className="text-sm text-slate-400">The question bank is empty. Please contact support.</p>
         </div>
       </main>
     );
@@ -357,7 +315,7 @@ export default function DiagnosticPage() {
                   Let&apos;s find out exactly where to start.
                 </CardTitle>
                 <CardDescription className="max-w-[62ch] text-base leading-relaxed text-slate-400">
-                  Twenty questions across the four Grade 7 mathematics domains. Your
+                  {total} questions across {domains.length} Grade 7 mathematics domains. Your
                   answers set your ARAL tier and unlock a personalized module path.
                 </CardDescription>
               </CardHeader>
@@ -366,10 +324,10 @@ export default function DiagnosticPage() {
                 <dl className="grid gap-3 sm:grid-cols-3">
                   {[
                     { icon: BookOpen, term: `${total} questions`, detail: "Multiple choice" },
-                    { icon: Timer, term: "~20 minutes", detail: "Timed, single sitting" },
+                    { icon: Timer, term: `~${Math.round(timeLimitSeconds / 60)} minutes`, detail: "Timed, single sitting" },
                     {
                       icon: BarChart3,
-                      term: `${domains.length || 4} domains`,
+                      term: `${domains.length} domains`,
                       detail: "Competency mapped",
                     },
                   ].map(({ icon: Icon, term, detail }) => (
@@ -395,7 +353,7 @@ export default function DiagnosticPage() {
                   <ol className="space-y-4">
                     {[
                       "Read every question fully. Some items look familiar but ask for something different.",
-                      "Answer all 20. An unanswered item counts as incorrect and can misplace your tier.",
+                      `Answer all ${total}. An unanswered item counts as incorrect and can misplace your tier.`,
                       "No penalty for wrong answers. This is placement, not a graded exam.",
                       "The timer keeps running once you start. At 00:00 your work submits automatically.",
                     ].map((line, position) => (
@@ -577,9 +535,10 @@ export default function DiagnosticPage() {
                           <Button
                             size="sm"
                             onClick={() => finish(false)}
+                            disabled={submitting}
                             className="bg-amber-400 text-slate-950 hover:bg-amber-300"
                           >
-                            Submit anyway
+                            {submitting ? "Submitting..." : "Submit anyway"}
                           </Button>
                           <Button
                             size="sm"
@@ -613,9 +572,10 @@ export default function DiagnosticPage() {
                   {isLast ? (
                     <Button
                       onClick={goNext}
+                      disabled={submitting}
                       className="bg-emerald-500 font-semibold text-slate-950 transition-colors duration-200 hover:bg-emerald-400"
                     >
-                      Submit Assessment
+                      {submitting ? "Submitting..." : "Submit Assessment"}
                       <CheckCircle2 className="ml-2 h-4 w-4" aria-hidden="true" />
                     </Button>
                   ) : (
@@ -660,7 +620,7 @@ export default function DiagnosticPage() {
           </section>
         )}
 
-        {screen === "report" && (
+        {screen === "report" && result && (
           <section className="flex flex-col gap-8">
             <header className="flex flex-col gap-3">
               <div className="flex items-center gap-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
@@ -676,6 +636,12 @@ export default function DiagnosticPage() {
                   Time ran out, so the assessment submitted automatically.
                 </p>
               )}
+              {error && (
+                <p className="flex items-center gap-2 text-sm text-rose-300">
+                  <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                  {error}
+                </p>
+              )}
             </header>
 
             <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
@@ -685,16 +651,16 @@ export default function DiagnosticPage() {
                     Raw score
                   </p>
                   <p className="font-mono text-5xl font-semibold tabular-nums text-slate-50">
-                    {results.correct}
-                    <span className="text-2xl text-slate-500">/{total}</span>
+                    {result.total_score}
+                    <span className="text-2xl text-slate-500">/{result.max_score}</span>
                   </p>
-                  <p className={`text-lg font-semibold ${results.tier.ring}`}>
-                    {results.percent}%
+                  <p className={`text-lg font-semibold ${tierFor(result.percentage).ring}`}>
+                    {result.percentage}%
                   </p>
                 </CardContent>
               </Card>
 
-              <Card className={`border bg-slate-900/50 ${results.tier.badge.split(" ")[0]}`}>
+              <Card className={`border bg-slate-900/50 ${tierFor(result.percentage).badge.split(" ")[0]}`}>
                 <CardHeader className="gap-3 pb-4">
                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
                     <Award className="h-4 w-4" aria-hidden="true" />
@@ -702,14 +668,14 @@ export default function DiagnosticPage() {
                   </div>
                   <Badge
                     variant="outline"
-                    className={`w-fit px-3 py-1 text-base font-semibold ${results.tier.badge}`}
+                    className={`w-fit px-3 py-1 text-base font-semibold ${tierFor(result.percentage).badge}`}
                   >
-                    {results.tier.label}
+                    {tierFor(result.percentage).label}
                   </Badge>
                 </CardHeader>
                 <CardContent>
                   <p className="max-w-[52ch] text-sm leading-relaxed text-slate-300">
-                    {results.tier.blurb}
+                    {tierFor(result.percentage).blurb}
                   </p>
                 </CardContent>
               </Card>
@@ -725,28 +691,39 @@ export default function DiagnosticPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {results.byDomain.map((entry) => (
+                {result.domain_scores.map((entry) => (
                   <div key={entry.domain} className="space-y-2">
                     <div className="flex items-baseline justify-between gap-4">
                       <span className="text-sm font-medium text-slate-200">
                         {entry.domain}
                       </span>
                       <span className="font-mono text-xs tabular-nums text-slate-400">
-                        {entry.correct}/{entry.total} · {entry.percent}%
+                        {entry.score}/{entry.max_score} · {entry.percentage}%
                       </span>
                     </div>
                     <div
                       className="h-2 overflow-hidden rounded-full bg-slate-800"
                       role="progressbar"
-                      aria-valuenow={entry.percent}
+                      aria-valuenow={entry.percentage}
                       aria-valuemin={0}
                       aria-valuemax={100}
                       aria-label={`${entry.domain} mastery`}
                     >
                       <div
-                        className={`h-full rounded-full transition-[width] duration-700 ease-out ${tierFor(entry.percent).bar}`}
-                        style={{ width: `${entry.percent}%` }}
+                        className={`h-full rounded-full transition-[width] duration-700 ease-out ${tierFor(entry.percentage).bar}`}
+                        style={{ width: `${entry.percentage}%` }}
                       />
+                    </div>
+                    <div className="flex justify-end">
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${entry.gap_identified
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-300"
+                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          }`}
+                      >
+                        {entry.gap_identified ? "Gap" : "Proficient"}
+                      </Badge>
                     </div>
                   </div>
                 ))}
@@ -760,13 +737,13 @@ export default function DiagnosticPage() {
                   Identified learning gaps
                 </CardTitle>
                 <CardDescription className="text-sm text-slate-500">
-                  {results.gaps.length === 0
+                  {result.domain_scores.filter(d => d.gap_identified).length === 0
                     ? "Nothing flagged."
-                    : `${results.gaps.length} ${results.gaps.length === 1 ? "competency" : "competencies"} to rebuild first.`}
+                    : `${result.domain_scores.filter(d => d.gap_identified).length} domains to rebuild first.`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {results.gaps.length === 0 ? (
+                {result.domain_scores.filter(d => d.gap_identified).length === 0 ? (
                   <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-4">
                     <CheckCircle2
                       className="h-5 w-5 shrink-0 text-emerald-400"
@@ -778,33 +755,25 @@ export default function DiagnosticPage() {
                   </div>
                 ) : (
                   <ul className="divide-y divide-slate-800">
-                    {results.gaps.map((gap) => (
+                    {result.domain_scores.filter(d => d.gap_identified).map((gap) => (
                       <li
-                        key={gap.competency}
+                        key={gap.domain}
                         className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
                       >
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-slate-100">
-                            {gap.competency}
+                            {gap.domain}
                           </p>
-                          <p className="text-xs text-slate-500">{gap.domain}</p>
+                          <p className="text-xs text-slate-500">
+                            {gap.mastery_level === "developing" ? "Developing" : "Mastered"}
+                          </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {gap.skipped > 0 && (
-                            <Badge
-                              variant="outline"
-                              className="border-slate-700 bg-transparent text-xs font-normal text-slate-400"
-                            >
-                              {gap.skipped} skipped
-                            </Badge>
-                          )}
-                          <Badge
-                            variant="outline"
-                            className="border-rose-500/30 bg-rose-500/10 text-xs font-normal text-rose-300"
-                          >
-                            {gap.missed} missed
-                          </Badge>
-                        </div>
+                        <Badge
+                          variant="outline"
+                          className="border-rose-500/30 bg-rose-500/10 text-xs font-normal text-rose-300"
+                        >
+                          {gap.score}/{gap.max_score} missed
+                        </Badge>
                       </li>
                     ))}
                   </ul>
@@ -851,7 +820,6 @@ export default function DiagnosticPage() {
                 <ol className="space-y-4">
                   {questions.map((question) => {
                     const picked = answers[question.id];
-                    const isCorrect = picked !== undefined && picked === question.answerKey;
                     return (
                       <li
                         key={question.id}
@@ -867,13 +835,13 @@ export default function DiagnosticPage() {
                             </p>
                           </div>
                           <span
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${isCorrect
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${picked !== undefined
                               ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
                               : "border-rose-500/40 bg-rose-500/10 text-rose-400"
                               }`}
-                            aria-label={isCorrect ? "Correct" : "Incorrect"}
+                            aria-label={picked !== undefined ? "Answered" : "Skipped"}
                           >
-                            {isCorrect ? (
+                            {picked !== undefined ? (
                               <Check className="h-4 w-4" aria-hidden="true" />
                             ) : (
                               <X className="h-4 w-4" aria-hidden="true" />
@@ -884,12 +852,9 @@ export default function DiagnosticPage() {
                         <ul className="mt-4 space-y-2">
                           {question.options.map((option, optionIndex) => {
                             const isPicked = picked === option.key;
-                            const isAnswer = question.answerKey === option.key;
-                            const tone = isAnswer
-                              ? "border-emerald-500/40 bg-emerald-500/[0.08] text-emerald-100"
-                              : isPicked
-                                ? "border-rose-500/40 bg-rose-500/[0.08] text-rose-100"
-                                : "border-slate-800 text-slate-400";
+                            const tone = isPicked
+                              ? "border-sky-500/40 bg-sky-500/[0.08] text-sky-100"
+                              : "border-slate-800 text-slate-400";
                             return (
                               <li
                                 key={option.key}
@@ -899,13 +864,8 @@ export default function DiagnosticPage() {
                                   {LETTERS[optionIndex] ?? optionIndex + 1}
                                 </span>
                                 <span className="leading-relaxed">{option.label}</span>
-                                {isAnswer && (
-                                  <span className="ml-auto shrink-0 text-xs font-medium text-emerald-300">
-                                    Correct
-                                  </span>
-                                )}
-                                {isPicked && !isAnswer && (
-                                  <span className="ml-auto shrink-0 text-xs font-medium text-rose-300">
+                                {isPicked && (
+                                  <span className="ml-auto shrink-0 text-xs font-medium text-sky-300">
                                     Your answer
                                   </span>
                                 )}
@@ -917,12 +877,6 @@ export default function DiagnosticPage() {
                         {picked === undefined && (
                           <p className="mt-3 text-xs text-amber-300">
                             Left blank during the assessment.
-                          </p>
-                        )}
-
-                        {question.explanation && (
-                          <p className="mt-3 max-w-[68ch] border-t border-slate-800 pt-3 text-sm leading-relaxed text-slate-400">
-                            {question.explanation}
                           </p>
                         )}
                       </li>
