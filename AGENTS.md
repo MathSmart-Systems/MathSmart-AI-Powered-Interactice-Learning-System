@@ -54,9 +54,19 @@ These repository rules apply to Codex, OpenCode, Claude Code through `CLAUDE.md`
 - For a closed or abandoned unmerged pull request, inspect its state first. Reopen it when still valid; otherwise create a new branch with a `-v2` suffix.
 - Commit only files in the assigned task scope, use Conventional Commits, and push only the task branch.
 
+## Human live-acceptance gate
+
+- Every implementation task requires explicit live acceptance by the user after implementation and automated verification, but before CodeRabbit review or merge automation begins.
+- When the implementation is ready, run the relevant automated checks. Tell the user to run the appropriate development command (normally `npm run dev`) when the application is not already running; otherwise provide the exact local URL for the running application. Give the user a concise checklist and explicitly ask them to open the application and perform live acceptance testing.
+- Ask the user to respond with `LIVE ACCEPTANCE: PASS` or `LIVE ACCEPTANCE: FAIL` followed by the problems found, then stop completely and wait. Automated tests, screenshots, agent judgment, silence, or an unrelated user response never count as acceptance.
+- Before `LIVE ACCEPTANCE: PASS`, do not open the pull request, request or begin CodeRabbit review, enable auto-merge, or merge the task. If a pull request already exists, keep it from merging and do not continue its review loop until acceptance passes.
+- On `LIVE ACCEPTANCE: FAIL`, fix the reported issues on the same task branch, rerun the relevant checks, present the updated runnable result, and request live acceptance again.
+- Only `LIVE ACCEPTANCE: PASS` authorizes the agent to push the accepted task state, open or update the pull request, begin the scoped CodeRabbit review loop, and enable auto-merge when all other requirements are satisfied.
+- If a CodeRabbit fix materially changes user-visible behavior or an accepted workflow, prevent auto-merge and repeat live acceptance for that change before merge. Non-behavioral review fixes still require all automated checks to rerun.
+
 ## Pull request and CodeRabbit gate
 
-- Every code change reaches `main` through a pull request. Enable GitHub squash auto-merge for the pull request after it is ready for review.
+- Every code change reaches `main` through a pull request. After live acceptance passes and the pull request is ready for review, enable GitHub squash auto-merge.
 - The pull request scope must match the assigned task. Do not mix unrelated fixes into a CodeRabbit review loop.
 - Required CI lint/build/tests must pass, the required CodeRabbit check must succeed, and all actionable CodeRabbit conversations must be resolved before merge.
 - Address only actionable CodeRabbit findings caused by the pull request. Validate each proposed fix against project requirements before applying it.
