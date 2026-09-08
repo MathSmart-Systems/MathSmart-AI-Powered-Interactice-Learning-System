@@ -22,6 +22,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  agent-rules-freeze:
+    name: Agent Rules Freeze
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      AGENT_RULES_CHANGE_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'agent-rules-change-approved') }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce Frozen Agent Rules
+        shell: bash
+        run: |
+          if git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- AGENTS.md CLAUDE.md; then
+            echo "No agent-rule changes detected."
+            exit 0
+          fi
+
+          if [ "$AGENT_RULES_CHANGE_APPROVED" = "true" ]; then
+            echo "Agent-rule changes are authorized by a human maintainer."
+            exit 0
+          fi
+
+          echo "AGENTS.md and CLAUDE.md are frozen."
+          echo "A human maintainer must explicitly approve the change and apply the agent-rules-change-approved label."
+          exit 1
+
   docs-freeze:
     name: Docs Freeze
     if: github.event_name == 'pull_request'
