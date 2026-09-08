@@ -1,0 +1,282 @@
+[
+  {
+    "id": "q1",
+    "domain": "Numbers and Number Sense",
+    "competency": "Performs operations on integers",
+    "question": "What is the value of -15 + (-7) - (-12)?",
+    "options": [
+      { "id": "A", "text": "-10" },
+      { "id": "B", "text": "-34" },
+      { "id": "C", "text": "-14" },
+      { "id": "D", "text": "4" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "-15 + (-7) = -22. Then -22 - (-12) = -22 + 12 = -10."
+  },
+  {
+    "id": "q2",
+    "domain": "Numbers and Number Sense",
+    "competency": "Performs operations on fractions",
+    "question": "What is the sum of 3/4 and 5/6?",
+    "options": [
+      { "id": "A", "text": "8/10" },
+      { "id": "B", "text": "19/12" },
+      { "id": "C", "text": "8/12" },
+      { "id": "D", "text": "19/24" }
+    ],
+    "correctAnswer": "B",
+    "explanation": "Using the LCD 12: 3/4 = 9/12 and 5/6 = 10/12. The sum is 19/12."
+  },
+  {
+    "id": "q3",
+    "domain": "Numbers and Number Sense",
+    "competency": "Performs operations on decimals",
+    "question": "What is the product of 0.25 and 0.8?",
+    "options": [
+      { "id": "A", "text": "0.2" },
+      { "id": "B", "text": "0.02" },
+      { "id": "C", "text": "2.0" },
+      { "id": "D", "text": "0.4" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "0.25 × 0.8 = 0.200, which is 0.2."
+  },
+  {
+    "id": "q4",
+    "domain": "Numbers and Number Sense",
+    "competency": "Applies the laws of exponents",
+    "question": "What is the value of 2^3 × 2^4?",
+    "options": [
+      { "id": "A", "text": "2^12" },
+      { "id": "B", "text": "2^7" },
+      { "id": "C", "text": "4^7" },
+      { "id": "D", "text": "2^1" }
+    ],
+    "correctAnswer": "B",
+    "explanation": "When multiplying like bases, add the exponents: 2^(3+4) = 2^7."
+  },
+  {
+    "id": "q5",
+    "domain": "Numbers and Number Sense",
+    "competency": "Solves problems involving absolute value",
+    "question": "What is the value of |-9| - |-3|?",
+    "options": [
+      { "id": "A", "text": "12" },
+      { "id": "B", "text": "-12" },
+      { "id": "C", "text": "6" },
+      { "id": "D", "text": "-6" }
+    ],
+    "correctAnswer": "C",
+    "explanation": "|-9| = 9 and |-3| = 3. Therefore 9 - 3 = 6."
+  },
+  {
+    "id": "q6",
+    "domain": "Elementary Algebra",
+    "competency": "Translates verbal phrases to algebraic expressions",
+    "question": "Which expression represents \"five more than twice a number x\"?",
+    "options": [
+      { "id": "A", "text": "2x + 5" },
+      { "id": "B", "text": "5x + 2" },
+      { "id": "C", "text": "2(x + 5)" },
+      { "id": "D", "text": "5 + 2x" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "Twice a number is 2x, and five more than that is 2x + 5."
+  },
+  {
+    "id": "q7",
+    "domain": "Elementary Algebra",
+    "competency": "Evaluates algebraic expressions",
+    "question": "What is the value of 3x - 4 when x = 5?",
+    "options": [
+      { "id": "A", "text": "11" },
+      { "id": "B", "text": "15" },
+      { "id": "C", "text": "19" },
+      { "id": "D", "text": "7" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "Substitute x = 5: 3(5) - 4 = 15 - 4 = 11."
+  },
+  {
+    "id": "q8",
+    "domain": "Elementary Algebra",
+    "competency": "Simplifies algebraic expressions",
+    "question": "Which of the following is the simplified form of 4x + 3y - 2x + y?",
+    "options": [
+      { "id": "A", "text": "2x + 4y" },
+      { "id": "B", "text": "6x + 4y" },
+      { "id": "C", "text": "2x + 2y" },
+      { "id": "D", "text": "6x + 2y" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "Combine like terms: (4x - 2x) + (3y + y) = 2x + 4y."
+  },
+  {
+    "id": "q9",
+    "domain": "Elementary Algebra",
+    "competency": "Solves linear equations in one variable",
+    "question": "What is the solution to the equation 2x + 3 = 11?",
+    "options": [
+      { "id": "A", "text": "x = 4" },
+      { "id": "B", "text": "x = 7" },
+      { "id": "C", "text": "x = 8" },
+      { "id": "D", "text": "x = 14" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "Subtract 3 from both sides: 2x = 8. Divide by 2: x = 4."
+  },
+  {
+    "id": "q10",
+    "domain": "Elementary Algebra",
+    "competency": "Solves problems involving simple linear equations",
+    "question": "A number increased by 9 equals 21. What is the number?",
+    "options": [
+      { "id": "A", "text": "12" },
+      { "id": "B", "text": "30" },
+      { "id": "C", "text": "9" },
+      { "id": "D", "text": "21" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "Let the number be n: n + 9 = 21, so n = 21 - 9 = 12."
+  },
+  {
+    "id": "q11",
+    "domain": "Geometry",
+    "competency": "Identifies angle relationships",
+    "question": "Two angles are complementary. If one angle measures 35°, what is the measure of the other angle?",
+    "options": [
+      { "id": "A", "text": "55°" },
+      { "id": "B", "text": "145°" },
+      { "id": "C", "text": "45°" },
+      { "id": "D", "text": "65°" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "Complementary angles sum to 90°. The other angle is 90° - 35° = 55°."
+  },
+  {
+    "id": "q12",
+    "domain": "Geometry",
+    "competency": "Determines angle measures formed by parallel lines",
+    "question": "Two parallel lines are cut by a transversal. If one angle measures 110°, what is the measure of its corresponding angle?",
+    "options": [
+      { "id": "A", "text": "70°" },
+      { "id": "B", "text": "110°" },
+      { "id": "C", "text": "90°" },
+      { "id": "D", "text": "180°" }
+    ],
+    "correctAnswer": "B",
+    "explanation": "Corresponding angles formed by parallel lines and a transversal are equal, so the measure is 110°."
+  },
+  {
+    "id": "q13",
+    "domain": "Geometry",
+    "competency": "Determines the sum of interior angles of a polygon",
+    "question": "What is the sum of the interior angles of a quadrilateral?",
+    "options": [
+      { "id": "A", "text": "180°" },
+      { "id": "B", "text": "360°" },
+      { "id": "C", "text": "540°" },
+      { "id": "D", "text": "720°" }
+    ],
+    "correctAnswer": "B",
+    "explanation": "Using (n - 2) × 180° with n = 4: (4 - 2) × 180° = 360°."
+  },
+  {
+    "id": "q14",
+    "domain": "Geometry",
+    "competency": "Classifies triangles by their angles",
+    "question": "A triangle has angle measures 60°, 60°, and 60°. What kind of triangle is it?",
+    "options": [
+      { "id": "A", "text": "Right triangle" },
+      { "id": "B", "text": "Equilateral triangle" },
+      { "id": "C", "text": "Obtuse triangle" },
+      { "id": "D", "text": "Scalene triangle" }
+    ],
+    "correctAnswer": "B",
+    "explanation": "All three angles are equal and 60°, so the triangle is equilateral."
+  },
+  {
+    "id": "q15",
+    "domain": "Geometry",
+    "competency": "Solves problems involving angles on a line",
+    "question": "Two supplementary angles have measures x and 2x. What is the value of x?",
+    "options": [
+      { "id": "A", "text": "30°" },
+      { "id": "B", "text": "45°" },
+      { "id": "C", "text": "60°" },
+      { "id": "D", "text": "90°" }
+    ],
+    "correctAnswer": "C",
+    "explanation": "Supplementary angles sum to 180°: x + 2x = 180°, so 3x = 180° and x = 60°."
+  },
+  {
+    "id": "q16",
+    "domain": "Statistics and Probability",
+    "competency": "Calculates the mean of a data set",
+    "question": "What is the mean of the data set 4, 8, 6, 10, 12?",
+    "options": [
+      { "id": "A", "text": "6" },
+      { "id": "B", "text": "8" },
+      { "id": "C", "text": "10" },
+      { "id": "D", "text": "40" }
+    ],
+    "correctAnswer": "B",
+    "explanation": "The sum is 40, and dividing by 5 values gives a mean of 8."
+  },
+  {
+    "id": "q17",
+    "domain": "Statistics and Probability",
+    "competency": "Determines the median of a data set",
+    "question": "What is the median of the data set 3, 7, 9, 12, 15?",
+    "options": [
+      { "id": "A", "text": "7" },
+      { "id": "B", "text": "9" },
+      { "id": "C", "text": "12" },
+      { "id": "D", "text": "10" }
+    ],
+    "correctAnswer": "B",
+    "explanation": "The values are already ordered. The middle value of five numbers is 9."
+  },
+  {
+    "id": "q18",
+    "domain": "Statistics and Probability",
+    "competency": "Determines the mode of a data set",
+    "question": "What is the mode of the data set 5, 3, 8, 3, 7, 5, 3?",
+    "options": [
+      { "id": "A", "text": "5" },
+      { "id": "B", "text": "7" },
+      { "id": "C", "text": "3" },
+      { "id": "D", "text": "8" }
+    ],
+    "correctAnswer": "C",
+    "explanation": "The value 3 appears three times, more often than any other value."
+  },
+  {
+    "id": "q19",
+    "domain": "Statistics and Probability",
+    "competency": "Calculates basic probability",
+    "question": "A bag contains 3 red, 2 blue, and 5 green marbles. What is the probability of drawing a blue marble?",
+    "options": [
+      { "id": "A", "text": "2/10" },
+      { "id": "B", "text": "1/2" },
+      { "id": "C", "text": "2/8" },
+      { "id": "D", "text": "5/10" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "There are 10 total marbles and 2 blue ones, so the probability is 2/10."
+  },
+  {
+    "id": "q20",
+    "domain": "Statistics and Probability",
+    "competency": "Solves problems using measures of central tendency",
+    "question": "The mean of four numbers is 15. If three of the numbers are 12, 14, and 18, what is the fourth number?",
+    "options": [
+      { "id": "A", "text": "16" },
+      { "id": "B", "text": "14" },
+      { "id": "C", "text": "20" },
+      { "id": "D", "text": "10" }
+    ],
+    "correctAnswer": "A",
+    "explanation": "Total must be 4 × 15 = 60. The sum of the three numbers is 44, so the fourth is 60 - 44 = 16."
+  }
+]
