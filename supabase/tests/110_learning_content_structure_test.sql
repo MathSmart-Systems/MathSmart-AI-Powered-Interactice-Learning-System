@@ -228,17 +228,32 @@ select ok(has_table_privilege('authenticated', 'app.activity_questions'::regclas
 -- ---------------------------------------------------------------------------
 -- Helpers stay hardened
 -- ---------------------------------------------------------------------------
--- SECURITY INVOKER remains the rule, with exactly one reviewed exception:
--- app.is_active_account must run with definer rights because a policy on the
--- very table it reads consults it, and invoker rights there would recurse.
+-- SECURITY INVOKER remains the rule. Every exception is listed here, and each
+-- one exists because the caller's own rights genuinely cannot do the work:
+--
+--   is_active_account        a policy on the table it reads consults it, so
+--                            invoker rights would recurse
+--   module_section_ids,      a learner's own record is SELECT-only for
+--   save_module_progress,    `authenticated`, so their own progress is written
+--   complete_module          through a function instead of a grant
+--   start_assessment_attempt,
+--   save_assessment_answers  the same, for attempts
+--   submit_assessment_attempt  grading reads app.questions.answer_key, which
+--                            `authenticated` deliberately cannot select
+--   authorize_reassessment   an authorization is a decision, and the table that
+--                            records it is SELECT-only for the caller
+--
+-- A new name appearing here is a review item, not a formatting change.
 select is(
   (select string_agg(pg_proc.proname, ',' order by pg_proc.proname)
    from pg_proc
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
    where pg_namespace.nspname = 'app'
      and pg_proc.prosecdef),
-  'is_active_account',
-  'app.is_active_account is the only SECURITY DEFINER function in the schema'
+  'authorize_reassessment,complete_module,is_active_account,module_section_ids,'
+  || 'save_assessment_answers,save_module_progress,start_assessment_attempt,'
+  || 'submit_assessment_attempt',
+  'Only the reviewed functions are SECURITY DEFINER'
 );
 
 select ok(
