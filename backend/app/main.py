@@ -29,6 +29,7 @@ from modules.assessments.router import router as assessments_router
 from modules.auth.router import router as auth_router
 from modules.competencies.router import router as competencies_router
 from modules.learning_modules.router import router as learning_modules_router
+from modules.progress.router import router as progress_router
 from modules.shared.db import Database
 from modules.students.router import router as students_router
 
@@ -112,6 +113,7 @@ def create_app(
     application.include_router(learning_modules_router, prefix=API_PREFIX)
     application.include_router(assessments_router, prefix=API_PREFIX)
     application.include_router(activities_router, prefix=API_PREFIX)
+    application.include_router(progress_router, prefix=API_PREFIX)
 
     return application
 

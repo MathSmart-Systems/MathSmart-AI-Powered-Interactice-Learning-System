@@ -275,8 +275,10 @@ create function app.submit_activity_attempt(
   p_answers jsonb default null,
   p_time_spent_seconds integer default 0
 )
+-- The attempt identifier is deliberately not returned: it is what the caller
+-- passed in, and an OUT parameter of that name would collide with the column
+-- of the same name inside the function ("column reference is ambiguous").
 returns table (
-  attempt_id uuid,
   raw_score integer,
   max_score integer,
   score_percentage numeric,
@@ -456,7 +458,7 @@ begin
 
   return query
   select
-    p_attempt_id, v_raw, v_max, v_percentage, v_passed, v_attempt_number,
+    v_raw, v_max, v_percentage, v_passed, v_attempt_number,
     v_band, v_previous, v_current, v_intervention_created;
 end;
 $$;

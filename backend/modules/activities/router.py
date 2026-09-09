@@ -253,7 +253,9 @@ async def submit_attempt(
 
     passed = bool(row["passed"])
     outcome = ActivityOutcome(
-        attempt_id=row["attempt_id"],
+        # The identifier is the one that was asked for; the function does not
+        # return it, so it cannot collide with the column of the same name.
+        attempt_id=attempt_id,
         score=row["raw_score"] or 0,
         max_score=row["max_score"] or 0,
         accuracy=_percentage(row["score_percentage"]) or 0,
