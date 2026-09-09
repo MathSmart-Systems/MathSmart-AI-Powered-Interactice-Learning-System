@@ -1,1 +1,20 @@
-# Add pinned backend dependencies when FastAPI implementation begins.
+# MathSmart FastAPI backend — pinned runtime dependencies.
+#
+# Pinned deliberately: the frozen documentation asks for pinned backend
+# dependencies, and a moving auth or database driver version is not something a
+# learner-data boundary should discover in production.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# Database access. asyncpg speaks the binary protocol directly, so the backend
+# reaches the private `app` schema without going through the Data API.
+asyncpg==0.31.0
+
+# Token verification against the project JWKS endpoint, and the Supabase Auth
+# Admin and Groq HTTP calls.
+PyJWT[crypto]==2.13.0
+cryptography==50.0.1
+httpx==0.28.1

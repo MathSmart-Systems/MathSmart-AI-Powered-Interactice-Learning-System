@@ -131,6 +131,36 @@ jobs:
         if: always()
         run: supabase stop --no-backup
 
+  backend-check:
+    name: Backend Lint & Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install Dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run Linter
+        working-directory: backend
+        run: ruff check .
+
+      - name: Run Unit Tests
+        working-directory: backend
+        run: pytest -m "not integration"
+
   frontend-check:
     name: Frontend Build & Lint
     runs-on: ubuntu-latest

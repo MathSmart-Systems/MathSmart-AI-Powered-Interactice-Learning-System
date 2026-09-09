@@ -1,0 +1,8 @@
+# Development and verification tooling. Installed on top of requirements.txt.
+-r requirements.txt
+
+pytest==9.1.1
+# Starlette's TestClient asks for httpx2; using it keeps the test run warning-free.
+httpx2==2.12.0
+pytest-asyncio==1.4.0
+ruff==0.16.6
