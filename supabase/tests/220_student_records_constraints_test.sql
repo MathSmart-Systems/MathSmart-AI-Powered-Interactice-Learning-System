@@ -393,13 +393,16 @@ select ok(
 -- ---------------------------------------------------------------------------
 -- Activity attempts
 -- ---------------------------------------------------------------------------
+-- A finished attempt states so. An attempt that has not been submitted holds
+-- no score, no pass flag and no mastery status.
 insert into app.activity_attempts
-  (student_id, activity_id, attempt_number, score_percentage, time_spent_seconds, passed, mastery_status)
+  (student_id, activity_id, attempt_number, status, submitted_at,
+   score_percentage, time_spent_seconds, passed, mastery_status)
 values
   ('53000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001',
-   1, 60.00, 300, false, 'Developing'),
+   1, 'scored', now(), 60.00, 300, false, 'Developing'),
   ('53000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001',
-   2, 80.00, 240, true, 'Developing');
+   2, 'scored', now(), 80.00, 240, true, 'Developing');
 
 select is(
   (select count(*) from app.activity_attempts
@@ -429,45 +432,50 @@ select is(
 
 select throws_ok(
   $$ insert into app.activity_attempts
-       (student_id, activity_id, attempt_number, score_percentage, passed, mastery_status)
+       (student_id, activity_id, attempt_number, status, submitted_at,
+        score_percentage, passed, mastery_status)
      values ('53000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001',
-             2, 90, true, 'Mastered') $$,
+             2, 'scored', now(), 90, true, 'Mastered') $$,
   '23505', null::text,
   'An activity attempt number cannot be reused for the same learner and activity'
 );
 
 select throws_ok(
   $$ insert into app.activity_attempts
-       (student_id, activity_id, attempt_number, score_percentage, passed, mastery_status)
+       (student_id, activity_id, attempt_number, status, submitted_at,
+        score_percentage, passed, mastery_status)
      values ('53000000-0000-4000-8000-000000000002', 'a3000000-0000-4000-8000-000000000001',
-             0, 90, true, 'Mastered') $$,
+             0, 'scored', now(), 90, true, 'Mastered') $$,
   '23514', null::text,
   'An activity attempt number below one is rejected'
 );
 
 select throws_ok(
   $$ insert into app.activity_attempts
-       (student_id, activity_id, attempt_number, score_percentage, passed, mastery_status)
+       (student_id, activity_id, attempt_number, status, submitted_at,
+        score_percentage, passed, mastery_status)
      values ('53000000-0000-4000-8000-000000000002', 'a3000000-0000-4000-8000-000000000001',
-             1, 101, true, 'Mastered') $$,
+             1, 'scored', now(), 101, true, 'Mastered') $$,
   '23514', null::text,
   'An activity score above one hundred percent is rejected'
 );
 
 select throws_ok(
   $$ insert into app.activity_attempts
-       (student_id, activity_id, attempt_number, score_percentage, time_spent_seconds, passed, mastery_status)
+       (student_id, activity_id, attempt_number, status, submitted_at,
+        score_percentage, time_spent_seconds, passed, mastery_status)
      values ('53000000-0000-4000-8000-000000000002', 'a3000000-0000-4000-8000-000000000001',
-             1, 90, -1, true, 'Mastered') $$,
+             1, 'scored', now(), 90, -1, true, 'Mastered') $$,
   '23514', null::text,
   'Negative time on task is rejected'
 );
 
 select throws_ok(
   $$ insert into app.activity_attempts
-       (student_id, activity_id, attempt_number, score_percentage, time_spent_seconds, passed, mastery_status)
+       (student_id, activity_id, attempt_number, status, submitted_at,
+        score_percentage, time_spent_seconds, passed, mastery_status)
      values ('53000000-0000-4000-8000-000000000002', 'a3000000-0000-4000-8000-000000000001',
-             1, 90, 86401, true, 'Mastered') $$,
+             1, 'scored', now(), 90, 86401, true, 'Mastered') $$,
   '23514', null::text,
   'More than a day on one activity attempt is rejected'
 );

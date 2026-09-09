@@ -86,10 +86,13 @@ insert into app.student_module_progress (student_id, module_id, completion_perce
   ('54000000-0000-4000-8000-000000000002', 'd4000000-0000-4000-8000-000000000001', 75.00, now());
 
 insert into app.activity_attempts
-  (student_id, activity_id, attempt_number, score_percentage, passed, mastery_status)
+  (student_id, activity_id, attempt_number, status, submitted_at,
+   score_percentage, passed, mastery_status)
 values
-  ('54000000-0000-4000-8000-000000000001', 'a4000000-0000-4000-8000-000000000011', 1, 40.00, false, 'Needs Improvement'),
-  ('54000000-0000-4000-8000-000000000002', 'a4000000-0000-4000-8000-000000000011', 1, 90.00, true, 'Mastered');
+  ('54000000-0000-4000-8000-000000000001', 'a4000000-0000-4000-8000-000000000011',
+   1, 'scored', now(), 40.00, false, 'Needs Improvement'),
+  ('54000000-0000-4000-8000-000000000002', 'a4000000-0000-4000-8000-000000000011',
+   1, 'scored', now(), 90.00, true, 'Mastered');
 
 insert into app.competency_progress
   (student_id, competency_id, diagnostic_score, current_score, mastery_band, attempt_count, unsuccessful_attempts)
