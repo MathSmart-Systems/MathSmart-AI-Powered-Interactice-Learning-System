@@ -96,6 +96,11 @@ select {_QUEUE_COLUMNS}
 where interventions.intervention_id = $1
 """
 
+# Both functions return an app.interventions row and nothing else, because the
+# table is the function's return type. The responses are built from the
+# reporting shape instead — the learner, the competency, the educator's name,
+# the evidence — so each write is read back through _DETAIL_SQL inside the same
+# transaction rather than answered from the row the function handed back.
 _OPEN_SQL = "select * from app.open_intervention($1, $2, $3, $4, $5, $6)"
 _UPDATE_SQL = "select * from app.update_intervention($1, $2, $3, $4, $5, $6, $7)"
 _ARCHIVE_SQL = "select app.archive_intervention($1, $2)"
@@ -151,10 +156,13 @@ async def record(
     educator_notes: str | None,
     request_id: str | None,
 ) -> Any:
-    return await connection.fetchrow(
+    written = await connection.fetchrow(
         _OPEN_SQL,
         student_id, competency_id, severity, intervention_type, educator_notes, request_id,
     )
+    if written is None:
+        return None
+    return await intervention(connection, written["intervention_id"])
 
 
 async def update(
@@ -168,11 +176,14 @@ async def update(
     reopen_reason: str | None,
     request_id: str | None,
 ) -> Any:
-    return await connection.fetchrow(
+    written = await connection.fetchrow(
         _UPDATE_SQL,
         intervention_id, severity, intervention_type, educator_notes, status,
         reopen_reason, request_id,
     )
+    if written is None:
+        return None
+    return await intervention(connection, written["intervention_id"])
 
 
 async def archive(

@@ -71,10 +71,40 @@ CREATE_BODY = {
 }
 
 
+#: What `select * from app.open_intervention(...)` can actually return: the
+#: function's return type is app.interventions, so its row carries that table's
+#: columns and nothing from the learner, the competency or the educator. The
+#: fakes answered every statement with the reporting shape once, which hid a
+#: KeyError on `recorded_by` behind a green suite while the live route returned
+#: 500.
+WRITTEN_ROW = {
+    "intervention_id": INTERVENTION,
+    "student_id": STUDENT_ID,
+    "teacher_admin_id": UUID("4c000000-0000-4000-8000-000000000001"),
+    "competency_id": COMPETENCY,
+    "severity": "HIGH",
+    "status": "In Progress",
+    "intervention_type": "One-on-One Remediation",
+    "incorrect_patterns": [],
+    "modules_attempted": [],
+    "educator_notes": "Scheduled a 15-minute guided number-line session.",
+    "reopen_reason": None,
+    "ai_insight": None,
+    "ai_recommendation": None,
+    "ai_provider": None,
+    "ai_model": None,
+    "ai_confidence_score": None,
+    "created_at": None,
+    "recorded_at": None,
+    "resolved_at": None,
+    "archived_at": None,
+}
+
+
 def intervention_connection(**overrides):
     results = {
-        "app.open_intervention": ROW,
-        "app.update_intervention": ROW,
+        "app.open_intervention": WRITTEN_ROW,
+        "app.update_intervention": WRITTEN_ROW,
         "app.archive_intervention": True,
         QUEUE: [ROW],
         BY_ID: ROW,
@@ -176,6 +206,43 @@ def test_a_teacher_admin_records_a_case():
     assert data["id"] == str(INTERVENTION)
     assert data["status"] == "In Progress"
     assert data["recorded_by"] == "Maria Santos"
+
+
+def test_recording_a_case_reads_it_back_for_the_response():
+    """The write returns an app.interventions row; the response needs more.
+
+    A case is answered with the educator who recorded it, which the function's
+    own row cannot carry. The route must read the case back through the detail
+    statement, in the same transaction, or it fails on a column that was never
+    selected.
+    """
+    connection = intervention_connection()
+    client = build_client(connection)
+
+    response = client.post("/api/v1/interventions", json=CREATE_BODY, headers=ADVISER_HEADERS)
+
+    assert response.status_code == 201
+    assert response.json()["data"]["recorded_by"] == "Maria Santos"
+    statements = [statement for statement, _ in connection.calls]
+    assert any("app.open_intervention" in statement for statement in statements)
+    assert any(BY_ID in statement for statement in statements)
+
+
+def test_updating_a_case_reads_it_back_for_the_response():
+    connection = intervention_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/interventions/{INTERVENTION}",
+        json={"status": "Resolved"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["recorded_by"] == "Maria Santos"
+    assert data["competency"]["name"] == "Multiplication and Division of Integers"
+    assert any(BY_ID in statement for statement, _ in connection.calls)
 
 
 def test_a_learner_cannot_record_a_case():
