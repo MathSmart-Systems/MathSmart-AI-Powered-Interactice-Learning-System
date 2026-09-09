@@ -121,6 +121,9 @@ select is(
 -- ---------------------------------------------------------------------------
 -- Controlled vocabularies
 -- ---------------------------------------------------------------------------
+-- Exact equality on purpose: every value here comes from the frozen canonical
+-- enum table, so a seventh question type or a fourth publication state is a
+-- documentation conflict and must fail rather than be tolerated.
 select is(
   (select string_agg(status_value::text, ',' order by status_value::text)
    from unnest(enum_range(null::app.publication_status)) as status_value),

@@ -98,7 +98,9 @@ select is((select count(*) from app.sections), 1::bigint,
 select is((select section_id from app.sections), 'e0000000-0000-4000-8000-0000000000a1'::uuid,
           'The section a learner sees is their own');
 
-select is((select count(*) from app.grade_levels), 1::bigint,
+-- Asserting the property rather than the table size, so seeding another grade
+-- level in a later phase cannot turn this into a false failure.
+select is((select count(*) from app.grade_levels where not is_active), 0::bigint,
           'A learner sees active grade levels only');
 
 -- Privilege-level denials.
@@ -183,13 +185,15 @@ set local role authenticated;
 select ok((select count(*) from app.user_profiles) >= 4::bigint,
           'A teacher_admin reads application profiles school-wide');
 
-select is((select count(*) from app.student_profiles), 2::bigint,
+select is((select count(*) from app.student_profiles
+            where student_profiles.learner_id in ('LRN-900001', 'LRN-900002')), 2::bigint,
           'A teacher_admin reads every learner record');
 
 select is((select count(*) from app.sections where name in ('Section Alpha', 'Section Beta')), 2::bigint,
           'A teacher_admin reads every section');
 
-select is((select count(*) from app.grade_levels where not is_active), 1::bigint,
+select is((select count(*) from app.grade_levels
+            where not is_active and grade_levels.level = 5), 1::bigint,
           'A teacher_admin also sees archived grade levels');
 
 select isnt_empty($$ select 1 from app.teacher_admin_profiles $$,

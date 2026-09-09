@@ -328,7 +328,9 @@ values ('c1000000-0000-4000-8000-000000000001', 'ordering', 'Reserved draft',
         '{"order":[1,2]}'::jsonb, 'draft');
 
 select is(
-  (select count(*) from app.questions where questions.question_type = 'ordering'),
+  (select count(*) from app.questions
+    where questions.question_type = 'ordering'
+      and questions.prompt = 'Reserved draft'),
   1::bigint,
   'A reserved question type may still be authored as a draft'
 );

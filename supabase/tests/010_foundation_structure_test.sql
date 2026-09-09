@@ -92,6 +92,9 @@ select col_type_is('app'::name, 'grade_levels'::name,     'is_active'::name,  'b
 -- ---------------------------------------------------------------------------
 -- Role vocabulary
 -- ---------------------------------------------------------------------------
+-- Asserted as exact equality on purpose. These values mirror the frozen
+-- canonical enum table, so an added label is a documentation conflict that
+-- should fail loudly rather than pass a containment check.
 select is(
   (select string_agg(role_value::text, ',' order by role_value::text) from unnest(enum_range(null::app.user_role)) as role_value),
   'student,teacher_admin',
@@ -207,12 +210,16 @@ select ok(to_regclass('app.grade_levels_active_level_idx') is not null,         
 -- ---------------------------------------------------------------------------
 -- updated_at is maintained by the server
 -- ---------------------------------------------------------------------------
+-- Scoped to the Phase 1 tables by name. A schema-wide count would have to be
+-- revised by every later phase that adds a table with updated_at.
 select is(
   (select count(*)
    from pg_trigger
    join pg_class on pg_class.oid = pg_trigger.tgrelid
    join pg_namespace on pg_namespace.oid = pg_class.relnamespace
    where pg_namespace.nspname = 'app'
+     and pg_class.relname in ('user_profiles', 'grade_levels', 'teacher_admin_profiles',
+                              'sections', 'student_profiles')
      and not pg_trigger.tgisinternal
      and pg_trigger.tgname like '%_set_updated_at'),
   5::bigint,

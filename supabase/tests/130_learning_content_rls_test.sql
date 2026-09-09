@@ -107,31 +107,48 @@ reset role;
 set local request.jwt.claims = '{"sub":"b2000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
 set local role authenticated;
 
-select is((select count(*) from app.competencies), 1::bigint,
+-- Every count below is bound to this file's fixtures. An unscoped count would
+-- start failing the first time curriculum reference data is seeded.
+select is((select count(*) from app.competencies
+            where competencies.competency_id in ('c2000000-0000-4000-8000-000000000001', 'c2000000-0000-4000-8000-000000000002')), 1::bigint,
           'A learner sees published competencies only');
 
-select is((select code from app.competencies), 'RLS-COMP-1',
+select is((select code from app.competencies
+            where competencies.competency_id = 'c2000000-0000-4000-8000-000000000001'),
+          'RLS-COMP-1',
           'The competency a learner sees is the published one');
 
-select is((select count(*) from app.learning_modules), 1::bigint,
+select is((select count(*) from app.learning_modules
+            where learning_modules.module_id in ('d2000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000002',
+                 'd2000000-0000-4000-8000-000000000003')), 1::bigint,
           'A learner sees a module only when the module and its competency are both published');
 
-select is((select title from app.learning_modules), 'Visible module',
+select is((select title from app.learning_modules
+            where learning_modules.module_id = 'd2000000-0000-4000-8000-000000000001'),
+          'Visible module',
           'The module a learner sees is the published one under a published competency');
 
-select is((select count(*) from app.questions), 1::bigint,
+select is((select count(*) from app.questions
+            where questions.question_id in ('e2000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000002',
+                 'e2000000-0000-4000-8000-000000000003')), 1::bigint,
           'A learner sees a question only when the question and its competency are both published');
 
-select is((select count(*) from app.assessments), 1::bigint,
+select is((select count(*) from app.assessments
+            where assessments.assessment_id in ('f2000000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000002')), 1::bigint,
           'A learner sees published assessments only');
 
-select is((select count(*) from app.assessment_questions), 1::bigint,
+select is((select count(*) from app.assessment_questions
+            where assessment_questions.assessment_id in ('f2000000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000002')), 1::bigint,
           'A learner sees assessment membership only for an assessment they can see');
 
-select is((select count(*) from app.activities), 1::bigint,
+select is((select count(*) from app.activities
+            where activities.activity_id in ('a2000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000002',
+                 'a2000000-0000-4000-8000-000000000003')), 1::bigint,
           'A learner sees an activity only when the activity and its module are both published');
 
-select is((select count(*) from app.activity_questions), 1::bigint,
+select is((select count(*) from app.activity_questions
+            where activity_questions.activity_id in ('a2000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000002',
+                 'a2000000-0000-4000-8000-000000000003')), 1::bigint,
           'A learner sees activity membership only for an activity they can see');
 
 -- ---------------------------------------------------------------------------
@@ -149,9 +166,12 @@ select throws_ok($$ select count(*) from app.questions where answer_key is not n
                  '42501', null::text, 'A learner cannot filter on the answer key to infer it');
 
 -- The delivery shape a learner does need still works.
-select is((select prompt from app.questions), 'Visible question',
+select is((select prompt from app.questions
+            where questions.question_id = 'e2000000-0000-4000-8000-000000000001'),
+          'Visible question',
           'A learner reads the question prompt');
-select is((select jsonb_array_length(choices) from app.questions), 2,
+select is((select jsonb_array_length(choices) from app.questions
+            where questions.question_id = 'e2000000-0000-4000-8000-000000000001'), 2,
           'A learner reads the question choices');
 
 -- ---------------------------------------------------------------------------
@@ -189,14 +209,23 @@ select throws_ok(
   '42501', null::text, 'A learner cannot change assessment membership');
 
 select throws_ok(
-  $$ delete from app.assessment_questions
-     where assessment_questions.assessment_id = 'f2000000-0000-4000-8000-000000000001' $$,
-  '42501', null::text, 'A learner cannot remove assessment membership');
-
-select throws_ok(
   $$ delete from app.competencies
      where competencies.competency_id = 'c2000000-0000-4000-8000-000000000001' $$,
   '42501', null::text, 'A learner cannot delete a competency');
+
+-- The two membership tables are the one place `authenticated` holds a
+-- table-level DELETE, because replacing an ordered question set atomically
+-- needs it. The delete and update policies are what stop a learner, and a
+-- policy USING clause filters rows instead of raising, so each statement below
+-- matches zero rows and is verified as the owner afterwards.
+delete from app.assessment_questions
+where assessment_questions.assessment_id = 'f2000000-0000-4000-8000-000000000001';
+delete from app.activity_questions
+where activity_questions.activity_id = 'a2000000-0000-4000-8000-000000000001';
+update app.assessment_questions set position = 99
+where assessment_questions.assessment_id = 'f2000000-0000-4000-8000-000000000001';
+update app.activity_questions set position = 99
+where activity_questions.activity_id = 'a2000000-0000-4000-8000-000000000001';
 
 -- These match zero rows rather than raising, so the rows are re-read as the
 -- owner below to prove they are untouched.
@@ -231,6 +260,26 @@ select is((select mastery_threshold from app.activities
           75,
           'A learner cannot lower an activity pass threshold');
 
+select is((select count(*) from app.assessment_questions
+            where assessment_questions.assessment_id = 'f2000000-0000-4000-8000-000000000001'),
+          1::bigint,
+          'A learner cannot remove assessment membership');
+
+select is((select count(*) from app.activity_questions
+            where activity_questions.activity_id = 'a2000000-0000-4000-8000-000000000001'),
+          1::bigint,
+          'A learner cannot remove activity membership');
+
+select is((select assessment_questions.position from app.assessment_questions
+            where assessment_questions.assessment_id = 'f2000000-0000-4000-8000-000000000001'),
+          1,
+          'A learner cannot reorder assessment membership');
+
+select is((select activity_questions.position from app.activity_questions
+            where activity_questions.activity_id = 'a2000000-0000-4000-8000-000000000001'),
+          1,
+          'A learner cannot reorder activity membership');
+
 -- ===========================================================================
 -- A Teacher/Administrator manages curriculum content
 -- ===========================================================================
@@ -238,17 +287,26 @@ reset role;
 set local request.jwt.claims = '{"sub":"a2000000-0000-4000-8000-0000000000a1","role":"authenticated","app_metadata":{"role":"teacher_admin"}}';
 set local role authenticated;
 
-select is((select count(*) from app.competencies), 2::bigint,
+select is((select count(*) from app.competencies
+            where competencies.competency_id in ('c2000000-0000-4000-8000-000000000001', 'c2000000-0000-4000-8000-000000000002')), 2::bigint,
           'A teacher_admin reads every competency, including drafts');
-select is((select count(*) from app.learning_modules), 3::bigint,
+select is((select count(*) from app.learning_modules
+            where learning_modules.module_id in ('d2000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000002',
+                 'd2000000-0000-4000-8000-000000000003')), 3::bigint,
           'A teacher_admin reads every learning module');
-select is((select count(*) from app.questions), 3::bigint,
+select is((select count(*) from app.questions
+            where questions.question_id in ('e2000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000002',
+                 'e2000000-0000-4000-8000-000000000003')), 3::bigint,
           'A teacher_admin reads every question');
-select is((select count(*) from app.assessments), 2::bigint,
+select is((select count(*) from app.assessments
+            where assessments.assessment_id in ('f2000000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000002')), 2::bigint,
           'A teacher_admin reads every assessment');
-select is((select count(*) from app.activities), 3::bigint,
+select is((select count(*) from app.activities
+            where activities.activity_id in ('a2000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000002',
+                 'a2000000-0000-4000-8000-000000000003')), 3::bigint,
           'A teacher_admin reads every activity');
-select is((select count(*) from app.assessment_questions), 2::bigint,
+select is((select count(*) from app.assessment_questions
+            where assessment_questions.assessment_id in ('f2000000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000002')), 2::bigint,
           'A teacher_admin reads every assessment membership row');
 
 -- An answer key stays out of reach even here: reading one is a service_role
@@ -257,19 +315,21 @@ select throws_ok($$ select answer_key from app.questions $$,
                  '42501', null::text,
                  'Even a teacher_admin cannot read an answer key through the Data API roles');
 
--- Authoring, proved by re-reading each write.
-insert into app.competencies (competency_id, code, grade_id, domain, name)
-values ('c2000000-0000-4000-8000-000000000009', 'RLS-COMP-9',
-        (select grade_id from app.grade_levels where level = 6), 'Measurement', 'Authored competency');
+-- Authoring, proved by re-reading each write. Identifiers are deliberately
+-- absent from the column INSERT grant, so they stay server-generated and the
+-- authored rows are found by their business key instead.
+insert into app.competencies (code, grade_id, domain, name)
+values ('RLS-COMP-9', (select grade_id from app.grade_levels where level = 6),
+        'Measurement', 'Authored competency');
 
-select is((select name from app.competencies
-            where competencies.competency_id = 'c2000000-0000-4000-8000-000000000009'),
+select is((select name from app.competencies where competencies.code = 'RLS-COMP-9'),
           'Authored competency',
           'A teacher_admin can create a competency');
 
 insert into app.learning_modules
   (competency_id, title, estimated_minutes, learning_objective, short_explanation, order_index)
-values ('c2000000-0000-4000-8000-000000000009', 'Authored module', 30, 'Objective', 'Explanation', 1);
+values ((select competency_id from app.competencies where code = 'RLS-COMP-9'),
+        'Authored module', 30, 'Objective', 'Explanation', 1);
 
 select is((select count(*) from app.learning_modules
             where learning_modules.title = 'Authored module'),
@@ -277,7 +337,8 @@ select is((select count(*) from app.learning_modules
           'A teacher_admin can create a learning module');
 
 insert into app.questions (competency_id, question_type, prompt, answer_key, explanation, hint)
-values ('c2000000-0000-4000-8000-000000000009', 'number_input', 'Authored question',
+values ((select competency_id from app.competencies where code = 'RLS-COMP-9'),
+        'number_input', 'Authored question',
         '{"value":11}'::jsonb, 'Authored explanation', 'Authored hint');
 
 select is((select count(*) from app.questions where questions.prompt = 'Authored question'),
@@ -285,10 +346,9 @@ select is((select count(*) from app.questions where questions.prompt = 'Authored
           'A teacher_admin can author a question together with its answer key');
 
 update app.competencies set status = 'published'
-where competencies.competency_id = 'c2000000-0000-4000-8000-000000000009';
+where competencies.code = 'RLS-COMP-9';
 
-select is((select status from app.competencies
-            where competencies.competency_id = 'c2000000-0000-4000-8000-000000000009'),
+select is((select status from app.competencies where competencies.code = 'RLS-COMP-9'),
           'published'::app.publication_status,
           'A teacher_admin can publish a competency');
 
