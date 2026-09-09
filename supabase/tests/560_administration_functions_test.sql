@@ -194,8 +194,8 @@ select is(
 
 select is(
   (select assessment_attempts.voided_by from app.assessment_attempts),
-  'ad000000-0000-4000-8000-0000000000a1'::uuid,
-  'The void records who did it, taken from auth.uid()'
+  '4d000000-0000-4000-8000-000000000001'::uuid,
+  'The void records the educator who did it, resolved from auth.uid()'
 );
 
 select is(

@@ -141,7 +141,8 @@ begin
   update app.assessment_attempts
   set status = 'voided'::app.attempt_status,
       voided_reason = p_reason,
-      voided_by = v_actor,
+      -- voided_by references app.teacher_admin_profiles, not the Auth user.
+      voided_by = v_teacher_admin_id,
       voided_at = now()
   where assessment_attempts.attempt_id = v_attempt.attempt_id
   returning * into v_attempt;
