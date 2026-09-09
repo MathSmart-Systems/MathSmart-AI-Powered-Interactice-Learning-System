@@ -86,7 +86,11 @@ select is(
 );
 
 select is(
-  (select count(*) from app.sections where name = 'Section A'),
+  (select count(*) from app.sections
+    where sections.name = 'Section A'
+      and sections.grade_id in (
+        (select grade_id from app.grade_levels where level = 6),
+        (select grade_id from app.grade_levels where level = 5))),
   2::bigint,
   'The same section name may be reused in a different grade'
 );
@@ -116,7 +120,8 @@ select is(
   (select count(*)
    from app.student_profiles
    join app.grade_levels on grade_levels.grade_id = student_profiles.grade_id
-   where grade_levels.level = 6),
+   where grade_levels.level = 6
+     and student_profiles.learner_id in ('LRN-000001', 'LRN-000002')),
   2::bigint,
   'A student can be associated with a Grade 6 section'
 );

@@ -1,0 +1,31 @@
+# Tooling configuration for the MathSmart FastAPI backend.
+#
+# The backend is not a distributable package; this file exists so ruff and
+# pytest have one agreed configuration rather than per-invocation flags.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "RUF"]
+# S101 is assert-in-test, which is the point of a test. S105/S106 flag string
+# literals that look like credentials; in a test they are fixtures, and the
+# assertions that use them are precisely what prove a real one never leaks.
+per-file-ignores = { "**/tests/*" = ["S101", "S105", "S106"] }
+
+[tool.pytest.ini_options]
+testpaths = ["app", "cli", "middleware", "modules"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+markers = [
+  "integration: requires a live PostgreSQL database; skipped when MATHSMART_TEST_DB_URL is unset",
+]
+# A warning is a failure, so a real one cannot hide in the noise. The single
+# exception is an alias Starlette imports from anyio, which no MathSmart code
+# can act on.
+filterwarnings = [
+  "error",
+  'default:The anyio\.abc\.BlockingPortal alias is deprecated:DeprecationWarning:starlette\.testclient',
+]
