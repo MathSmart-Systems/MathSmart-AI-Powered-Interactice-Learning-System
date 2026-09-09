@@ -27,5 +27,5 @@ markers = [
 # can act on.
 filterwarnings = [
   "error",
-  "default:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+  'default:The anyio\.abc\.BlockingPortal alias is deprecated:DeprecationWarning:starlette\.testclient',
 ]
