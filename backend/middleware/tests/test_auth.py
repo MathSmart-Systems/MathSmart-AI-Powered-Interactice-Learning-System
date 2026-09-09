@@ -5,7 +5,9 @@ A valid token is authentication, not authorization. This module answers only
 must refuse everything else, including a token that is merely well-formed.
 """
 
+import threading
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import UUID
 
 import jwt
@@ -16,7 +18,9 @@ from pydantic import SecretStr
 from app.config import Settings
 from middleware.auth import (
     InvalidToken,
+    JwksUnavailable,
     MathSmartRole,
+    RemoteJwks,
     TokenVerifier,
     parse_trusted_role,
 )
@@ -199,6 +203,60 @@ async def test_an_unknown_key_id_is_refetched_once_then_refused():
         await verifier(jwks).verify(make_token(kid="rotated-key"))
 
     assert jwks.fetches == 1
+
+
+class StubJwkClient:
+    """Stands in for PyJWKClient, recording the thread its blocking call ran on."""
+
+    def __init__(self, error: Exception | None = None):
+        self.error = error
+        self.thread: threading.Thread | None = None
+
+    def get_signing_key(self, kid: str):
+        self.thread = threading.current_thread()
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(key=_private_key.public_key())
+
+
+def remote_jwks(client: StubJwkClient) -> RemoteJwks:
+    remote = RemoteJwks(f"{ISSUER}/.well-known/jwks.json")
+    remote._client = client
+    return remote
+
+
+async def test_the_blocking_jwks_fetch_does_not_run_on_the_event_loop():
+    """A cold or stale cache means real HTTP, which must not stall the worker."""
+    client = StubJwkClient()
+
+    await remote_jwks(client).public_key_for(KID)
+
+    assert client.thread is not threading.main_thread()
+
+
+async def test_an_unreachable_jwks_endpoint_is_not_reported_as_a_bad_token():
+    client = StubJwkClient(jwt.PyJWKClientConnectionError("the endpoint is unreachable"))
+
+    with pytest.raises(JwksUnavailable):
+        await remote_jwks(client).public_key_for(KID)
+
+
+async def test_an_unknown_key_id_is_still_an_unknown_key():
+    client = StubJwkClient(jwt.PyJWKClientError("no key matches that id"))
+
+    with pytest.raises(KeyError):
+        await remote_jwks(client).public_key_for(KID)
+
+
+async def test_a_jwks_outage_reaches_the_caller_rather_than_becoming_an_invalid_token():
+    """The token was never judged, so `verify` must not answer for it."""
+
+    class UnreachableJwks:
+        async def public_key_for(self, kid: str):
+            raise JwksUnavailable("the endpoint is unreachable")
+
+    with pytest.raises(JwksUnavailable):
+        await verifier(UnreachableJwks()).verify(make_token())
 
 
 def test_trusted_role_parsing_reads_app_metadata_only():

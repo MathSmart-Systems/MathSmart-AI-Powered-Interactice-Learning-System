@@ -15,7 +15,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from middleware.auth import InvalidToken, MathSmartRole, VerifiedToken
+from middleware.auth import InvalidToken, JwksUnavailable, MathSmartRole, VerifiedToken
 from middleware.errors import ApiError
 from modules.shared.db import AccountDisabled, ActorConnection
 
@@ -38,6 +38,15 @@ async def get_verified_token(request: Request) -> VerifiedToken:
     token = _bearer_token(request)
     try:
         return await request.app.state.token_verifier.verify(token)
+    except JwksUnavailable as exc:
+        # Our outage, not their token. A 401 here would tell a caller holding a
+        # perfectly good token that it is bad, and send them to sign in again
+        # against the very service that is down.
+        raise ApiError(
+            503,
+            "Sign-in cannot be checked at the moment. Try again shortly.",
+            code="identity_provider_unavailable",
+        ) from exc
     except InvalidToken as exc:
         # One message for every verification failure; the detail is logged, not
         # returned, so a caller cannot probe which check they tripped.

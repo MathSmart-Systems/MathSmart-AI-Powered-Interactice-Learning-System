@@ -189,16 +189,24 @@ select ok(
   'Row Level Security is still enabled on every table in the app schema'
 );
 
-select ok(
-  (select count(*)
+-- Every one of these tables also carries a restrictive
+-- _requires_an_active_account policy, so a bare policy count reaches seven even
+-- if every ownership rule were dropped. What has to hold is that each of the
+-- seven still has a permissive select policy of its own, so the tables carrying
+-- one are counted and the total is pinned exactly.
+select is(
+  (select count(distinct pg_class.relname)
    from pg_policy
    join pg_class on pg_class.oid = pg_policy.polrelid
    join pg_namespace on pg_namespace.oid = pg_class.relnamespace
    where pg_namespace.nspname = 'app'
      and pg_class.relname in ('assessment_attempts', 'assessment_responses', 'competency_results',
                               'learning_path_items', 'student_module_progress',
-                              'activity_attempts', 'competency_progress')) >= 7,
-  'Every learner-record table carries a policy'
+                              'activity_attempts', 'competency_progress')
+     and pg_policy.polpermissive
+     and pg_policy.polcmd = 'r'),
+  7::bigint,
+  'Every learner-record table carries a permissive select policy'
 );
 
 -- ---------------------------------------------------------------------------

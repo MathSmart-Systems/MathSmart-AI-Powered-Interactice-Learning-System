@@ -219,11 +219,18 @@ select is(
   'No SECURITY DEFINER function in app is executable by anon'
 );
 
-select ok(
-  (select bool_and(pg_proc.proconfig::text like '%search_path%')
+-- Counted rather than aggregated with bool_and: a function with no proconfig
+-- at all yields NULL, which bool_and skips, so a single pinned function would
+-- have carried the whole assertion. Counting the unpinned ones fails the moment
+-- one appears.
+select is(
+  (select count(*)
    from pg_proc
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
-   where pg_namespace.nspname = 'app'),
+   where pg_namespace.nspname = 'app'
+     and (pg_proc.proconfig is null
+          or not (pg_proc.proconfig::text like '%search_path%'))),
+  0::bigint,
   'Every function in the app schema pins its search_path'
 );
 

@@ -197,11 +197,19 @@ select is(
   'One unsuccessful attempt is counted'
 );
 
+-- The intervention policy gives a learner no rows at all, so counting as the
+-- learner would read zero whether or not a case exists. This one reads the
+-- table as the owner, then puts the learner back for what follows.
+reset role;
+
 select is(
   (select count(*) from app.interventions),
   0::bigint,
   'One unsuccessful attempt is below the configured trigger of two'
 );
+
+set local request.jwt.claims = '{"sub":"bb000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
 
 -- ---------------------------------------------------------------------------
 -- The second unsuccessful attempt reaches the trigger

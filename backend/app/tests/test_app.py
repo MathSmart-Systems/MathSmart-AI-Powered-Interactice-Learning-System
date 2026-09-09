@@ -9,7 +9,7 @@ from pydantic import SecretStr
 
 from app.config import Settings
 from app.main import create_app
-from middleware.auth import InvalidToken, MathSmartRole, VerifiedToken
+from middleware.auth import InvalidToken, JwksUnavailable, MathSmartRole, VerifiedToken
 from middleware.request_context import REQUEST_ID_HEADER
 from modules.shared.db import AccountDisabled
 
@@ -60,6 +60,10 @@ class FakeVerifier:
                 role=MathSmartRole.TEACHER_ADMIN,
                 claims={"sub": str(ADVISER), "app_metadata": {"role": "teacher_admin"}},
             )
+        if token == "adviser-token-during-a-jwks-outage":
+            # The signing keys could not be fetched, so nothing was learned
+            # about this token either way.
+            raise JwksUnavailable("The identity provider's keys could not be fetched")
         raise InvalidToken("The access token could not be verified")
 
 
@@ -178,6 +182,17 @@ def test_a_request_with_an_unverifiable_token_is_unauthorized(client):
     response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer nonsense"})
 
     assert response.status_code == 401
+
+
+def test_an_identity_provider_outage_is_not_blamed_on_the_caller(client):
+    """The token may be perfectly good; telling its holder to sign in again helps nobody."""
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": "Bearer adviser-token-during-a-jwks-outage"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "identity_provider_unavailable"
 
 
 def test_an_error_response_carries_the_request_id(client):

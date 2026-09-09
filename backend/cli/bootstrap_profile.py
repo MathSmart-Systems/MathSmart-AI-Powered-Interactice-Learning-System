@@ -145,11 +145,19 @@ def _trusted_role(user: Any) -> str | None:
 
 
 def _disagreement(existing: Any, expected: dict[str, Any]) -> list[str]:
-    """Which stored fields differ from what was asked for."""
+    """Which stored fields differ from what was asked for.
+
+    A stored blank counts as a difference. This command attaches profiles; it
+    never edits one it did not write, so a value supplied against a column that
+    is already null has to refuse rather than be quietly dropped on the floor
+    while the run reports success. The genuine rerun is unaffected: an optional
+    value the request did not supply never reaches `expected` at all, so it has
+    nothing to disagree with.
+    """
     return [
         field
         for field, wanted in expected.items()
-        if existing[field] is not None and str(existing[field]) != str(wanted)
+        if existing[field] is None or str(existing[field]) != str(wanted)
     ]
 
 

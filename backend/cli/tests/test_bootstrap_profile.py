@@ -361,6 +361,68 @@ async def test_a_profile_that_already_holds_another_role_is_refused():
     assert elevated.connection.wrote() == []
 
 
+def existing_student(**overrides):
+    profile = {
+        "user_id": LEARNER_USER,
+        "full_name": "Juan Dela Cruz",
+        "email": LEARNER_EMAIL,
+        "role": "student",
+    }
+    role_row = {
+        "student_id": uuid4(),
+        "user_id": LEARNER_USER,
+        "learner_id": "STU-2026-001",
+        "grade_id": GRADE_SIX,
+        "section_id": None,
+        "school_name": None,
+    }
+    profile.update(overrides.pop("profile", {}))
+    role_row.update(overrides.pop("role_row", {}))
+    return FakeConnection(
+        results={GRADE_QUERY: GRADE_SIX, PROFILE_QUERY: profile, STUDENT_QUERY: role_row}
+    )
+
+
+async def test_a_rerun_that_omits_the_optional_facts_is_still_a_no_op():
+    """Nothing was supplied to disagree with, so the stored blanks stand."""
+    elevated = FakeElevated(existing_student())
+
+    result = await bootstrap(
+        auth_admin=auth_admin_with(LEARNER_AUTH), elevated=elevated, request=student()
+    )
+
+    assert result.created is False
+    assert elevated.connection.wrote() == []
+
+
+async def test_a_section_supplied_against_a_stored_blank_is_refused_without_writing():
+    """The command never fills a blank in a row it did not write; it refuses."""
+    elevated = FakeElevated(existing_student())
+
+    with pytest.raises(BootstrapConflict):
+        await bootstrap(
+            auth_admin=auth_admin_with(LEARNER_AUTH),
+            elevated=elevated,
+            request=student(section_id=SECTION),
+        )
+
+    assert elevated.connection.wrote() == []
+    assert elevated.rolled_back is True
+
+
+async def test_a_school_supplied_against_a_stored_blank_is_refused_without_writing():
+    elevated = FakeElevated(existing_student())
+
+    with pytest.raises(BootstrapConflict):
+        await bootstrap(
+            auth_admin=auth_admin_with(LEARNER_AUTH),
+            elevated=elevated,
+            request=student(school_name="Sample Elementary School"),
+        )
+
+    assert elevated.connection.wrote() == []
+
+
 async def test_a_missing_grade_six_is_refused():
     elevated = FakeElevated(FakeConnection(results={GRADE_QUERY: None}))
 

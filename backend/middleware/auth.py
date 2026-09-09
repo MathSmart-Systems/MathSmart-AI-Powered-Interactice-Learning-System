@@ -27,6 +27,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 import jwt
+from anyio import to_thread
 from jwt import PyJWKClient
 
 from app.config import Settings
@@ -42,9 +43,22 @@ ACCEPTED_ALGORITHMS = ("ES256", "RS256")
 #: the reference implementation.
 LEEWAY_SECONDS = 30
 
+#: A ceiling on the JWKS fetch. Without one the client waits on the socket for
+#: as long as the endpoint cares to hold it, and every request needing a key
+#: waits with it.
+JWKS_TIMEOUT_SECONDS = 5
+
 
 class InvalidToken(Exception):
     """The token is absent, malformed, unverifiable, or grants no MathSmart role."""
+
+
+class JwksUnavailable(Exception):
+    """The signing keys could not be fetched, so the token was never judged.
+
+    Distinct from `InvalidToken` because it says nothing about the token. It is
+    ours to answer for, not the caller's.
+    """
 
 
 class MathSmartRole(StrEnum):
@@ -99,18 +113,32 @@ class RemoteJwks:
     """
 
     def __init__(self, jwks_url: str) -> None:
+        # `cache_keys` is deliberately left off. PyJWT implements it as an
+        # unexpiring lru_cache around the per-kid lookup, which `lifespan` does
+        # not reach — that bounds only the JWKS set beneath it — so a retired
+        # signing key would keep verifying tokens until eviction or a restart.
+        # The price of doing without it is one dictionary lookup per
+        # verification, against a key that can actually be retired.
         self._client = PyJWKClient(
             jwks_url,
-            cache_keys=True,
             lifespan=600,
-            max_cached_keys=8,
+            timeout=JWKS_TIMEOUT_SECONDS,
         )
 
     async def public_key_for(self, kid: str) -> Any:
         try:
-            return self._client.get_signing_key(kid).key
+            # Blocking HTTP whenever the set cache is cold, expired, or the kid
+            # is unknown, so it belongs on a worker thread: on the event loop it
+            # would stall every other request this process is serving.
+            signing_key = await to_thread.run_sync(self._client.get_signing_key, kid)
+        except jwt.PyJWKClientConnectionError as exc:
+            # Before the generic handler: an endpoint we could not reach has
+            # told us nothing about this key id, so it must not be reported as a
+            # key id that does not exist.
+            raise JwksUnavailable("The signing keys could not be fetched") from exc
         except jwt.PyJWKClientError as exc:
             raise KeyError(kid) from exc
+        return signing_key.key
 
 
 class TokenVerifier:
