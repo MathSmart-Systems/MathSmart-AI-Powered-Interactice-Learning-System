@@ -197,6 +197,9 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --   open_intervention,       educator's record about a learner; neither may be
 --   update_intervention,     written by the caller directly
 --   archive_intervention
+--   set_account_status,      role and account_status are not in the column
+--   reset_diagnostic         grant for `authenticated`, and voiding an attempt
+--                            spans three tables that must agree
 --
 -- A new name appearing here is a review item, not a formatting change.
 select is(
@@ -207,10 +210,10 @@ select is(
      and pg_proc.prosecdef),
   'activity_hint,archive_intervention,authorize_reassessment,'
   || 'check_activity_answer,complete_module,is_active_account,module_section_ids,'
-  || 'open_intervention,record_audit_event,save_assessment_answers,'
-  || 'save_module_progress,setting_integer,start_activity_attempt,'
-  || 'start_assessment_attempt,submit_activity_attempt,'
-  || 'submit_assessment_attempt,update_intervention',
+  || 'open_intervention,record_audit_event,reset_diagnostic,'
+  || 'save_assessment_answers,save_module_progress,set_account_status,'
+  || 'setting_integer,start_activity_attempt,start_assessment_attempt,'
+  || 'submit_activity_attempt,submit_assessment_attempt,update_intervention',
   'Only the reviewed functions are SECURITY DEFINER'
 );
 
