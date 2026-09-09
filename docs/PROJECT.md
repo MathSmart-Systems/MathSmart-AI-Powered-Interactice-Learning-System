@@ -1,10 +1,12 @@
 # MathSmart: AI-Powered Interactive Learning System
 ## Project Overview
 
-> **Version:** 1.0  
-> **Last Updated:** September 2026  
+> **Version:** 1.2
+> **Last Updated:** September 8, 2026
 > **Type:** Web-Based Adaptive Learning Platform  
-> **Target Users:** Grade 7 Elementary Learners · Mathematics Teachers · School Admins
+> **Target Users:** Grade 6 Elementary Learners · Teacher/Administrators
+> **AI Provider:** Groq; server-side API credential and model are loaded from `.env`
+> **UI/UX Workflow Baseline:** `../../ui-ux-workflow-reference/`
 
 ---
 
@@ -12,7 +14,8 @@
 
 1. [Project Description](#project-description)
 2. [Core Features](#core-features)
-3. [Technology Stack](#technology-stack)
+3. [Experience and Workflow Baseline](#experience-and-workflow-baseline)
+4. [Technology Stack](#technology-stack)
    - [Confirmed](#confirmed)
    - [Backend API](#backend-api)
    - [Database](#database)
@@ -20,20 +23,21 @@
    - [Python AI / Math Service](#python-ai--math-service)
    - [Deployment](#deployment)
    - [Full Stack at a Glance](#full-stack-at-a-glance)
-4. [User Roles](#user-roles)
-5. [Project Documents](#project-documents)
-6. [Folder Structure (Planned)](#folder-structure-planned)
+5. [User Roles](#user-roles)
+6. [Project Documents](#project-documents)
+7. [Folder Structure](#folder-structure-target)
 
 ---
 
 ## Project Description
 
-**MathSmart** is an AI-powered, web-based interactive learning system built to enhance Mathematics skills among elementary learners. The system follows a **Diagnose → Remediate → Practice → Monitor** cycle, powered by the **ARAL (Assist, Remediate, Accelerate, Learn)** framework fully aligned with DepEd Grade 7 Mathematics competencies.
+**MathSmart** is an AI-powered, web-based interactive learning system built to enhance Mathematics skills among elementary learners. The system follows a **Diagnose → Target → Practice → Monitor → Reassess** cycle, powered by the **ARAL (Assist, Remediate, Accelerate, Learn)** framework and aligned with DepEd Grade 6 Mathematics competencies.
 
-The platform serves three types of users:
+The sibling `ui-ux-workflow-reference/` prototype defines the intended functional journey, screen coverage, interaction concepts, and general visual direction. It is not production code and is not a pixel-perfect limit. The production interface should preserve required workflow outcomes while improving accessibility, responsiveness, clarity, consistency, and usability.
+
+The platform serves exactly two types of users:
 - **Students** — who take assessments, go through personalized learning modules, and track their own progress
-- **Teachers** — who monitor class performance and identify learners needing intervention
-- **Admins** — who manage content, users, and system configuration
+- **Teacher/Administrators** — who monitor learners, manage interventions, administer curriculum/content, maintain classes and accounts, and configure the system
 
 ---
 
@@ -41,12 +45,60 @@ The platform serves three types of users:
 
 | # | Feature | Description |
 |---|---|---|
-| 1 | **Student Profiling** | Records learner information for individualized monitoring |
-| 2 | **Mathematics Diagnostic Assessment** | Identifies current Math skills and learning gaps |
-| 3 | **ARAL-Based Learning Modules** | Targeted modules aligned with identified gaps and Grade 7 competencies |
-| 4 | **Interactive Mathematics Activities** | Practice and application activities to reinforce concepts |
-| 5 | **Progress Monitoring Dashboard** | Tracks learner performance, modules, results, and competency progress |
-| 6 | **Teacher Intervention Dashboard** | Shows class-wide and individual performance for targeted support |
+| 1 | **Student Profiling** | Records learner identity, enrollment, learning status, and preferences for individualized monitoring |
+| 2 | **Mathematics Diagnostic Assessment** | Uses a fixed MVP question set, deterministic scoring, competency breakdowns, and a prioritized learning-gap report |
+| 3 | **ARAL-Based Learning Modules** | Presents targeted objectives, explanations, rules, visuals, worked examples, and a linked practice activity |
+| 4 | **Interactive Mathematics Activities** | Supports guided practice, deterministic answer checking, hints, explanations, retries, and completion feedback |
+| 5 | **Progress Monitoring Dashboard** | Tracks diagnostic baseline, current mastery, growth, module completion, attempts, recent work, and next actions |
+| 6 | **Teacher/Administrator Intervention Dashboard** | Shows class and learner performance, incorrect patterns, intervention priority, status, actions, and notes |
+
+Supporting platform capabilities shown by the reference include student assessment history, student profile and preferences, Teacher/Administrator analytics and CSV reporting, student and class administration, learning-content management, Teacher/Administrator-controlled thresholds, and Groq feature flags. Groq credentials and model selection remain deployment configuration in the working application's `.env`.
+
+---
+
+## Experience and Workflow Baseline
+
+### Reference policy
+
+- Use `../../ui-ux-workflow-reference/src/App.tsx` for the prototype's screen composition.
+- Use `../../ui-ux-workflow-reference/src/context/AppContext.tsx` for intended transitions and state concepts.
+- Use `../../ui-ux-workflow-reference/src/types/mathsmart.ts` for a domain vocabulary cross-check, not as the production schema.
+- Use only the matching feature under `src/modules/student/`, `src/modules/teacher-admin/`, or `src/modules/shared/` when implementing a screen.
+- Do not copy the Vite runtime, client-only global state, mock data, demo role switcher, demo learner picker, simulated latency, or client-side CSV logic as production architecture.
+
+### Student experience map
+
+| Area | Required experience |
+|---|---|
+| **Login and profile** | Authenticate, show learner identity and enrollment context, allow safe preference/profile updates, and protect immutable school-managed fields |
+| **Dashboard** | Show diagnostic status, one clear next action, learning-path snapshot, mastery summary, module completion, and recent activity |
+| **Assessments** | Show available assessments and history; launch the diagnostic; allow question navigation; confirm submission; display competency results and the recommended path |
+| **My Learning** | Show ordered targeted modules with completed, current, available, and locked states |
+| **Module viewer** | Present objectives, concepts, rules/formulas, visual examples, worked examples, takeaways, and the linked activity action |
+| **Activities** | Browse relevant practice, interact with supported question types, receive immediate deterministic feedback, request optional hints, retry, and view a completion summary |
+| **Progress** | Compare diagnostic and current scores, show growth and status by competency, and expose module/activity history and next steps |
+
+### Teacher/Administrator experience map
+
+| Area | Required experience |
+|---|---|
+| **Dashboard** | Show class counts, average mastery, intervention volume, priority learners, competency performance, and recent activity |
+| **Students** | Search and filter the roster, enroll learners when authorized, and open a drill-down with diagnostic, mastery, modules, and interventions |
+| **Interventions** | Filter by severity, status, and competency; review evidence and AI-assisted insight; record a typed action and notes; move cases through Needs Intervention, In Progress, and Resolved |
+| **Assessments and content** | Manage competencies, modules, activities, question bank entries, and assessment definitions with draft/published state |
+| **Grades and sections** | Maintain grade/section records and adviser relationships; the MVP UI is Grade 6-first even if the schema remains extensible |
+| **Reports and analytics** | Filter cohorts, inspect growth and misconception trends, and export a safe CSV summary; PDF reporting remains post-MVP |
+| **Settings** | Teacher/Administrators maintain their profile and notification preferences and control global thresholds, integrations, and Groq feature availability. The Groq API credential and model are server-side `.env` values, not UI-editable settings |
+
+The reference's combined Teacher/Admin workspace matches the production role model. Production has exactly two authorization claims: `student` and `teacher_admin`. Demo role/persona switching remains prototype-only, and all privileges are enforced server-side.
+
+### UI quality requirements
+
+- Use the reference as a starting point, then improve information hierarchy, readable density, responsive behavior, empty/loading/error states, keyboard operation, focus visibility, form labeling, color contrast, and screen-reader meaning.
+- Do not use color alone to communicate mastery, priority, correctness, or status.
+- Keep a single dominant next action on learner screens and preserve progress when navigating away from an assessment or activity.
+- Confirm destructive or irreversible actions and show actionable validation messages.
+- Replace prototype-only technical banners with audience-appropriate status or help content in production.
 
 ---
 
@@ -96,14 +148,13 @@ The platform serves three types of users:
 
 | Option | Verdict | Notes |
 |---|---|---|
-| **Supabase Auth** ⭐ | **Recommended** | Free, handles sessions, supports roles (Student / Teacher / Admin) |
+| **Supabase Auth** ⭐ | **Recommended** | Managed identities and sessions; application metadata and policies enforce `student` and `teacher_admin` roles |
 | NextAuth.js | Alternative | Handles auth at the Next.js layer; good if not using Supabase |
 | JWT (custom via FastAPI) | Fallback | Full control but requires building session management from scratch |
 
 **Role-Based Access:**
 - 🎓 **Student** — Portal, modules, activities, own progress
-- 👩‍🏫 **Teacher** — Class dashboard, individual reports, intervention notes
-- ⚙️ **Admin** — User management, content upload, competency config
+- 👩‍🏫 **Teacher/Administrator** — Dashboards, learner management, interventions, curriculum/content administration, grades/sections, reports, and settings
 
 ---
 
@@ -116,7 +167,9 @@ The platform serves three types of users:
 | **SymPy** | Symbolic math, equation solving and simplification |
 | **scikit-learn** | Scoring models, gap analysis, simple ML classification |
 | **Pandas** | Data processing for assessment results and analytics |
-| **OpenAI API** *(post-MVP)* | Step-by-step hint generation, natural language explanations |
+| **Groq SDK behind a server-side adapter** | Misconception analysis, learner-friendly feedback, and teacher-facing intervention suggestions using the model selected in `.env` |
+
+Correctness, scores, attempt counts, mastery percentages, thresholds, unlock rules, and progress updates must be calculated by deterministic application code. Groq may explain misconceptions, personalize supportive wording, summarize patterns, and suggest interventions, but it must never be the authority for grades or access decisions. All Groq calls run through a protected server-side adapter. The Groq API credential and selected model are loaded from the working application's existing `.env`. The credential must never reach the browser, API responses, logs, or documentation; the model identifier may appear only as read-only sanitized provenance and is never client-editable.
 
 ---
 
@@ -124,10 +177,10 @@ The platform serves three types of users:
 
 | Layer | Platform | Notes |
 |---|---|---|
-| **Next.js Frontend** | Vercel | Free tier, auto CI/CD from GitHub, edge-optimized |
-| **FastAPI Backend** | Railway / Render | Both support Python natively; free tiers available |
-| **Database** | Supabase | Managed PostgreSQL; free tier sufficient for MVP scale |
-| **Media / Module Assets** | Cloudinary | Images and diagrams for modules; generous free tier |
+| **Next.js Frontend** | Vercel | Managed Next.js deployment with Git-based CI/CD; confirm the current plan and limits before launch |
+| **FastAPI Backend** | Railway / Render | Both support Python deployments; final choice depends on operational requirements and current plans |
+| **Database** | Supabase | Managed PostgreSQL, authentication, storage, and policy enforcement; validate current capacity and pricing before launch |
+| **Media / Module Assets** | Supabase Storage and/or Cloudinary | Select according to access control, media delivery, operations, and current pricing |
 
 ---
 
@@ -153,8 +206,13 @@ The platform serves three types of users:
 └──────────────────────────────────────────┘
                   +
 ┌──────────────────────────────────────────┐
-│       Cloudinary  (Media Assets)         │
+│  Supabase Storage / Cloudinary (Media)   │
 │       Module images · Diagrams           │
+└──────────────────────────────────────────┘
+                  + server-side AI
+┌──────────────────────────────────────────┐
+│  Groq AI Adapter · Model from .env       │
+│  Misconception summaries · Suggestions   │
 └──────────────────────────────────────────┘
 ```
 
@@ -164,9 +222,8 @@ The platform serves three types of users:
 
 | Role | Access Level | Key Capabilities |
 |---|---|---|
-| 🎓 **Student** | Portal only | Register, take diagnostic, access modules, do activities, view own progress |
-| 👩‍🏫 **Teacher** | Teacher Dashboard | View class/individual dashboards, set interventions, download reports |
-| ⚙️ **Admin** | Admin Panel | Manage users, upload content, configure competency mappings |
+| 🎓 **Student** | Own learner workspace | Authenticate, manage allowed profile fields, take assessments, follow the learning path, complete activities, and view own progress |
+| 👩‍🏫 **Teacher/Administrator** (`teacher_admin`) | School-wide teaching and administration workspace | View dashboards and analytics, manage learners and interventions, administer assessments and curriculum content, maintain grades/sections and accounts, export reports, and configure permitted global settings |
 
 ---
 
@@ -179,18 +236,21 @@ The platform serves three types of users:
 | **Implementation Plan** | `IMPLEMENTATION_PLAN.md` | Architecture, MVP scope, timeline, roadmap |
 | **API Routes** | `API_ROUTES.md` | Full REST API documentation |
 | **Diagrams** | `DIAGRAMS.md` | Flowcharts, sequence diagrams, ERD |
+| **UI/UX Workflow Guide** | `../../ui-ux-workflow-reference/guide.md` | How to use the improvable reference prototype without treating it as production code |
 
 ---
 
-## Folder Structure
+## Folder Structure (Target)
 
 > **Based on:** [nghiemledo/nextjs-project-structure](https://github.com/nghiemledo/nextjs-project-structure)
 
+This is the approved module-first architecture. Its route, frontend-module, backend-module, and test boundaries were scaffolded on September 8, 2026. Next.js route files stay thin; feature UI, state, services, schemas, and unit tests live in independently owned modules. The landing page, root layout/styles, and a small set of UI primitives are implemented; feature directories that do not yet contain implementation remain tracked with `.gitkeep` placeholders.
+
 ```
 MathSmart/
-├── .env.local                    # Environment variables (local dev)
-├── .env.production               # Environment variables (production)
-├── .eslintrc.json                # ESLint configuration
+├── .env.example                  # Environment variable names only; no secrets
+├── .env                          # Server-only secrets + Groq model; never print or commit
+├── eslint.config.mjs             # ESLint configuration
 ├── next.config.mjs               # Next.js configuration
 ├── package.json                  # Dependencies & scripts
 ├── README.md                     # Project documentation
@@ -198,7 +258,6 @@ MathSmart/
 ├── docs/                         # Project documentation files
 │   ├── PROJECT.md                # Project overview & tech stack
 │   ├── IMPLEMENTATION_PLAN.md    # Architecture & MVP definition
-│   ├── SYSTEM_WORKFLOW.md        # Feature workflows
 │   ├── DIAGRAMS.md               # Flowcharts, sequence diagram & ERD
 │   ├── API_ROUTES.md             # Full REST API reference
 │   └── SOURCE_OF_TRUTH.md        # Single authoritative reference
@@ -207,67 +266,103 @@ MathSmart/
 │   ├── images/
 │   └── fonts/
 │
-├── src/                          # Frontend source code (Next.js)
-│   ├── app/                      # App Router — page routing
-│   │   ├── (auth)/               # Auth routes (login, register)
-│   │   ├── (student)/            # Student portal routes
-│   │   │   ├── dashboard/
-│   │   │   ├── diagnostic/
-│   │   │   ├── modules/[moduleId]/
-│   │   │   ├── activities/[activityId]/
-│   │   │   └── progress/
-│   │   ├── (teacher)/            # Teacher dashboard routes
-│   │   │   ├── class/
-│   │   │   ├── heatmap/
-│   │   │   ├── students/[studentId]/
-│   │   │   └── interventions/
-│   │   ├── (admin)/              # Admin panel routes
-│   │   │   ├── users/
-│   │   │   ├── content/
-│   │   │   └── competencies/
+├── src/                          # Next.js frontend
+│   ├── app/                      # Thin route composition only
+│   │   ├── (auth)/
+│   │   │   ├── login/page.jsx
+│   │   │   └── register/page.jsx
+│   │   ├── (student)/student/
+│   │   │   ├── layout.jsx
+│   │   │   ├── dashboard/page.jsx
+│   │   │   ├── my-learning/page.jsx
+│   │   │   ├── my-learning/[moduleId]/page.jsx
+│   │   │   ├── activities/page.jsx
+│   │   │   ├── activities/[activityId]/page.jsx
+│   │   │   ├── assessments/page.jsx
+│   │   │   ├── assessments/[assessmentId]/page.jsx
+│   │   │   ├── progress/page.jsx
+│   │   │   └── profile/page.jsx
+│   │   ├── (teacher-admin)/teacher/
+│   │   │   ├── layout.jsx
+│   │   │   ├── dashboard/page.jsx
+│   │   │   ├── students/page.jsx
+│   │   │   ├── students/[studentId]/page.jsx
+│   │   │   ├── interventions/page.jsx
+│   │   │   ├── assessments/page.jsx
+│   │   │   ├── competencies/page.jsx
+│   │   │   ├── learning-modules/page.jsx
+│   │   │   ├── activities/page.jsx
+│   │   │   ├── question-bank/page.jsx
+│   │   │   ├── grades-sections/page.jsx
+│   │   │   ├── reports-analytics/page.jsx
+│   │   │   └── settings/page.jsx
 │   │   ├── layout.jsx
 │   │   ├── page.jsx
 │   │   └── globals.css
-│   ├── components/               # Reusable UI components
-│   │   ├── common/               # Button, Modal, Card
-│   │   ├── forms/                # Input, Select, FormField
-│   │   ├── charts/               # ProgressRing, Heatmap
-│   │   ├── layout/               # Navbar, Sidebar, Footer
-│   │   └── modules/              # ModuleCard, ActivityQuestion
-│   ├── config/                   # API url, Supabase client, site metadata
-│   ├── constants/                # Roles, mastery thresholds, domains
-│   ├── enums/                    # MasteryLevel, StudentStatus, ARALLevel
-│   ├── hooks/                    # useAuth, useStudent, useModules, useProgress
-│   ├── models/                   # Entity models (Student, Teacher, Module, etc.)
-│   ├── services/                 # API service layer (one per API domain)
-│   ├── styles/                   # CSS variables, component styles
-│   ├── resources/                # Static content, illustrations
-│   └── utils/                    # Formatters, validators, calculations
+│   ├── modules/                  # Independently owned vertical feature modules
+│   │   ├── auth/
+│   │   ├── student/
+│   │   │   ├── dashboard/
+│   │   │   ├── my-learning/
+│   │   │   ├── activities/
+│   │   │   ├── assessments/
+│   │   │   ├── progress/
+│   │   │   └── profile/
+│   │   ├── teacher-admin/
+│   │   │   ├── dashboard/
+│   │   │   ├── students/
+│   │   │   ├── interventions/
+│   │   │   ├── assessments/
+│   │   │   ├── competencies/
+│   │   │   ├── learning-modules/
+│   │   │   ├── activities/
+│   │   │   ├── question-bank/
+│   │   │   ├── grades-sections/
+│   │   │   ├── reports-analytics/
+│   │   │   └── settings/
+│   │   └── shared/               # Reuse by two or more feature modules only
+│   │       ├── components/
+│   │       ├── hooks/
+│   │       ├── services/
+│   │       ├── schemas/
+│   │       ├── constants/
+│   │       └── utils/
+│   ├── components/ui/            # shadcn/Radix primitives; no feature logic
+│   ├── lib/                      # Infrastructure clients and framework helpers
+│   ├── styles/                   # Additional global design tokens/styles
+│   └── resources/                # Shared static content and illustrations
 │
-├── backend/                      # FastAPI Python backend
-│   ├── main.py                   # FastAPI entry point
+├── backend/                      # FastAPI backend, split by business module
+│   ├── app/
+│   │   ├── main.py               # FastAPI entry point
+│   │   ├── config.py             # Validated server environment settings
+│   │   └── dependencies.py       # Shared request dependencies
 │   ├── requirements.txt          # Python dependencies
-│   ├── routers/                  # Route handlers per feature
-│   │   ├── auth.py
-│   │   ├── students.py
-│   │   ├── assessment.py
-│   │   ├── modules.py
-│   │   ├── activities.py
-│   │   ├── progress.py
-│   │   ├── teacher.py
-│   │   └── admin.py
-│   ├── services/                 # Business logic
-│   │   ├── gap_analysis.py       # AI gap analysis engine
-│   │   ├── scoring.py            # Diagnostic scoring
-│   │   └── mastery.py            # Mastery threshold evaluation
-│   ├── models/                   # Pydantic schemas
-│   ├── db/                       # Supabase client + SQL queries
-│   └── middleware/               # JWT auth middleware
+│   ├── modules/
+│   │   ├── auth/
+│   │   ├── students/
+│   │   ├── assessments/
+│   │   ├── competencies/
+│   │   ├── learning_modules/
+│   │   ├── activities/
+│   │   ├── progress/
+│   │   ├── interventions/
+│   │   ├── teacher_admin/
+│   │   ├── reports/
+│   │   ├── settings/
+│   │   └── shared/               # Database/Groq helpers without domain policy
+│   └── middleware/               # JWT, request ID, and error middleware
 │
-└── tests/                        # Test files
-    ├── frontend/
-    └── backend/
+└── tests/                        # Cross-module integration and end-to-end tests
+    ├── integration/
+    └── e2e/
+        ├── student/
+        └── teacher-admin/
 ```
+
+Each frontend feature directory owns `components/`, `hooks/`, `services/`, `schemas/`, `utils/`, `__tests__/`, and `index.js` when those concerns are needed. Each backend business directory owns `router.py`, `schemas.py`, `service.py`, `repository.py`, and `tests/`. Empty folders are not created speculatively. A module exposes its supported surface through its `index.js` or router/service contract; other modules must not deep-import its private files.
+
+The sibling `../../ui-ux-workflow-reference/` directory (relative to this document) is intentionally outside this repository. It is a read-only design and workflow input unless the user explicitly requests changes to it.
 
 ---
 
@@ -276,3 +371,4 @@ MathSmart/
 ---
 > 📌 **Document Owner:** MathSmart Development Team  
 > 🔄 **Review Cycle:** Per sprint / major feature release
+> 📁 **Related Docs:** `SOURCE_OF_TRUTH.md` · `IMPLEMENTATION_PLAN.md` · `API_ROUTES.md` · `DIAGRAMS.md` · `../../ui-ux-workflow-reference/guide.md`

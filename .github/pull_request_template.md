@@ -1,66 +1,39 @@
-## 📌 Description
+## Task and scope
 
-<!-- Provide a brief explanation of what this PR introduces, fixes, or refactors. Include context or background if applicable. -->
+<!-- State the assigned task and the module(s) this pull request owns. -->
 
-Fixes / Closes / Relates to Issue: #<!-- issue number here -->
+Issue: <!-- Closes #123, or N/A -->
 
----
+Owned paths:
 
-## 🎯 System Feature Alignment
+- `src/modules/...`
 
-Which MathSmart core feature does this change relate to?
+Out-of-module changes and coordination:
 
-- [ ] **F1: Student Profiling** (Learner background, grade level, baseline records)
-- [ ] **F2: Mathematics Diagnostic Assessment** (AI-driven tests, gap analysis)
-- [ ] **F3: ARAL-Based Learning Modules** (Remediation content, lesson delivery)
-- [ ] **F4: Interactive Mathematics Activities** (Practice questions, interactive solvers)
-- [ ] **F5: Progress Monitoring Dashboard** (Student progress, badges, streak tracking)
-- [ ] **F6: Teacher Intervention Dashboard** (Class heatmaps, learner alerts, analytics)
-- [ ] **Architecture / Infra / Docs** (CI/CD, setup, configurations, documentation)
+- None
 
----
+## What changed
 
-## 🏷️ Type of Change
+<!-- Summarize only the changes required for this task. -->
 
-- [ ] 🚀 **New feature** (non-breaking change adding functionality)
-- [ ] 🐛 **Bug fix** (non-breaking change fixing an issue)
-- [ ] 🎨 **UI / Styling** (shadcn/ui updates, Tailwind CSS changes)
-- [ ] ♻️ **Refactor** (code restructuring with no behavior change)
-- [ ] 📝 **Documentation** (updates to docs/ or README)
-- [ ] ⚠️ **Breaking change** (fix or feature that causes existing code not to work as expected)
-- [ ] ⚙️ **Chore / Dependency** (package updates, config changes)
+## Evidence
 
----
+<!-- Add screenshots for UI work and concise test output or reproduction steps. -->
 
-## 📸 Screenshots / Proof of Functionality
+## Verification
 
-<!-- Add screenshots, screen recordings, or terminal output demonstrating your changes. -->
+- [ ] Relevant module tests pass.
+- [ ] `npm run lint` passes.
+- [ ] `npm run build` passes.
+- [ ] Loading, empty, error, keyboard, and responsive states were checked when relevant.
 
-| Before | After |
-| :---: | :---: |
-| *(Image / N/A)* | *(Image / N/A)* |
+## Agent workflow gate
 
----
-
-## 🧪 Testing & Verification
-
-Describe how you tested these changes:
-
-- [ ] Ran `npm run build` locally and compiled with 0 errors.
-- [ ] Ran `npm run lint` locally and passed with 0 warnings/errors.
-- [ ] Manually tested page routes and components in the browser.
-- [ ] Verified responsive layout across mobile, tablet, and desktop views.
-
----
-
-## ✅ Pull Request Checklist
-
-Before submitting this PR, please ensure the following:
-
-- [ ] My branch is up to date with `develop` / `main`.
-- [ ] My branch name follows the team convention (e.g. `feature/name`, `fix/issue`).
-- [ ] My commit messages follow Conventional Commits (e.g. `feat: ...`, `fix: ...`).
-- [ ] I have performed a self-review of my own code.
-- [ ] I have not committed any sensitive keys, tokens, or `.env.local` files.
-- [ ] I have added appropriate comments to complex logic.
-- [ ] Relevant documentation has been updated (e.g., in `/docs` or `README.md`) if applicable.
+- [ ] This pull request targets `main` from `agent/<task-id>-<module>-<description>` or `agent/<module>-<description>`.
+- [ ] The branch is dedicated to this task and has only one active agent.
+- [ ] No unrelated files, generated artifacts, secrets, or `.env` values are included.
+- [ ] Commits follow Conventional Commits.
+- [ ] Required CI checks pass.
+- [ ] CodeRabbit reviewed the latest commit and all actionable conversations are resolved.
+- [ ] CodeRabbit review/fix rounds used: `0 / 3`.
+- [ ] Squash auto-merge is enabled; the branch will be deleted after merge.

@@ -46,3 +46,9 @@ __pycache__/
 venv/
 .venv/
 env/
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
