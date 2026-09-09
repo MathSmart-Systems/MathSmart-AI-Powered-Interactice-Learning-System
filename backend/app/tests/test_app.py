@@ -15,6 +15,8 @@ from modules.shared.db import AccountDisabled
 
 STUDENT = UUID("b0000000-0000-4000-8000-000000000001")
 ADVISER = UUID("a0000000-0000-4000-8000-0000000000a1")
+LIVE_SESSION = "3f6a1f8e-0000-4000-8000-000000000001"
+REVOKED_SESSION = "3f6a1f8e-0000-4000-8000-0000000000ff"
 
 
 def settings() -> Settings:
@@ -36,8 +38,23 @@ class FakeVerifier:
                 user_id=STUDENT,
                 role=MathSmartRole.STUDENT,
                 claims={"sub": str(STUDENT), "app_metadata": {"role": "student"}},
+                session_id=LIVE_SESSION,
             )
         if token == "adviser-token":
+            return VerifiedToken(
+                user_id=ADVISER,
+                role=MathSmartRole.TEACHER_ADMIN,
+                claims={"sub": str(ADVISER), "app_metadata": {"role": "teacher_admin"}},
+                session_id=LIVE_SESSION,
+            )
+        if token == "adviser-token-signed-out":
+            return VerifiedToken(
+                user_id=ADVISER,
+                role=MathSmartRole.TEACHER_ADMIN,
+                claims={"sub": str(ADVISER), "app_metadata": {"role": "teacher_admin"}},
+                session_id=REVOKED_SESSION,
+            )
+        if token == "adviser-token-no-session":
             return VerifiedToken(
                 user_id=ADVISER,
                 role=MathSmartRole.TEACHER_ADMIN,
@@ -77,12 +94,64 @@ class FakeDatabase:
         yield FakeConnection()
 
 
-def client_for(database: FakeDatabase | None = None) -> TestClient:
+class FakeSessionGateway:
+    """Only the live session identifier is recognised."""
+
+    def __init__(self):
+        self.asked = []
+
+    async def connect(self, **_):
+        return None
+
+    async def disconnect(self):
+        return None
+
+    async def is_active(self, *, user_id, session_id):
+        self.asked.append((user_id, session_id))
+        return session_id == LIVE_SESSION
+
+
+class FakeProvisioning:
+    def __init__(self):
+        self.calls = []
+
+    async def enrol(self, *, actor, payload, idempotency_key, request_id=None):
+        from modules.students.provisioning import ProvisionedLearner
+
+        self.calls.append(payload)
+        return (
+            ProvisionedLearner(
+                user_id=UUID("b0000000-0000-4000-8000-00000000000e"),
+                student_id=UUID("58000000-0000-4000-8000-00000000000e"),
+                learner_id=str(payload["learner_id"]).upper(),
+            ),
+            True,
+        )
+
+
+ENROLMENT = {
+    "email": "new.learner@mathsmart.dev",
+    "full_name": "New Learner",
+    "learner_id": "LRN-900123",
+    "grade_id": "3f0f0000-0000-4000-8000-000000000006",
+}
+
+
+def client_for(
+    database: FakeDatabase | None = None,
+    session_gateway: FakeSessionGateway | None = None,
+    provisioning: FakeProvisioning | None = None,
+) -> TestClient:
     app = create_app(
         settings=settings(),
         token_verifier=FakeVerifier(),
         database=database or FakeDatabase(),
+        session_gateway=session_gateway or FakeSessionGateway(),
     )
+    if provisioning is not None:
+        from modules.students.router import get_provisioning
+
+        app.dependency_overrides[get_provisioning] = lambda: provisioning
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -155,3 +224,102 @@ def test_the_openapi_document_is_served(client):
 
     assert response.status_code == 200
     assert "/api/v1/auth/me" in response.json()["paths"]
+
+
+# ---------------------------------------------------------------------------
+# Sensitive operations also require a live session
+# ---------------------------------------------------------------------------
+
+SENSITIVE_HEADERS = {
+    "Authorization": "Bearer adviser-token",
+    "Idempotency-Key": "idem-00000001",
+}
+
+
+def test_a_sensitive_operation_succeeds_with_a_live_session():
+    provisioning = FakeProvisioning()
+    client = client_for(provisioning=provisioning)
+
+    response = client.post("/api/v1/students", json=ENROLMENT, headers=SENSITIVE_HEADERS)
+
+    assert response.status_code == 201
+    assert provisioning.calls
+
+
+def test_a_signed_out_session_cannot_perform_a_sensitive_operation():
+    """The token has not expired. The session behind it is gone."""
+    provisioning = FakeProvisioning()
+    client = client_for(provisioning=provisioning)
+
+    response = client.post(
+        "/api/v1/students",
+        json=ENROLMENT,
+        headers={**SENSITIVE_HEADERS, "Authorization": "Bearer adviser-token-signed-out"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "session_revoked"
+    assert provisioning.calls == []
+
+
+def test_a_token_without_a_session_claim_cannot_perform_a_sensitive_operation():
+    provisioning = FakeProvisioning()
+    client = client_for(provisioning=provisioning)
+
+    response = client.post(
+        "/api/v1/students",
+        json=ENROLMENT,
+        headers={**SENSITIVE_HEADERS, "Authorization": "Bearer adviser-token-no-session"},
+    )
+
+    assert response.status_code == 401
+    assert provisioning.calls == []
+
+
+def test_a_sensitive_operation_still_enforces_account_status():
+    provisioning = FakeProvisioning()
+    client = client_for(FakeDatabase(account_active=False), provisioning=provisioning)
+
+    response = client.post("/api/v1/students", json=ENROLMENT, headers=SENSITIVE_HEADERS)
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "account_disabled"
+    assert provisioning.calls == []
+
+
+def test_a_learner_cannot_enrol_anybody():
+    provisioning = FakeProvisioning()
+    client = client_for(provisioning=provisioning)
+
+    response = client.post(
+        "/api/v1/students",
+        json=ENROLMENT,
+        headers={**SENSITIVE_HEADERS, "Authorization": "Bearer student-token"},
+    )
+
+    assert response.status_code == 403
+    assert provisioning.calls == []
+
+
+def test_enrolment_requires_an_idempotency_key():
+    client = client_for(provisioning=FakeProvisioning())
+
+    response = client.post(
+        "/api/v1/students", json=ENROLMENT, headers={"Authorization": "Bearer adviser-token"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "idempotency_key_required"
+
+
+def test_an_enrolment_request_cannot_choose_a_role():
+    client = client_for(provisioning=FakeProvisioning())
+
+    response = client.post(
+        "/api/v1/students",
+        json={**ENROLMENT, "role": "teacher_admin"},
+        headers=SENSITIVE_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert "role" in response.json()["error"]["fields"]

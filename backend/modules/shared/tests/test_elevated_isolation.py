@@ -12,6 +12,19 @@ BACKEND = Path(__file__).resolve().parents[3]
 
 ELEVATED_MODULES = ("modules.shared.elevated_db", "modules.shared.auth_admin")
 
+SESSION_GATEWAY = "modules.shared.session_gateway"
+
+#: The gateway reads auth.sessions outside Row Level Security. It answers one
+#: boolean and nothing else, and only these files may reach it.
+SESSION_GATEWAY_ALLOWED = {
+    # Owns it, and hands it to nobody.
+    "app/main.py",
+    # The one dependency that asks the question.
+    "app/dependencies.py",
+    # The module itself.
+    "modules/shared/session_gateway.py",
+}
+
 #: Where elevated access is sanctioned, and why.
 ALLOWED = {
     # Owns the objects, because something must, and hands them to nobody.
@@ -81,3 +94,19 @@ def test_the_shared_dependencies_offer_no_elevated_accessor():
 
 def test_the_allowlist_is_short_on_purpose():
     assert len(ALLOWED) == 4
+
+
+def test_only_the_sensitive_dependency_reaches_the_session_gateway():
+    """`auth.sessions` is not a table feature code gets to read."""
+    offenders = []
+    for path in source_files():
+        relative = path.relative_to(BACKEND).as_posix()
+        if relative in SESSION_GATEWAY_ALLOWED:
+            continue
+        if SESSION_GATEWAY in imported_modules(path):
+            offenders.append(relative)
+
+    assert offenders == [], (
+        "These modules reach the session gateway without being on the allowlist: "
+        f"{offenders}. Session validation belongs behind the sensitive dependency."
+    )

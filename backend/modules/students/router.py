@@ -11,9 +11,9 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
-from app.dependencies import ActorDb, CurrentActor, TeacherAdmin
+from app.dependencies import ActorDb, CurrentActor, SensitiveActor, TeacherAdmin
 from middleware.errors import ApiError
 from middleware.request_context import current_request_id
 from modules.students import repository
@@ -95,19 +95,24 @@ def get_provisioning(request: Request) -> StudentProvisioning:
     return StudentProvisioning(elevated, auth_admin)
 
 
+Provisioning = Annotated[StudentProvisioning, Depends(get_provisioning)]
+
+
 @router.post("/students", status_code=201)
 async def enrol_learner(
     actor: TeacherAdmin,
-    request: Request,
+    _session: SensitiveActor,
+    provisioning: Provisioning,
     body: EnrolLearnerRequest,
     response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> dict[str, Any]:
     """Provision and enrol a learner.
 
-    Requires a Teacher/Administrator and an `Idempotency-Key`, so a retried
-    request returns the original result instead of creating a second account.
-    The learner's role is set by the server and cannot be chosen by the request.
+    Requires a Teacher/Administrator, a live session, and an `Idempotency-Key`,
+    so a retried request returns the original result instead of creating a
+    second account. The learner's role is set by the server and cannot be
+    chosen by the request.
     """
     if not idempotency_key or len(idempotency_key) < MIN_IDEMPOTENCY_KEY_LENGTH:
         raise ApiError(
@@ -115,8 +120,6 @@ async def enrol_learner(
             "An Idempotency-Key header of at least 8 characters is required",
             code="idempotency_key_required",
         )
-
-    provisioning = get_provisioning(request)
 
     try:
         learner, created = await provisioning.enrol(

@@ -36,6 +36,7 @@ def create_app(
     settings: Settings | None = None,
     token_verifier: Any | None = None,
     database: Any | None = None,
+    session_gateway: Any | None = None,
     elevated_database: Any | None = None,
     auth_admin: Any | None = None,
     groq: Any | None = None,
@@ -51,12 +52,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         await application.state.database.connect()
+        if application.state.session_gateway is not None:
+            await application.state.session_gateway.connect()
         if application.state.elevated_database is not None:
             await application.state.elevated_database.connect()
         try:
             yield
         finally:
             await application.state.database.disconnect()
+            if application.state.session_gateway is not None:
+                await application.state.session_gateway.disconnect()
             if application.state.elevated_database is not None:
                 await application.state.elevated_database.disconnect()
 
@@ -71,6 +76,11 @@ def create_app(
     application.state.settings = resolved
     application.state.token_verifier = token_verifier or _default_verifier(resolved)
     application.state.database = database or Database(resolved.supabase_db_url)
+    # Answers one question — is this token's session still there — and hands out
+    # nothing else. Sensitive routes reach it through require_active_session.
+    application.state.session_gateway = (
+        session_gateway if session_gateway is not None else _default_session_gateway(resolved)
+    )
     # Built here because something has to own them, and nowhere else: no shared
     # dependency hands either out. Only modules/students/provisioning.py imports
     # them, and an architecture test keeps it that way.
@@ -102,6 +112,12 @@ def _default_verifier(settings: Settings) -> Any:
     from middleware.auth import TokenVerifier
 
     return TokenVerifier(settings)
+
+
+def _default_session_gateway(settings: Settings) -> Any:
+    from modules.shared.session_gateway import SessionGateway
+
+    return SessionGateway(settings.supabase_db_url)
 
 
 def _default_elevated_database(settings: Settings) -> Any:

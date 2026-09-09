@@ -70,6 +70,39 @@ async def get_actor_connection(
 ActorDb = Annotated[ActorConnection, Depends(get_actor_connection)]
 
 
+async def require_active_session(
+    request: Request, actor: CurrentActor, _account: ActorDb
+) -> VerifiedToken:
+    """A live session, for security-critical operations.
+
+    Every request already proves the account is active, which is what makes a
+    suspension take effect immediately. This adds the stronger question for
+    operations where a stolen or stale token would do real damage: is the
+    session named by the token still there? Signing out removes the session but
+    cannot retract the access token, so only this check notices.
+
+    `_account` is the ordinary actor transaction. Depending on it keeps the
+    authoritative account-status check in front of these routes too, including
+    the ones that do their work elsewhere.
+    """
+    gateway = request.app.state.session_gateway
+    if gateway is None:
+        raise ApiError(503, "This operation is not available on this service")
+
+    if not await gateway.is_active(user_id=actor.user_id, session_id=actor.session_id):
+        # Deliberately says nothing about which part failed, and logs no
+        # identifier: a session id is close enough to a credential.
+        raise ApiError(
+            401,
+            "Sign in again to perform this action.",
+            code="session_revoked",
+        )
+    return actor
+
+
+SensitiveActor = Annotated[VerifiedToken, Depends(require_active_session)]
+
+
 async def require_teacher_admin(actor: CurrentActor) -> VerifiedToken:
     """Refuse anyone who is not a Teacher/Administrator."""
     if actor.role is not MathSmartRole.TEACHER_ADMIN:
