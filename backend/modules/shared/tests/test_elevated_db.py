@@ -19,6 +19,7 @@ from modules.shared.elevated_db import (
     ElevatedConnection,
     ElevatedDatabase,
     ElevatedOperationRefused,
+    redact_details,
 )
 
 ADVISER = "a9000000-0000-4000-8000-0000000000a1"
@@ -245,3 +246,27 @@ async def test_the_elevated_gateway_exposes_no_pool():
 
     assert not hasattr(database, "pool")
     assert not hasattr(database, "acquire")
+
+
+def test_redaction_reaches_into_lists_of_details():
+    """A forbidden key hidden one list deep is still a forbidden key."""
+    redacted = redact_details(
+        {
+            "items": [{"password": "hunter2", "learner_id": "LRN-1"}],
+            "learner_id": "LRN-1",
+        }
+    )
+
+    assert redacted == {"items": [{"learner_id": "LRN-1"}], "learner_id": "LRN-1"}
+
+
+def test_redaction_reaches_through_tuples_and_nesting():
+    redacted = redact_details({"batches": ({"rows": [{"email": "a@b.test", "count": 2}]},)})
+
+    assert redacted == {"batches": [{"rows": [{"count": 2}]}]}
+
+
+def test_redaction_leaves_a_list_of_scalars_alone():
+    redacted = redact_details({"scores": [1, 2, 3], "codes": ["M6NS-IA-1", None]})
+
+    assert redacted == {"scores": [1, 2, 3], "codes": ["M6NS-IA-1", None]}

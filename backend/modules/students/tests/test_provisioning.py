@@ -9,6 +9,7 @@ import json
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
+import asyncpg
 import pytest
 
 from middleware.auth import MathSmartRole, VerifiedToken
@@ -56,6 +57,8 @@ class FakeElevatedConnection:
     async def fetchval(self, query, *args):
         self._owner.statements.append(query)
         if "student_profiles" in query:
+            if self._owner.learner_id_taken:
+                raise duplicate_learner_id()
             if self._owner.fail_profile_write:
                 raise RuntimeError("insert into app.student_profiles blew up")
             return NEW_STUDENT_ID
@@ -81,10 +84,14 @@ class FakeElevated:
         self.stored_key = None
         self.recorded_key = None
         self.fail_profile_write = False
+        self.learner_id_taken = False
+        self.fail_compensation_audit = False
 
     @asynccontextmanager
     async def operation(self, *, actor, action, target_type, target_id=None,
                         request_id=None, details=None):
+        if action == "student.enrolment_compensated" and self.fail_compensation_audit:
+            raise RuntimeError("the audit write blew up")
         self.operations.append(
             {"action": action, "target_type": target_type, "target_id": target_id,
              "request_id": request_id, "details": details or {}}
@@ -109,6 +116,16 @@ class FakeAuthAdmin:
 
     async def delete_user(self, user_id):
         self.deleted.append(str(user_id))
+
+
+def duplicate_learner_id() -> asyncpg.UniqueViolationError:
+    """What Postgres raises when student_profiles_learner_id_key is violated."""
+    error = asyncpg.UniqueViolationError(
+        "duplicate key value violates unique constraint"
+        ' "student_profiles_learner_id_key"'
+    )
+    error.constraint_name = "student_profiles_learner_id_key"
+    return error
 
 
 def a_service(elevated=None, auth_admin=None):
@@ -261,6 +278,45 @@ async def test_the_compensation_is_audited():
         )
 
     assert "student.enrolment_compensated" in elevated.actions()
+
+
+async def test_a_taken_learner_id_is_a_conflict_and_not_a_fault_of_ours():
+    """The caller chose the learner id, so the answer is 409, never 502."""
+    elevated = FakeElevated()
+    elevated.learner_id_taken = True
+
+    with pytest.raises(ProvisioningConflict):
+        await StudentProvisioning(elevated, FakeAuthAdmin()).enrol(
+            actor=adviser(), payload=PAYLOAD, idempotency_key="idem-00000001"
+        )
+
+
+async def test_a_taken_learner_id_still_removes_the_account_it_just_created():
+    elevated = FakeElevated()
+    elevated.learner_id_taken = True
+    admin = FakeAuthAdmin()
+
+    with pytest.raises(ProvisioningConflict):
+        await StudentProvisioning(elevated, admin).enrol(
+            actor=adviser(), payload=PAYLOAD, idempotency_key="idem-00000001"
+        )
+
+    assert admin.deleted == [str(NEW_USER_ID)]
+
+
+async def test_an_unauditable_compensation_does_not_replace_the_original_failure():
+    """Losing the cause would be worse than losing the audit line."""
+    elevated = FakeElevated()
+    elevated.fail_profile_write = True
+    elevated.fail_compensation_audit = True
+    admin = FakeAuthAdmin()
+
+    with pytest.raises(ProvisioningFailed):
+        await StudentProvisioning(elevated, admin).enrol(
+            actor=adviser(), payload=PAYLOAD, idempotency_key="idem-00000001"
+        )
+
+    assert admin.deleted == [str(NEW_USER_ID)]
 
 
 async def test_a_failed_enrolment_records_no_idempotency_key():

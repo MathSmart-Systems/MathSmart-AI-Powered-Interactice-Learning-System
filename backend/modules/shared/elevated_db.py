@@ -64,15 +64,35 @@ class ElevatedOperationRefused(ValueError):
     """An elevated operation was attempted without saying what it was."""
 
 
+def _is_forbidden(key: str) -> bool:
+    lowered = key.lower()
+    return any(fragment in lowered for fragment in _FORBIDDEN_DETAIL_FRAGMENTS)
+
+
+def _redact_value(value: Any) -> Any:
+    """Redact whatever a detail value turns out to be, at any depth.
+
+    Sequences are walked as well as mappings: a forbidden key one list deep is
+    still written verbatim into a row people read, which is the whole point of
+    the deny list. A list of scalars comes back unchanged. Strings and bytes are
+    sequences too and are deliberately left alone.
+    """
+    if isinstance(value, dict):
+        return redact_details(value)
+    if isinstance(value, list | tuple):
+        return [_redact_value(item) for item in value]
+    return value
+
+
 def redact_details(details: dict[str, Any] | None) -> dict[str, Any]:
     """Drop credential-shaped and identifying keys, at any depth."""
     if not details:
         return {}
     redacted: dict[str, Any] = {}
     for key, value in details.items():
-        if any(fragment in key.lower() for fragment in _FORBIDDEN_DETAIL_FRAGMENTS):
+        if _is_forbidden(key):
             continue
-        redacted[key] = redact_details(value) if isinstance(value, dict) else value
+        redacted[key] = _redact_value(value)
     return redacted
 
 

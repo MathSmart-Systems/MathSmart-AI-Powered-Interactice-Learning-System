@@ -10,6 +10,7 @@ against PostgreSQL in
 `supabase/tests/540_activity_attempt_functions_test.sql`.
 """
 
+import re
 from uuid import UUID
 
 import pytest
@@ -410,3 +411,51 @@ def test_activity_reads_need_a_token(path):
     client = build_client(FakeConnection())
 
     assert client.get(path).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Bind parameters
+# ---------------------------------------------------------------------------
+# PostgreSQL infers a statement's parameter count from the highest-numbered
+# `$n` it references, and every lower number must be referenced too or the bind
+# is untyped and the statement is rejected (42P08). The fake connection never
+# binds, so nothing else here would notice.
+
+
+def _placeholders(statement: str) -> set[int]:
+    return {int(number) for number in re.findall(r"\$(\d+)", statement)}
+
+
+def _assert_binds_are_contiguous(connection) -> None:
+    assert connection.calls
+    for statement, args in connection.calls:
+        numbers = _placeholders(statement)
+        highest = max(numbers, default=0)
+        assert numbers == set(range(1, highest + 1)), statement
+        assert len(args) == highest, statement
+
+
+def test_the_activity_count_binds_exactly_what_it_references():
+    connection = FakeConnection(results={TOTAL: 1, ACTIVITY_LIST: [ACTIVITY_ROW]})
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/activities",
+        params={"module_id": str(MODULE), "search": "sign"},
+        headers=LEARNER_HEADERS,
+    )
+
+    _assert_binds_are_contiguous(connection)
+
+
+def test_the_attempt_history_count_binds_exactly_what_it_references():
+    connection = FakeConnection(results={TOTAL: 1, ATTEMPT_HISTORY: [HISTORY_ROW]})
+    client = build_client(connection)
+
+    client.get(
+        f"/api/v1/students/{STUDENT_ID}/activity-attempts",
+        params={"activity_id": str(ACTIVITY), "passed": "true"},
+        headers=ADVISER_HEADERS,
+    )
+
+    _assert_binds_are_contiguous(connection)

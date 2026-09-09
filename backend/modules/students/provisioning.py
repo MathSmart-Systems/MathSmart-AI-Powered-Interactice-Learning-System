@@ -30,6 +30,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+import asyncpg
+
 from middleware.auth import VerifiedToken
 from modules.shared.auth_admin import AuthAdminError, EmailAlreadyRegistered, SupabaseAuthAdmin
 from modules.shared.elevated_db import ElevatedDatabase
@@ -41,6 +43,11 @@ logger = logging.getLogger(__name__)
 PROVISIONED_ROLE = "student"
 
 ENDPOINT = "POST /students"
+
+#: The unique index behind app.student_profiles.learner_id. A violation of it is
+#: the caller's conflict — that learner id is already taken — and is answered as
+#: one, so it is named here rather than read out of an error message.
+LEARNER_ID_CONSTRAINT = "student_profiles_learner_id_key"
 
 
 class ProvisioningConflict(Exception):
@@ -94,6 +101,14 @@ class StudentProvisioning:
 
         try:
             learner = await self._write_profile(actor, created.id, payload, request_id)
+        except asyncpg.UniqueViolationError as exc:
+            # The Auth account is ours and is now orphaned either way, so it is
+            # removed first. A taken learner id is then the caller's conflict,
+            # not an outage of ours, and is answered as one.
+            await self._compensate(actor, created.id, request_id)
+            if exc.constraint_name == LEARNER_ID_CONSTRAINT:
+                raise ProvisioningConflict("That learner id already belongs to a learner") from exc
+            raise ProvisioningFailed("The learner could not be enrolled") from exc
         except Exception:
             # The Auth account is ours and is now orphaned, so it is removed.
             # A pre-existing account never reaches this path.
@@ -211,15 +226,21 @@ class StudentProvisioning:
             removed = False
             logger.error("Could not remove the orphaned Auth account for a failed enrolment")
 
-        async with self._elevated.operation(
-            actor=actor,
-            action="student.enrolment_compensated",
-            target_type="auth_user",
-            target_id=str(user_id),
-            request_id=request_id,
-            details={"account_removed": removed},
-        ):
-            pass
+        try:
+            async with self._elevated.operation(
+                actor=actor,
+                action="student.enrolment_compensated",
+                target_type="auth_user",
+                target_id=str(user_id),
+                request_id=request_id,
+                details={"account_removed": removed},
+            ):
+                pass
+        except Exception:
+            # The same rule as above. The compensation itself is done; raising
+            # here would answer the caller with this failure instead of the one
+            # that actually ended the enrolment.
+            logger.error("Could not audit the compensation for a failed enrolment")
 
     async def _remember(
         self,

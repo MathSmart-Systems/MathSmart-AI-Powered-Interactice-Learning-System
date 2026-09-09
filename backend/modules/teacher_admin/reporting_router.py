@@ -107,8 +107,12 @@ async def read_dashboard(
     section_id: Annotated[UUID | None, Query()] = None,
 ) -> dict[str, Any]:
     """Cohort totals, the competency overview, and the learners who need support."""
-    totals = await repository.dashboard(connection)
-    competency_rows = await repository.competencies(connection, grade_id=grade_id)
+    totals = await repository.dashboard(
+        connection, grade_id=grade_id, section_id=section_id
+    )
+    competency_rows = await repository.competencies(
+        connection, grade_id=grade_id, section_id=section_id
+    )
     priority = await repository.learners(
         connection,
         grade_id=grade_id,
@@ -270,8 +274,12 @@ async def read_analytics(
     section_id: Annotated[UUID | None, Query()] = None,
 ) -> dict[str, Any]:
     """Cohort mastery, growth, and per-competency performance."""
-    totals = await repository.dashboard(connection)
-    competency_rows = await repository.competencies(connection, grade_id=grade_id)
+    totals = await repository.dashboard(
+        connection, grade_id=grade_id, section_id=section_id
+    )
+    competency_rows = await repository.competencies(
+        connection, grade_id=grade_id, section_id=section_id
+    )
     section_rows = await repository.sections(connection, grade_id=grade_id)
 
     return {

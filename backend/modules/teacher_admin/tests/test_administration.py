@@ -301,6 +301,37 @@ def test_assessment_question_membership_is_replaced_atomically():
     assert any("insert into app.assessment_questions" in query for query in queries)
 
 
+def test_an_empty_membership_is_refused_before_it_empties_an_assessment():
+    """The whole list is replaced, so an empty one would leave nothing to deliver."""
+    client = build_client(admin_connection(**{"from app.assessments": ASSESSMENT_ROW}))
+
+    response = client.put(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/questions",
+        json={"question_ids": []},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert "question_ids" in response.json()["error"]["fields"]
+
+
+def test_a_repeated_question_is_refused_with_validation_feedback():
+    """The membership is keyed on the pair, so a repeat would be a database error."""
+    connection = admin_connection(**{"from app.assessments": ASSESSMENT_ROW})
+    client = build_client(connection)
+
+    response = client.put(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/questions",
+        json={"question_ids": [str(QUESTION), str(QUESTION)]},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert "question_ids" in response.json()["error"]["fields"]
+    queries = connection.queries()
+    assert not any("app.assessment_questions" in query for query in queries)
+
+
 def test_publishing_an_empty_assessment_is_refused():
     connection = admin_connection(**{TOTAL: 0, "returning": ASSESSMENT_ROW})
     client = build_client(connection)

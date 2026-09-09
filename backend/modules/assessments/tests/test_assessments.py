@@ -12,6 +12,7 @@ the response envelope; the arithmetic is proved against PostgreSQL in
 `supabase/tests/530_assessment_attempt_functions_test.sql`.
 """
 
+import re
 from uuid import UUID
 
 import pytest
@@ -478,3 +479,30 @@ def test_assessment_reads_need_a_token(path):
     client = build_client(FakeConnection())
 
     assert client.get(path).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Bind parameters
+# ---------------------------------------------------------------------------
+# PostgreSQL infers a statement's parameter count from the highest-numbered
+# `$n` it references, and every lower number must be referenced too or the bind
+# is untyped and the statement is rejected (42P08). The fake connection never
+# binds, so nothing else here would notice.
+
+
+def test_the_assessment_count_binds_exactly_what_it_references():
+    connection = FakeConnection(results={TOTAL: 1, ASSESSMENT_LIST: [ASSESSMENT_ROW]})
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/assessments",
+        params={"type": "diagnostic", "grade_id": str(GRADE)},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert connection.calls
+    for statement, args in connection.calls:
+        numbers = {int(number) for number in re.findall(r"\$(\d+)", statement)}
+        highest = max(numbers, default=0)
+        assert numbers == set(range(1, highest + 1)), statement
+        assert len(args) == highest, statement

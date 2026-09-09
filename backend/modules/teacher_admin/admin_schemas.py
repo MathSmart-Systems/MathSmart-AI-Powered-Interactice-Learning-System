@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_TITLE = 300
 MAX_TEXT = 4000
@@ -190,11 +190,24 @@ class AssessmentChanges(BaseModel):
 
 
 class AssessmentQuestions(BaseModel):
-    """The ordered membership, replaced as a whole."""
+    """The ordered membership, replaced as a whole.
+
+    The whole list is replaced, so an empty one would leave an assessment with
+    nothing to deliver — the state publication is already refused for — and at
+    least one question is required here instead. A question is seated once: the
+    membership is keyed on the assessment and the question together.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    question_ids: list[UUID] = Field(default_factory=list, max_length=200)
+    question_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+    @field_validator("question_ids")
+    @classmethod
+    def each_question_is_listed_once(cls, question_ids: list[UUID]) -> list[UUID]:
+        if len(set(question_ids)) != len(question_ids):
+            raise ValueError("An assessment may list each question only once")
+        return question_ids
 
 
 class GradeDraft(BaseModel):

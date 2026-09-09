@@ -312,6 +312,19 @@ select is(
   'Two learners each have their own first path item'
 );
 
+-- The catalogue reads a learner's path status by joining on the module, so a
+-- second item for one module would show that module twice and inflate the
+-- listing's total. The second learner already holds competency one with module
+-- one, so this repeats only the module: a different competency and a different
+-- priority, which leaves the module constraint as the only one that can raise.
+select throws_ok(
+  $$ insert into app.learning_path_items (student_id, competency_id, module_id, priority)
+     values ('53000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000002',
+             'd3000000-0000-4000-8000-000000000001', 2) $$,
+  '23505', null::text,
+  'A learner cannot be recommended the same module twice'
+);
+
 select throws_ok(
   $$ insert into app.learning_path_items (student_id, competency_id, module_id, priority)
      values ('53000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000002',

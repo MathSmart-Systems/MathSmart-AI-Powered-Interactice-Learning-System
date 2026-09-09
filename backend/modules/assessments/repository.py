@@ -21,10 +21,23 @@ from uuid import UUID
 
 from modules.shared.db import ActorConnection
 
+# The catalogue carries the caller's own attempt columns, so $1 is the user id
+# and the filters start at $2. The count carries none of them, so it numbers
+# its own filters from $1. Sharing one fragment would leave the count
+# referencing $2-$4 and never $1, which PostgreSQL rejects: it takes the
+# parameter count from the highest-numbered reference, so an unreferenced lower
+# parameter is untyped (42P08). The predicates are identical; only the
+# numbering differs.
 _CATALOGUE_FILTERS = """
 where ($2::app.assessment_type is null or assessments.assessment_type = $2)
   and ($3::uuid is null or assessments.grade_id = $3)
   and ($4::app.publication_status is null or assessments.status = $4)
+"""
+
+_LIST_COUNT_FILTERS = """
+where ($1::app.assessment_type is null or assessments.assessment_type = $1)
+  and ($2::uuid is null or assessments.grade_id = $2)
+  and ($3::app.publication_status is null or assessments.status = $3)
 """
 
 _CATALOGUE_COLUMNS = """
@@ -71,7 +84,7 @@ limit $5 offset $6
 _LIST_COUNT_SQL = f"""
 select count(*) as total
 from app.assessments
-{_CATALOGUE_FILTERS}
+{_LIST_COUNT_FILTERS}
 """  # noqa: S608
 
 _DETAIL_SQL = f"""
@@ -243,10 +256,10 @@ async def listing_total(
     grade_id: UUID | None,
     status: str | None,
 ) -> int:
-    # $1 is unused by the count, but the filters are shared, so the placeholder
-    # numbering has to match.
+    # No user id: the count has none of the correlated catalogue subqueries
+    # that need it.
     return await connection.fetchval(
-        _LIST_COUNT_SQL, None, assessment_type, grade_id, status
+        _LIST_COUNT_SQL, assessment_type, grade_id, status
     ) or 0
 
 

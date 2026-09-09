@@ -41,15 +41,53 @@ ALLOWED = {
 }
 
 
-def imported_modules(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def module_package(path: Path) -> str:
+    """The dotted package containing `path`, as an import inside it would spell it."""
+    return ".".join(path.resolve().relative_to(BACKEND).parts[:-1])
+
+
+def _absolute_base(node: ast.ImportFrom, package: str) -> str:
+    """The dotted module an `import from` reads out of, relative imports resolved.
+
+    `from .x import y` inside `modules.shared` is `modules.shared.x`; each extra
+    dot climbs one package. An import that climbs past the backend root cannot
+    name anything here, and is reported as nothing rather than guessed at.
+    """
+    if not node.level:
+        return node.module or ""
+    parts = package.split(".") if package else []
+    ascended = node.level - 1
+    if ascended > len(parts):
+        return ""
+    anchor = parts[: len(parts) - ascended] if ascended else parts
+    return ".".join([*anchor, node.module] if node.module else anchor)
+
+
+def parse_imports(source: str, *, package: str) -> set[str]:
+    """Every module `source` reaches, by the dotted path this file checks against.
+
+    `from modules.shared import elevated_db` binds the module just as surely as
+    `import modules.shared.elevated_db` does, so the name each alias binds is
+    joined to its base. Read from the syntax tree, never from the text: a guard
+    that greps its own source is a guard that a comment can trip and a line
+    break can fool.
+    """
+    tree = ast.parse(source)
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            found.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            base = _absolute_base(node, package)
+            if not base:
+                continue
+            found.add(base)
+            found.update(f"{base}.{alias.name}" for alias in node.names if alias.name != "*")
     return found
+
+
+def imported_modules(path: Path) -> set[str]:
+    return parse_imports(path.read_text(encoding="utf-8"), package=module_package(path))
 
 
 def source_files() -> list[Path]:
@@ -114,3 +152,37 @@ def test_only_the_sensitive_dependency_reaches_the_session_gateway():
         "These modules reach the session gateway without being on the allowlist: "
         f"{offenders}. Session validation belongs behind the sensitive dependency."
     )
+
+
+def test_a_from_package_import_module_is_reported_as_a_dotted_path():
+    """`from modules.shared import elevated_db` is an ordinary way to spell it."""
+    imports = parse_imports(
+        "from modules.shared import elevated_db, db\n", package="modules.students"
+    )
+
+    assert "modules.shared.elevated_db" in imports
+    assert "modules.shared.db" in imports
+
+
+def test_a_relative_import_resolves_against_the_package_of_the_file():
+    imports = parse_imports(
+        "from .elevated_db import ElevatedDatabase\n"
+        "from . import auth_admin\n"
+        "from ..students import provisioning\n",
+        package="modules.shared",
+    )
+
+    assert "modules.shared.elevated_db" in imports
+    assert "modules.shared.auth_admin" in imports
+    assert "modules.students.provisioning" in imports
+
+
+def test_a_plain_import_still_reports_its_dotted_path():
+    imports = parse_imports("import modules.shared.elevated_db as elevated\n", package="cli")
+
+    assert "modules.shared.elevated_db" in imports
+
+
+def test_the_package_of_a_file_is_its_directory_under_the_backend():
+    assert module_package(BACKEND / "modules" / "shared" / "elevated_db.py") == "modules.shared"
+    assert module_package(BACKEND / "cli" / "bootstrap_profile.py") == "cli"

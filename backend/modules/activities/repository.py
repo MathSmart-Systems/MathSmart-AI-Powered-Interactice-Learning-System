@@ -52,11 +52,24 @@ join app.competencies
   on competencies.competency_id = learning_modules.competency_id
 """
 
+# The list carries the caller's own attempt columns, so $1 is the user id and
+# the filters start at $2. The count carries none of them, so it numbers its
+# own filters from $1. Sharing one fragment would leave the count referencing
+# $2-$5 and never $1, which PostgreSQL rejects: it takes the parameter count
+# from the highest-numbered reference, so an unreferenced lower parameter is
+# untyped (42P08). The predicates are identical; only the numbering differs.
 _LIST_FILTERS = """
 where ($2::uuid is null or activities.module_id = $2)
   and ($3::uuid is null or learning_modules.competency_id = $3)
   and ($4::app.publication_status is null or activities.status = $4)
   and ($5::text is null or activities.title ilike '%' || $5 || '%')
+"""
+
+_LIST_COUNT_FILTERS = """
+where ($1::uuid is null or activities.module_id = $1)
+  and ($2::uuid is null or learning_modules.competency_id = $2)
+  and ($3::app.publication_status is null or activities.status = $3)
+  and ($4::text is null or activities.title ilike '%' || $4 || '%')
 """
 
 _LIST_SQL = f"""
@@ -70,7 +83,7 @@ limit $6 offset $7
 _LIST_COUNT_SQL = f"""
 select count(*) as total
 {_CATALOGUE_JOINS}
-{_LIST_FILTERS}
+{_LIST_COUNT_FILTERS}
 """
 
 _DETAIL_SQL = f"""
@@ -104,11 +117,20 @@ from app.activity_responses
 where activity_responses.attempt_id = $1
 """
 
+# $2 and $3 are the page window, which the count does not have, so the count
+# numbers its filters from $2 rather than binding two unreferenced parameters.
 _HISTORY_FILTERS = """
 where activity_attempts.student_id = $1
   and ($4::uuid is null or activity_attempts.activity_id = $4)
   and ($5::uuid is null or learning_modules.competency_id = $5)
   and ($6::boolean is null or activity_attempts.passed = $6)
+"""
+
+_HISTORY_COUNT_FILTERS = """
+where activity_attempts.student_id = $1
+  and ($2::uuid is null or activity_attempts.activity_id = $2)
+  and ($3::uuid is null or learning_modules.competency_id = $3)
+  and ($4::boolean is null or activity_attempts.passed = $4)
 """
 
 _HISTORY_SQL = f"""
@@ -141,7 +163,7 @@ select count(*) as total
 from app.activity_attempts
 join app.activities on activities.activity_id = activity_attempts.activity_id
 join app.learning_modules on learning_modules.module_id = activities.module_id
-{_HISTORY_FILTERS}
+{_HISTORY_COUNT_FILTERS}
 """  # noqa: S608
 
 _START_SQL = "select * from app.start_activity_attempt($1)"
@@ -169,15 +191,16 @@ async def listing(
 async def listing_total(
     connection: ActorConnection,
     *,
-    user_id: UUID,
     module_id: UUID | None,
     competency_id: UUID | None,
     status: str | None,
     search: str | None,
 ) -> int:
+    # No user id: the count has none of the correlated catalogue subqueries
+    # that need it.
     return (
         await connection.fetchval(
-            _LIST_COUNT_SQL, user_id, module_id, competency_id, status, search
+            _LIST_COUNT_SQL, module_id, competency_id, status, search
         )
         or 0
     )
@@ -218,11 +241,9 @@ async def history_total(
     competency_id: UUID | None,
     passed: bool | None,
 ) -> int:
-    # $2 and $3 are the page window, unused by the count; the filters are shared,
-    # so the placeholder numbering has to match.
     return (
         await connection.fetchval(
-            _HISTORY_COUNT_SQL, student_id, None, None, activity_id, competency_id, passed
+            _HISTORY_COUNT_SQL, student_id, activity_id, competency_id, passed
         )
         or 0
     )

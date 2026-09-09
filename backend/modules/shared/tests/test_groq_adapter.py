@@ -171,3 +171,24 @@ def test_redaction_reaches_into_nested_evidence():
     redacted = redact_evidence({"learner": {"full_name": "Maria", "current_score": 40}})
 
     assert redacted == {"learner": {"current_score": 40}}
+
+
+def test_redaction_reaches_into_lists_of_evidence():
+    """Evidence leaves the process, so a name inside a list is still a leak."""
+    redacted = redact_evidence(
+        {"incorrect_attempts": [{"full_name": "Maria", "competency_code": "M6NS-IA-1"}]}
+    )
+
+    assert redacted == {"incorrect_attempts": [{"competency_code": "M6NS-IA-1"}]}
+
+
+def test_redaction_reaches_through_tuples_and_deeper_nesting():
+    redacted = redact_evidence({"groups": ({"members": [{"email": "a@b.test", "score": 40}]},)})
+
+    assert redacted == {"groups": [{"members": [{"score": 40}]}]}
+
+
+def test_redaction_leaves_a_list_of_scalars_alone():
+    redacted = redact_evidence({"incorrect_patterns": ["subtracts first", "regroups twice"]})
+
+    assert redacted == {"incorrect_patterns": ["subtracts first", "regroups twice"]}

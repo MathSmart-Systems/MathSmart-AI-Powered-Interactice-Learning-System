@@ -114,13 +114,14 @@ async def list_activities(
     """The activity catalogue, with the caller's own attempts and best score."""
     offset = (page - 1) * page_size
     filters = {
-        "user_id": actor.user_id,
         "module_id": module_id,
         "competency_id": competency_id,
         "status": status.value if status else None,
         "search": search,
     }
-    rows = await repository.listing(connection, limit=page_size, offset=offset, **filters)
+    rows = await repository.listing(
+        connection, user_id=actor.user_id, limit=page_size, offset=offset, **filters
+    )
     total = await repository.listing_total(connection, **filters)
 
     return {

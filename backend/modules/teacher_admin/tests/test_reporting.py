@@ -11,6 +11,7 @@ The export is a sensitive operation: it needs a live session and it is audited.
 
 import csv
 import io
+import re
 from uuid import UUID
 
 from modules.shared.testing import (
@@ -25,10 +26,11 @@ GRADE = UUID("3f0f0000-0000-4000-8000-000000000006")
 COMPETENCY = UUID("13ec5f06-746e-45fb-a58a-92f4ce42621c")
 STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
 
-DASHBOARD = "from app.teacher_dashboard_summary"
+# Anchors that appear in exactly one statement each.
+DASHBOARD = "scoped_learners"
 SECTIONS = "from app.section_performance_summary"
 LEARNERS = "from app.student_performance_summary"
-COMPETENCIES = "from app.competency_mastery_summary"
+COMPETENCIES = "as learners_tracked"
 HEATMAP = "from app.competency_progress"
 AUDIT = "app.record_audit_event"
 
@@ -299,3 +301,77 @@ def test_a_learner_cannot_export():
 
     assert response.status_code == 403
     assert not [call for call in connection.calls if AUDIT in call[0]]
+
+
+# ---------------------------------------------------------------------------
+# The filters reach every half of the payload
+# ---------------------------------------------------------------------------
+# The totals sit beside the competency rollup and the priority learners in one
+# response. If the totals ignored the filters, two halves of the same payload
+# would describe different cohorts with nothing telling the client.
+
+
+def _args_for(connection, fragment):
+    matched = [args for statement, args in connection.calls if fragment in statement]
+    assert matched, fragment
+    return matched[0]
+
+
+def test_the_dashboard_totals_honour_the_grade_and_section_filters():
+    connection = reporting_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/dashboard",
+        params={"grade_id": str(GRADE), "section_id": str(SECTION)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert _args_for(connection, DASHBOARD) == (GRADE, SECTION)
+
+
+def test_the_dashboard_competencies_honour_the_section_filter():
+    connection = reporting_connection()
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/teacher-admin/dashboard",
+        params={"grade_id": str(GRADE), "section_id": str(SECTION)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert _args_for(connection, COMPETENCIES) == (GRADE, SECTION)
+
+
+def test_analytics_totals_honour_the_grade_and_section_filters():
+    connection = reporting_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/analytics",
+        params={"grade_id": str(GRADE), "section_id": str(SECTION)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert _args_for(connection, DASHBOARD) == (GRADE, SECTION)
+    assert _args_for(connection, COMPETENCIES) == (GRADE, SECTION)
+
+
+def test_every_reporting_statement_binds_exactly_what_it_references():
+    connection = reporting_connection()
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/teacher-admin/dashboard",
+        params={"grade_id": str(GRADE), "section_id": str(SECTION)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert connection.calls
+    for statement, args in connection.calls:
+        numbers = {int(number) for number in re.findall(r"\$(\d+)", statement)}
+        highest = max(numbers, default=0)
+        assert numbers == set(range(1, highest + 1)), statement
+        assert len(args) == highest, statement

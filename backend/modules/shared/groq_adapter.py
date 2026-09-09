@@ -56,6 +56,21 @@ def _is_forbidden(key: str) -> bool:
     return any(fragment in lowered for fragment in _FORBIDDEN_EVIDENCE_FRAGMENTS)
 
 
+def _redact_value(value: Any) -> Any:
+    """Redact whatever an evidence value turns out to be, at any depth.
+
+    Sequences are walked as well as mappings, because a name inside a list of
+    attempts reaches the prompt just as surely as one at the top level. Only
+    keys decide anything here; a list of scalars comes back unchanged, and
+    strings and bytes are left alone rather than taken apart as sequences.
+    """
+    if isinstance(value, dict):
+        return redact_evidence(value)
+    if isinstance(value, list | tuple):
+        return [_redact_value(item) for item in value]
+    return value
+
+
 def redact_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     """Drop identifying and credential-shaped keys, at any depth.
 
@@ -66,7 +81,7 @@ def redact_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     for key, value in evidence.items():
         if _is_forbidden(key):
             continue
-        redacted[key] = redact_evidence(value) if isinstance(value, dict) else value
+        redacted[key] = _redact_value(value)
     return redacted
 
 
