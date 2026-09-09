@@ -25,6 +25,7 @@ from app.config import Settings, get_settings
 from middleware.errors import install_error_handlers
 from middleware.request_context import RequestIdMiddleware
 from modules.activities.router import router as activities_router
+from modules.ai.router import router as ai_router
 from modules.assessments.router import router as assessments_router
 from modules.auth.router import router as auth_router
 from modules.competencies.router import router as competencies_router
@@ -120,6 +121,7 @@ def create_app(
     application.include_router(interventions_router, prefix=API_PREFIX)
     application.include_router(teacher_admin_reporting_router, prefix=API_PREFIX)
     application.include_router(teacher_admin_admin_router, prefix=API_PREFIX)
+    application.include_router(ai_router, prefix=API_PREFIX)
 
     return application
 

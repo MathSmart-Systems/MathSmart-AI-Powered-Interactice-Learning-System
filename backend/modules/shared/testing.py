@@ -36,7 +36,7 @@ LEARNER_HEADERS = {"Authorization": f"Bearer {LEARNER_TOKEN}"}
 ADVISER_HEADERS = {"Authorization": f"Bearer {ADVISER_TOKEN}"}
 
 
-def test_settings() -> Settings:
+def fake_settings() -> Settings:
     """Settings with placeholder values, so nothing reads a real environment."""
     return Settings(
         supabase_url="https://example.supabase.co",
@@ -169,7 +169,7 @@ def build_client(
     from app.main import create_app
 
     application = create_app(
-        settings=test_settings(),
+        settings=fake_settings(),
         token_verifier=FakeVerifier(),
         database=FakeDatabase(connection, account_active=account_active),
         session_gateway=FakeSessionGateway(live=live_session),
