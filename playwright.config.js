@@ -1,4 +1,4 @@
-import nextEnv from "@next/env";
+import * as nextEnv from "@next/env";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -7,7 +7,10 @@ import { defineConfig, devices } from "@playwright/test";
  * typed into a command line, a log, or this file. Nothing is read or printed:
  * the values only ever reach the browser through the sign-in form.
  */
-nextEnv.loadEnvConfig(process.cwd());
+// @next/env is CommonJS, and Playwright and Node disagree about where its
+// exports land, so take whichever half actually has them.
+const { loadEnvConfig } = nextEnv.default ?? nextEnv;
+loadEnvConfig(process.cwd());
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3100);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`;
