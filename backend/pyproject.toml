@@ -15,7 +15,7 @@ select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "RUF"]
 per-file-ignores = { "**/tests/*" = ["S101", "S105", "S106"] }
 
 [tool.pytest.ini_options]
-testpaths = ["app", "middleware", "modules"]
+testpaths = ["app", "cli", "middleware", "modules"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers"

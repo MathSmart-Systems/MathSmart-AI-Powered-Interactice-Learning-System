@@ -31,6 +31,10 @@ ALLOWED = {
     "app/main.py",
     # The one sanctioned elevated operation: administrator-provisioned accounts.
     "modules/students/provisioning.py",
+    # The administrative bootstrap, which is a local command and is never
+    # mounted on the API. It attaches a profile to an Auth account that already
+    # exists, for the first educator, who has nobody to provision them.
+    "cli/bootstrap_profile.py",
     # The modules themselves, and their own tests.
     "modules/shared/elevated_db.py",
     "modules/shared/auth_admin.py",
@@ -93,7 +97,7 @@ def test_the_shared_dependencies_offer_no_elevated_accessor():
 
 
 def test_the_allowlist_is_short_on_purpose():
-    assert len(ALLOWED) == 4
+    assert len(ALLOWED) == 5
 
 
 def test_only_the_sensitive_dependency_reaches_the_session_gateway():

@@ -21,7 +21,7 @@ identity.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -30,6 +30,11 @@ import httpx
 from app.config import Settings
 
 logger = logging.getLogger(__name__)
+
+#: Paging for the administrative lookup. Bounded so a very large project cannot
+#: turn one bootstrap into an unbounded walk of every account.
+_LOOKUP_PAGE_SIZE = 200
+_MAX_LOOKUP_PAGES = 50
 
 
 class AuthAdminError(RuntimeError):
@@ -44,6 +49,9 @@ class EmailAlreadyRegistered(AuthAdminError):
 class AuthAdminUser:
     id: UUID
     email: str
+    #: The trusted claim. `user_metadata` is deliberately absent from this
+    #: shape: a user can edit their own, so it can never authorise anything.
+    app_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class SupabaseAuthAdmin:
@@ -101,6 +109,37 @@ class SupabaseAuthAdmin:
         _raise_for_status(response, "create a user")
         return _user_from(response)
 
+    async def find_user_by_email(self, email: str) -> AuthAdminUser | None:
+        """The account with this email address, or None.
+
+        Read-only, and used by the administrative bootstrap to confirm that an
+        account exists before any profile is written for it. It returns the
+        trusted `app_metadata` and nothing else about the user.
+        """
+        wanted = email.strip().lower()
+        page = 1
+        while page <= _MAX_LOOKUP_PAGES:
+            response = await self._request(
+                "GET", f"/admin/users?page={page}&per_page={_LOOKUP_PAGE_SIZE}"
+            )
+            _raise_for_status(response, "look a user up")
+            try:
+                users = response.json().get("users", [])
+            except ValueError as exc:
+                raise AuthAdminError("The Auth service returned an unexpected list") from exc
+
+            for user in users:
+                if str(user.get("email", "")).strip().lower() == wanted:
+                    return AuthAdminUser(
+                        id=UUID(str(user["id"])),
+                        email=str(user["email"]),
+                        app_metadata=dict(user.get("app_metadata") or {}),
+                    )
+            if len(users) < _LOOKUP_PAGE_SIZE:
+                return None
+            page += 1
+        return None
+
     async def delete_user(self, user_id: str | UUID) -> None:
         """Remove an account. Only ever used to undo one this backend just created."""
         response = await self._request("DELETE", f"/admin/users/{user_id}")
@@ -142,6 +181,10 @@ def _raise_for_status(response: httpx.Response, what: str) -> None:
 def _user_from(response: httpx.Response) -> AuthAdminUser:
     try:
         body = response.json()
-        return AuthAdminUser(id=UUID(str(body["id"])), email=str(body["email"]))
+        return AuthAdminUser(
+            id=UUID(str(body["id"])),
+            email=str(body["email"]),
+            app_metadata=dict(body.get("app_metadata") or {}),
+        )
     except (ValueError, KeyError, TypeError) as exc:
         raise AuthAdminError("The Auth service returned an unexpected user shape") from exc
