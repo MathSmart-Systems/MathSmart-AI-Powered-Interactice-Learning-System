@@ -193,6 +193,10 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --   activity_hint,           records are SELECT-only for them
 --   submit_activity_attempt
 --   setting_integer          reads app.system_settings, which a learner cannot
+--   record_audit_event,      an audit row is evidence and a case is an
+--   open_intervention,       educator's record about a learner; neither may be
+--   update_intervention,     written by the caller directly
+--   archive_intervention
 --
 -- A new name appearing here is a review item, not a formatting change.
 select is(
@@ -201,10 +205,12 @@ select is(
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
    where pg_namespace.nspname = 'app'
      and pg_proc.prosecdef),
-  'activity_hint,authorize_reassessment,check_activity_answer,complete_module,'
-  || 'is_active_account,module_section_ids,save_assessment_answers,'
+  'activity_hint,archive_intervention,authorize_reassessment,'
+  || 'check_activity_answer,complete_module,is_active_account,module_section_ids,'
+  || 'open_intervention,record_audit_event,save_assessment_answers,'
   || 'save_module_progress,setting_integer,start_activity_attempt,'
-  || 'start_assessment_attempt,submit_activity_attempt,submit_assessment_attempt',
+  || 'start_assessment_attempt,submit_activity_attempt,'
+  || 'submit_assessment_attempt,update_intervention',
   'Only the reviewed functions are SECURITY DEFINER'
 );
 

@@ -217,6 +217,10 @@ select is(
   'The second unsuccessful attempt opens an intervention'
 );
 
+-- The intervention policy gives a learner no rows at all, which is the point of
+-- it. These assertions read the case as the owner instead.
+reset role;
+
 select is(
   (select interventions.teacher_admin_id from app.interventions),
   '4b000000-0000-4000-8000-000000000001'::uuid,
@@ -235,6 +239,11 @@ select is(
   'needs_intervention'::app.monitoring_status,
   'The learner is flagged for monitoring'
 );
+
+reset role;
+set local request.jwt.claims = '{"sub":"bb000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
 
 -- ---------------------------------------------------------------------------
 -- Passing clears the count and opens nothing further
@@ -257,11 +266,18 @@ select is(
   'Passing clears the unsuccessful run'
 );
 
+reset role;
+
 select is(
   (select count(*) from app.interventions),
   1::bigint,
   'No second case is opened while the first is unresolved'
 );
+
+reset role;
+set local request.jwt.claims = '{"sub":"bb000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
 
 select is(
   (select count(*) from app.activity_attempts where activity_attempts.status = 'scored'),
