@@ -12,12 +12,24 @@ reviews:
   poem: false
   enable_prompt_for_ai_agents: true
 
+  # This pull request changes 157 files, and CodeRabbit reviews at most 100 in
+  # one pass — a skipped review reports a passing status, which is worse than a
+  # failing one. So the review is taken in two deliberate slices, and this filter
+  # says which slice is being read right now.
+  #
+  # Slice 1 (current): the database and the request boundary — migrations, pgTAP
+  # suites, application wiring, middleware, and the administrative CLI that holds
+  # the elevated and Auth Admin clients.
+  # Slice 2: backend/modules, the feature modules.
+  #
+  # Restore the full filter once both slices have been reviewed.
   path_filters:
     - "!node_modules/**"
     - "!.next/**"
     - "!dist/**"
     - "!build/**"
     - "!coverage/**"
+    - "!backend/modules/**"
 
   auto_review:
     enabled: true
