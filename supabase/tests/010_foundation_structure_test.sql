@@ -188,6 +188,11 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --                            `authenticated` deliberately cannot select
 --   authorize_reassessment   an authorization is a decision, and the table that
 --                            records it is SELECT-only for the caller
+--   start_activity_attempt,  the activity equivalents: answer checks and hints
+--   check_activity_answer,   read answer_key and hint, and the learner's own
+--   activity_hint,           records are SELECT-only for them
+--   submit_activity_attempt
+--   setting_integer          reads app.system_settings, which a learner cannot
 --
 -- A new name appearing here is a review item, not a formatting change.
 select is(
@@ -196,9 +201,10 @@ select is(
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
    where pg_namespace.nspname = 'app'
      and pg_proc.prosecdef),
-  'authorize_reassessment,complete_module,is_active_account,module_section_ids,'
-  || 'save_assessment_answers,save_module_progress,start_assessment_attempt,'
-  || 'submit_assessment_attempt',
+  'activity_hint,authorize_reassessment,check_activity_answer,complete_module,'
+  || 'is_active_account,module_section_ids,save_assessment_answers,'
+  || 'save_module_progress,setting_integer,start_activity_attempt,'
+  || 'start_assessment_attempt,submit_activity_attempt,submit_assessment_attempt',
   'Only the reviewed functions are SECURITY DEFINER'
 );
 

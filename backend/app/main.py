@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from app.config import Settings, get_settings
 from middleware.errors import install_error_handlers
 from middleware.request_context import RequestIdMiddleware
+from modules.activities.router import router as activities_router
 from modules.assessments.router import router as assessments_router
 from modules.auth.router import router as auth_router
 from modules.competencies.router import router as competencies_router
@@ -110,6 +111,7 @@ def create_app(
     application.include_router(competencies_router, prefix=API_PREFIX)
     application.include_router(learning_modules_router, prefix=API_PREFIX)
     application.include_router(assessments_router, prefix=API_PREFIX)
+    application.include_router(activities_router, prefix=API_PREFIX)
 
     return application
 

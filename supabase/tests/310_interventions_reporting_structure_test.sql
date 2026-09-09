@@ -183,32 +183,31 @@ select ok(has_table_privilege('service_role', 'app.teacher_dashboard_summary'::r
 -- ---------------------------------------------------------------------------
 -- Helper hardening
 -- ---------------------------------------------------------------------------
--- SECURITY INVOKER remains the rule. Every exception is listed here, and each
--- one exists because the caller's own rights genuinely cannot do the work:
---
---   is_active_account        a policy on the table it reads consults it, so
---                            invoker rights would recurse
---   module_section_ids,      a learner's own record is SELECT-only for
---   save_module_progress,    `authenticated`, so their own progress is written
---   complete_module          through a function instead of a grant
---   start_assessment_attempt,
---   save_assessment_answers  the same, for attempts
---   submit_assessment_attempt  grading reads app.questions.answer_key, which
---                            `authenticated` deliberately cannot select
---   authorize_reassessment   an authorization is a decision, and the table that
---                            records it is SELECT-only for the caller
---
--- A new name appearing here is a review item, not a formatting change.
+-- SECURITY INVOKER remains the rule. Where a function must run with definer
+-- rights — because it reads a column or writes a table the caller deliberately
+-- cannot — the hardening is what makes it safe, so that is what is asserted
+-- here. The reviewed list of names lives in 010_foundation_structure_test.sql.
 select is(
-  (select string_agg(pg_proc.proname, ',' order by pg_proc.proname)
+  (select count(*)
    from pg_proc
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
    where pg_namespace.nspname = 'app'
-     and pg_proc.prosecdef),
-  'authorize_reassessment,complete_module,is_active_account,module_section_ids,'
-  || 'save_assessment_answers,save_module_progress,start_assessment_attempt,'
-  || 'submit_assessment_attempt',
-  'Only the reviewed functions are SECURITY DEFINER'
+     and pg_proc.prosecdef
+     and (pg_proc.proconfig is null
+          or not (pg_proc.proconfig::text like '%search_path%'))),
+  0::bigint,
+  'Every SECURITY DEFINER function in app pins its search_path'
+);
+
+select is(
+  (select count(*)
+   from pg_proc
+   join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
+   where pg_namespace.nspname = 'app'
+     and pg_proc.prosecdef
+     and has_function_privilege('anon', pg_proc.oid, 'execute')),
+  0::bigint,
+  'No SECURITY DEFINER function in app is executable by anon'
 );
 
 select ok(
