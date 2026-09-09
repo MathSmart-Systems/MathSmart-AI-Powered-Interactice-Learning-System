@@ -284,6 +284,22 @@ select throws_ok(
   'A scored attempt cannot be answered again'
 );
 
+-- Nor can it be retaken. The educator's authorization is what reopens the
+-- assessment, and none has been granted yet.
+select throws_ok(
+  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') $$,
+  '42501',
+  'A reassessment needs an authorization',
+  'A learner cannot retake a scored assessment on their own'
+);
+
+select is(
+  (select count(*) from app.assessment_attempts
+   where assessment_attempts.student_id = '5a000000-0000-4000-8000-000000000001'),
+  1::bigint,
+  'The refused retake left no attempt behind'
+);
+
 -- ---------------------------------------------------------------------------
 -- Another learner reaches none of it
 -- ---------------------------------------------------------------------------
@@ -369,6 +385,167 @@ select ok(
   not has_table_privilege('authenticated', 'app.reassessment_authorizations', 'insert'),
   'authenticated still holds no INSERT on app.reassessment_authorizations'
 );
+
+-- ---------------------------------------------------------------------------
+-- An authorization opens exactly one reassessment
+-- ---------------------------------------------------------------------------
+reset role;
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
+select is(
+  (select retake.status
+   from app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') as retake),
+  'in_progress'::app.attempt_status,
+  'The authorization the educator granted opens the reassessment'
+);
+
+reset role;
+
+select is(
+  (select count(*) from app.reassessment_authorizations
+   where reassessment_authorizations.consumed_at is not null),
+  1::bigint,
+  'Starting the reassessment spent the authorization'
+);
+
+select is(
+  (select reassessment_authorizations.consumed_attempt_id
+   from app.reassessment_authorizations
+   where reassessment_authorizations.consumed_at is not null),
+  (select attempt_id from app.assessment_attempts
+   where assessment_attempts.student_id = '5a000000-0000-4000-8000-000000000001'
+     and assessment_attempts.status = 'in_progress'::app.attempt_status),
+  'The authorization names the attempt that spent it'
+);
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
+-- Resuming is not a second reassessment: the open attempt comes back, and the
+-- grant is not spent again.
+select is(
+  (select count(distinct attempt_id) from (
+     select (app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001')).attempt_id
+     union all
+     select attempt_id from app.assessment_attempts
+     where assessment_attempts.status = 'in_progress'::app.attempt_status
+   ) as resumed),
+  1::bigint,
+  'Calling again while the reassessment is open resumes it'
+);
+
+reset role;
+
+select is(
+  (select count(*) from app.reassessment_authorizations
+   where reassessment_authorizations.consumed_at is not null),
+  1::bigint,
+  'Resuming spends no further authorization'
+);
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
+-- Finish the reassessment, then ask for a third attempt on the spent grant.
+select ok(
+  (select submitted.status = 'scored'::app.attempt_status
+   from app.submit_assessment_attempt(
+     (select attempt_id from app.assessment_attempts
+      where assessment_attempts.student_id = '5a000000-0000-4000-8000-000000000001'
+        and assessment_attempts.status = 'in_progress'::app.attempt_status),
+     '[]'::jsonb
+   ) as submitted),
+  'The reassessment is graded like any other attempt'
+);
+
+select throws_ok(
+  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') $$,
+  '42501',
+  'A reassessment needs an authorization',
+  'A spent authorization cannot be used a second time'
+);
+
+-- An expired grant is no grant.
+reset role;
+
+insert into app.reassessment_authorizations
+  (student_id, assessment_id, authorized_by, reason, granted_at, expires_at)
+values (
+  '5a000000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000001',
+  '4a000000-0000-4000-8000-000000000001', 'Expired grant.',
+  now() - interval '2 days', now() - interval '1 day'
+);
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
+select throws_ok(
+  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') $$,
+  '42501',
+  'A reassessment needs an authorization',
+  'An expired authorization does not reopen the assessment'
+);
+
+-- A grant belongs to one learner and one assessment.
+reset role;
+
+delete from app.reassessment_authorizations
+where reassessment_authorizations.consumed_at is null;
+
+insert into app.assessments
+  (assessment_id, grade_id, title, assessment_type, status, duration_minutes)
+values (
+  'fa000000-0000-4000-8000-000000000002',
+  (select grade_id from app.grade_levels where level = 6),
+  'Attempt unit quiz', 'unit_quiz', 'published', 20
+);
+
+insert into app.reassessment_authorizations
+  (student_id, assessment_id, authorized_by, reason)
+values
+  ('5a000000-0000-4000-8000-000000000002', 'fa000000-0000-4000-8000-000000000001',
+   '4a000000-0000-4000-8000-000000000001', 'Granted to the other learner.'),
+  ('5a000000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000002',
+   '4a000000-0000-4000-8000-000000000001', 'Granted for a different assessment.');
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
+select throws_ok(
+  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') $$,
+  '42501',
+  'A reassessment needs an authorization',
+  'A grant for another learner, and one for another assessment, are both refused'
+);
+
+-- The consumption is a compare-and-set, and that is what makes it safe under
+-- concurrency: a second writer updates nothing rather than spending one grant
+-- twice. Two connections cannot be opened inside one pgTAP transaction, so the
+-- property is asserted here against the statement the function runs, and proved
+-- across real concurrent connections in
+-- backend/modules/assessments/tests/test_assessments_integration.py.
+reset role;
+
+with spent_again as (
+  update app.reassessment_authorizations
+  set consumed_at = now(),
+      consumed_attempt_id = (
+        select attempt_id from app.assessment_attempts
+        where assessment_attempts.student_id = '5a000000-0000-4000-8000-000000000001'
+        limit 1)
+  where reassessment_authorizations.consumed_at is null
+    and reassessment_authorizations.authorization_id in (
+      select spent.authorization_id from app.reassessment_authorizations as spent
+      where spent.consumed_at is not null)
+  returning 1
+)
+select is(
+  (select count(*) from spent_again),
+  0::bigint,
+  'The consuming update matches nothing once the grant is spent'
+);
+
 
 select * from finish();
 rollback;

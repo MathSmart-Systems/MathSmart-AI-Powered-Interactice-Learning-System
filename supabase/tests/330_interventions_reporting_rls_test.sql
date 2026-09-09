@@ -233,6 +233,62 @@ select is(
   1::bigint,
   'A teacher_admin can record an intervention for a learner and competency');
 
+-- A case is attributed to the educator who recorded it. The column is in the
+-- INSERT grant, so only the policy can keep one educator from writing another
+-- educator's name onto their own work.
+reset role;
+
+insert into auth.users (id, email) values
+  ('a6000000-0000-4000-8000-0000000000a2', 'report.adviser.two@mathsmart.test');
+insert into app.user_profiles (user_id, full_name, email, role) values
+  ('a6000000-0000-4000-8000-0000000000a2', 'Report Adviser Two',
+   'report.adviser.two@mathsmart.test', 'teacher_admin');
+insert into app.teacher_admin_profiles
+  (teacher_admin_id, user_id, employee_id, school_name, division_name)
+values
+  ('a6000000-0000-4000-8000-0000000000f2', 'a6000000-0000-4000-8000-0000000000a2',
+   'EMP-6002', 'Sample Central Elementary School', 'Sample Division');
+
+set local request.jwt.claims = '{"sub":"a6000000-0000-4000-8000-0000000000a1","role":"authenticated","app_metadata":{"role":"teacher_admin"}}';
+set local role authenticated;
+
+select throws_ok(
+  $$ insert into app.interventions
+       (student_id, teacher_admin_id, competency_id, severity, intervention_type,
+        educator_notes)
+     values ('56000000-0000-4000-8000-000000000002',
+             'a6000000-0000-4000-8000-0000000000f2',
+             'c6000000-0000-4000-8000-000000000001', 'LOW', 'Additional Exercise',
+             'Attributed to somebody else') $$,
+  '42501', null::text,
+  'A teacher_admin cannot attribute an intervention to another teacher_admin'
+);
+
+select is(
+  (select count(*) from app.interventions
+    where interventions.teacher_admin_id = 'a6000000-0000-4000-8000-0000000000f2'),
+  0::bigint,
+  'The refused attribution wrote nothing'
+);
+
+select throws_ok(
+  $$ insert into app.system_settings (setting_key, setting_value, updated_by)
+     values ('thresholds.other_educator', '80'::jsonb,
+             'a6000000-0000-4000-8000-0000000000a2') $$,
+  '42501', null::text,
+  'A teacher_admin cannot record a setting change under another educator''s name'
+);
+
+insert into app.system_settings (setting_key, setting_value, updated_by)
+values ('thresholds.own_change', '80'::jsonb, 'a6000000-0000-4000-8000-0000000000a1');
+
+select is(
+  (select system_settings.updated_by from app.system_settings
+    where system_settings.setting_key = 'thresholds.own_change'),
+  'a6000000-0000-4000-8000-0000000000a1'::uuid,
+  'A teacher_admin can still record a setting change under their own name'
+);
+
 update app.interventions set status = 'In Progress'
 where interventions.intervention_id = '16000000-0000-4000-8000-000000000001';
 

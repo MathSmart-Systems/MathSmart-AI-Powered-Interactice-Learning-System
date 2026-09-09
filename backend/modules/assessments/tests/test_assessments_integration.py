@@ -11,6 +11,7 @@ MATHSMART_TEST_DB_URL to run them; they are skipped otherwise.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from uuid import UUID, uuid4
@@ -32,6 +33,7 @@ pytestmark = [
 
 LEARNER = uuid4()
 OTHER_LEARNER = uuid4()
+EDUCATOR = uuid4()
 SUFFIX = uuid4().hex[:8].upper()
 EMAIL_SUFFIX = SUFFIX.lower()
 
@@ -54,20 +56,31 @@ async def seeded() -> dict[str, UUID]:
     owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
     email = f"grade.one.{EMAIL_SUFFIX}@mathsmart.test"
     other_email = f"grade.two.{EMAIL_SUFFIX}@mathsmart.test"
+    educator_email = f"grade.adviser.{EMAIL_SUFFIX}@mathsmart.test"
     competency_id = module_id = assessment_id = None
     question_ids: list[UUID] = []
     try:
         await owner.execute(
-            "insert into auth.users (id, email) values ($1, $2), ($3, $4)",
-            LEARNER, email, OTHER_LEARNER, other_email,
+            "insert into auth.users (id, email) values ($1, $2), ($3, $4), ($5, $6)",
+            LEARNER, email, OTHER_LEARNER, other_email, EDUCATOR, educator_email,
         )
         await owner.execute(
             """
             insert into app.user_profiles (user_id, full_name, email, role) values
               ($1, 'Grading Learner', $2, 'student'),
-              ($3, 'Other Learner', $4, 'student')
+              ($3, 'Other Learner', $4, 'student'),
+              ($5, 'Grading Adviser', $6, 'teacher_admin')
             """,
-            LEARNER, email, OTHER_LEARNER, other_email,
+            LEARNER, email, OTHER_LEARNER, other_email, EDUCATOR, educator_email,
+        )
+        teacher_admin_id = await owner.fetchval(
+            """
+            insert into app.teacher_admin_profiles
+              (user_id, employee_id, school_name, division_name)
+            values ($1, $2, 'Sample School', 'Sample Division')
+            returning teacher_admin_id
+            """,
+            EDUCATOR, f"EMP-{SUFFIX}",
         )
         await owner.execute(
             """
@@ -126,11 +139,16 @@ async def seeded() -> dict[str, UUID]:
                 """,
                 assessment_id, question_id, position,
             )
+        student_id = await owner.fetchval(
+            "select student_id from app.student_profiles where user_id = $1", LEARNER
+        )
         yield {
             "assessment_id": assessment_id,
             "competency_id": competency_id,
             "module_id": module_id,
             "questions": question_ids,
+            "student_id": student_id,
+            "teacher_admin_id": teacher_admin_id,
         }
     finally:
         # Reverse dependency order; these foreign keys restrict rather than cascade.
@@ -159,6 +177,10 @@ async def seeded() -> dict[str, UUID]:
             "delete from app.competency_progress where competency_id = $1", competency_id
         )
         await owner.execute(
+            "delete from app.reassessment_authorizations where assessment_id = $1",
+            assessment_id,
+        )
+        await owner.execute(
             "delete from app.assessment_attempts where assessment_id = $1", assessment_id
         )
         await owner.execute(
@@ -173,7 +195,11 @@ async def seeded() -> dict[str, UUID]:
             "delete from app.competencies where competency_id = $1", competency_id
         )
         await owner.execute(
-            "delete from auth.users where id = any($1::uuid[])", [LEARNER, OTHER_LEARNER]
+            "delete from app.teacher_admin_profiles where user_id = $1", EDUCATOR
+        )
+        await owner.execute(
+            "delete from auth.users where id = any($1::uuid[])",
+            [LEARNER, OTHER_LEARNER, EDUCATOR],
         )
         await owner.close()
 
@@ -259,3 +285,112 @@ async def test_a_learner_sees_only_their_own_attempt(database, seeded):
         visible = await connection.fetch("select attempt_id from app.assessment_attempts")
 
     assert visible == []
+
+
+# ---------------------------------------------------------------------------
+# Reassessment
+# ---------------------------------------------------------------------------
+# The educator's grant is what reopens a scored assessment, and it opens exactly
+# one. The pgTAP suite proves the rules inside one transaction; these prove them
+# across the real connections the API uses, including two at the same time.
+
+
+async def _grant(owner, seeded) -> UUID:
+    return await owner.fetchval(
+        """
+        insert into app.reassessment_authorizations
+          (student_id, assessment_id, authorized_by, reason)
+        values ($1, $2, $3, 'Interrupted by a power cut during the diagnostic.')
+        returning authorization_id
+        """,
+        seeded["student_id"], seeded["assessment_id"], seeded["teacher_admin_id"],
+    )
+
+
+async def _score_an_attempt(database, seeded) -> UUID:
+    async with database.actor(token_for(LEARNER)) as connection:
+        attempt = await repository.start_attempt(connection, seeded["assessment_id"])
+        await repository.submit_attempt(
+            connection, attempt_id=attempt["attempt_id"], answers="[]"
+        )
+    return attempt["attempt_id"]
+
+
+async def test_a_scored_assessment_cannot_be_retaken_without_a_grant(database, seeded):
+    await _score_an_attempt(database, seeded)
+
+    async with database.actor(token_for(LEARNER)) as connection:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await repository.start_attempt(connection, seeded["assessment_id"])
+
+
+async def test_one_grant_opens_exactly_one_reassessment_under_concurrency(
+    database, seeded
+):
+    """Two connections, one grant, at the same time.
+
+    The consumption is a compare-and-set inside the function's own transaction,
+    so whichever writer loses updates nothing. Either the loser is refused, or
+    it arrives after the winner has already opened the reassessment and resumes
+    that same attempt. Both outcomes are correct; two reassessments and two
+    consumptions are not.
+    """
+    scored_attempt = await _score_an_attempt(database, seeded)
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        authorization_id = await _grant(owner, seeded)
+
+        async def start():
+            async with database.actor(token_for(LEARNER)) as connection:
+                return await repository.start_attempt(connection, seeded["assessment_id"])
+
+        outcomes = await asyncio.gather(start(), start(), return_exceptions=True)
+
+        opened = [row for row in outcomes if not isinstance(row, BaseException)]
+        refused = [row for row in outcomes if isinstance(row, BaseException)]
+        assert opened, outcomes
+        assert len({row["attempt_id"] for row in opened}) == 1
+        for failure in refused:
+            assert isinstance(failure, asyncpg.InsufficientPrivilegeError), failure
+
+        granted = await owner.fetchrow(
+            """
+            select consumed_at, consumed_attempt_id
+            from app.reassessment_authorizations
+            where authorization_id = $1
+            """,
+            authorization_id,
+        )
+        assert granted["consumed_at"] is not None
+        assert granted["consumed_attempt_id"] == opened[0]["attempt_id"]
+
+        attempts = await owner.fetchval(
+            """
+            select count(*) from app.assessment_attempts
+            where student_id = $1 and assessment_id = $2
+            """,
+            seeded["student_id"], seeded["assessment_id"],
+        )
+        assert attempts == 2
+        assert opened[0]["attempt_id"] != scored_attempt
+    finally:
+        await owner.close()
+
+
+async def test_a_spent_grant_cannot_be_used_again(database, seeded):
+    await _score_an_attempt(database, seeded)
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        await _grant(owner, seeded)
+
+        async with database.actor(token_for(LEARNER)) as connection:
+            retake = await repository.start_attempt(connection, seeded["assessment_id"])
+            await repository.submit_attempt(
+                connection, attempt_id=retake["attempt_id"], answers="[]"
+            )
+
+        async with database.actor(token_for(LEARNER)) as connection:
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await repository.start_attempt(connection, seeded["assessment_id"])
+    finally:
+        await owner.close()
