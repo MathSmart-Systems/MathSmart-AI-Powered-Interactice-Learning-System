@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      # Task branches run the same checks on every checkpoint, so a database
+      # phase is proven against a real Postgres before the next one builds on
+      # it. A push opens no pull request, so no review automation is triggered.
+      - "agent/**"
   pull_request:
     branches:
       - main
