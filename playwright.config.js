@@ -1,4 +1,13 @@
+import nextEnv from "@next/env";
 import { defineConfig, devices } from "@playwright/test";
+
+/**
+ * The role-dependent specs read their accounts from the environment. Loading the
+ * local env files here is what lets them run without the credentials ever being
+ * typed into a command line, a log, or this file. Nothing is read or printed:
+ * the values only ever reach the browser through the sign-in form.
+ */
+nextEnv.loadEnvConfig(process.cwd());
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3100);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`;
