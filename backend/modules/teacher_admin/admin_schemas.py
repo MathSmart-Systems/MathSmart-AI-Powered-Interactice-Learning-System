@@ -166,6 +166,23 @@ class QuestionChanges(BaseModel):
     visual_aid_description: str | None = Field(default=None, max_length=1000)
     status: PublicationStatus | None = None
 
+    @model_validator(mode="after")
+    def only_supported_types_may_be_published(self) -> QuestionChanges:
+        """The same rule as `QuestionDraft`, for the change that names both.
+
+        A request that publishes without naming a type is left to the database
+        constraint, which reads the stored type this model cannot see.
+        """
+        if (
+            self.status is PublicationStatus.PUBLISHED
+            and self.question_type is not None
+            and self.question_type not in PUBLISHABLE_QUESTION_TYPES
+        ):
+            raise ValueError(
+                "Only multiple_choice, number_input and fill_blank questions may be published"
+            )
+        return self
+
 
 class AssessmentDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")

@@ -278,6 +278,21 @@ def test_publishing_an_unsupported_question_type_is_refused():
     assert response.status_code == 422
 
 
+def test_changing_a_question_to_an_unsupported_published_type_is_refused():
+    """The same rule on the change, when the change names both fields."""
+    connection = admin_connection(**{"returning": QUESTION_ROW})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/questions/{QUESTION}",
+        json={"question_type": "ordering", "status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not connection.calls
+
+
 # ---------------------------------------------------------------------------
 # Assessments
 # ---------------------------------------------------------------------------

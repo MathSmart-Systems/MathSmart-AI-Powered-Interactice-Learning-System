@@ -494,13 +494,19 @@ def test_the_assessment_count_binds_exactly_what_it_references():
     connection = FakeConnection(results={TOTAL: 1, ASSESSMENT_LIST: [ASSESSMENT_ROW]})
     client = build_client(connection)
 
-    client.get(
+    response = client.get(
         "/api/v1/assessments",
         params={"type": "diagnostic", "grade_id": str(GRADE)},
         headers=LEARNER_HEADERS,
     )
 
-    assert connection.calls
+    # The listing alone would satisfy a bare `assert connection.calls`, and the
+    # count is the statement this test is about, so it is named.
+    assert response.status_code == 200
+    assert any(TOTAL in statement for statement, _ in connection.calls)
+    meta = response.json()["meta"]
+    assert meta["total_items"] == 1
+    assert meta["total_pages"] == 1
     for statement, args in connection.calls:
         numbers = {int(number) for number in re.findall(r"\$(\d+)", statement)}
         highest = max(numbers, default=0)
