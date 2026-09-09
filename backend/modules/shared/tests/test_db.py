@@ -14,7 +14,12 @@ from pydantic import SecretStr
 
 from middleware.auth import MathSmartRole, VerifiedToken
 from modules.shared.actor_context import APPLICATION_SCHEMA, PG_ROLE_AUTHENTICATED
-from modules.shared.db import ActorConnection, Database, DatabaseNotReady
+from modules.shared.db import (
+    AccountDisabled,
+    ActorConnection,
+    Database,
+    DatabaseNotReady,
+)
 
 STUDENT_UUID = UUID("b0000000-0000-4000-8000-000000000001")
 
@@ -43,6 +48,8 @@ class FakeTransaction:
 class FakeConnection:
     def __init__(self, log):
         self._log = log
+        # The account-status gate reads this. Active unless a test says otherwise.
+        self.account_is_active = True
 
     def transaction(self):
         return FakeTransaction(self._log)
@@ -61,6 +68,8 @@ class FakeConnection:
 
     async def fetchval(self, query, *args):
         self._log.append(("fetchval", query, args))
+        if "is_active_account" in query:
+            return self.account_is_active
         return None
 
 
@@ -107,7 +116,7 @@ async def test_an_actor_transaction_installs_the_context_before_anything_else():
         await connection.fetch("select 1")
 
     kinds = [entry[0] for entry in pool.log]
-    assert kinds == ["acquire", "begin", "execute", "fetch", "end", "release"]
+    assert kinds == ["acquire", "begin", "execute", "fetchval", "fetch", "end", "release"]
 
 
 async def test_the_installed_context_carries_the_schema_role_and_claims():
@@ -175,3 +184,38 @@ async def test_disconnecting_closes_the_pool():
     await database.disconnect()
 
     assert ("close",) in pool.log
+
+
+async def test_a_disabled_account_never_reaches_a_repository():
+    """A suspended account presents a valid token; the transaction still refuses."""
+    database, pool = await a_database()
+    pool.connection.account_is_active = False
+
+    with pytest.raises(AccountDisabled):
+        async with database.actor(a_token()) as connection:
+            await connection.fetch("select 1")
+
+    kinds = [entry[0] for entry in pool.log]
+    assert "fetch" not in kinds
+
+
+async def test_the_account_gate_runs_inside_the_actor_context():
+    """It must be answered as the caller, not as the pool's login role."""
+    database, pool = await a_database()
+
+    async with database.actor(a_token()):
+        pass
+
+    kinds = [entry[0] for entry in pool.log]
+    assert kinds.index("execute") < kinds.index("fetchval")
+
+
+async def test_a_refused_account_still_releases_the_connection():
+    database, pool = await a_database()
+    pool.connection.account_is_active = False
+
+    with pytest.raises(AccountDisabled):
+        async with database.actor(a_token()):
+            pass
+
+    assert ("release",) in pool.log

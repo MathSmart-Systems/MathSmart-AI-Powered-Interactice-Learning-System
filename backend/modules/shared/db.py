@@ -28,6 +28,16 @@ class DatabaseNotReady(RuntimeError):
     """The gateway was used before its pool was created."""
 
 
+class AccountDisabled(PermissionError):
+    """The caller's application account is not active.
+
+    Raised even though the access token verified. A Supabase token stays valid
+    until it expires, so signing a user out or deleting them does not retract a
+    token already issued; the authoritative answer is the account status in the
+    database, and it is consulted on every request.
+    """
+
+
 class ActorConnection:
     """A connection already scoped to one caller, inside one transaction.
 
@@ -102,7 +112,21 @@ class Database:
         async with self._pool.acquire() as connection:
             async with connection.transaction():
                 await connection.execute(context.sql, *context.params)
+
+                # Asked as the caller, inside the caller's own context, so the
+                # answer comes from the same authority the policies use. An
+                # inactive account never reaches a repository: the transaction
+                # is abandoned before the body runs, and rolls back on the way
+                # out.
+                if not await connection.fetchval(_ACCOUNT_IS_ACTIVE_SQL):
+                    raise AccountDisabled("The account is not active")
+
                 yield ActorConnection(connection)
+
+
+#: The authoritative account check. `app.is_active_account()` reads the caller's
+#: own profile and returns a boolean.
+_ACCOUNT_IS_ACTIVE_SQL = "select app.is_active_account()"
 
 
 async def _default_pool_factory(dsn: str) -> Any:

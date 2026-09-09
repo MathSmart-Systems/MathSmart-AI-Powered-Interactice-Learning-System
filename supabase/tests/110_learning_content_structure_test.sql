@@ -228,12 +228,17 @@ select ok(has_table_privilege('authenticated', 'app.activity_questions'::regclas
 -- ---------------------------------------------------------------------------
 -- Helpers stay hardened
 -- ---------------------------------------------------------------------------
-select ok(
-  (select not bool_or(pg_proc.prosecdef)
+-- SECURITY INVOKER remains the rule, with exactly one reviewed exception:
+-- app.is_active_account must run with definer rights because a policy on the
+-- very table it reads consults it, and invoker rights there would recurse.
+select is(
+  (select string_agg(pg_proc.proname, ',' order by pg_proc.proname)
    from pg_proc
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
-   where pg_namespace.nspname = 'app'),
-  'No function in the app schema uses SECURITY DEFINER'
+   where pg_namespace.nspname = 'app'
+     and pg_proc.prosecdef),
+  'is_active_account',
+  'app.is_active_account is the only SECURITY DEFINER function in the schema'
 );
 
 select ok(

@@ -20,7 +20,7 @@ import pytest
 from pydantic import SecretStr
 
 from middleware.auth import MathSmartRole, VerifiedToken
-from modules.shared.db import Database
+from modules.shared.db import AccountDisabled, Database
 
 DB_URL = os.environ.get("MATHSMART_TEST_DB_URL")
 
@@ -276,3 +276,68 @@ async def test_the_role_reverts_when_the_transaction_ends(database, seeded):
         assert await owner.fetchval("select current_setting('role', true)") in (None, "", "none")
     finally:
         await owner.close()
+
+
+async def _set_account_status(user_id: UUID, status: str) -> None:
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        await owner.execute(
+            """
+            update app.user_profiles
+            set account_status = $2::app.account_status,
+                archived_at = case when $2 = 'archived' then now() else null end
+            where user_id = $1
+            """,
+            user_id,
+            status,
+        )
+    finally:
+        await owner.close()
+
+
+async def test_a_suspended_learner_is_denied_despite_a_valid_token(database, seeded):
+    """The token is untouched and still verifies. The account is the thing that changed."""
+    await _set_account_status(LEARNER_ONE, "suspended")
+
+    with pytest.raises(AccountDisabled):
+        async with database.actor(token_for(LEARNER_ONE, MathSmartRole.STUDENT)):
+            pass
+
+
+async def test_a_suspended_learner_reaches_no_repository(database, seeded):
+    await _set_account_status(LEARNER_ONE, "suspended")
+
+    with pytest.raises(AccountDisabled):
+        async with database.actor(token_for(LEARNER_ONE, MathSmartRole.STUDENT)) as connection:
+            await connection.fetch("select 1 from app.student_profiles")
+
+
+async def test_an_archived_teacher_admin_is_denied_despite_a_valid_token(database, seeded):
+    await _set_account_status(ADVISER, "archived")
+
+    with pytest.raises(AccountDisabled):
+        async with database.actor(token_for(ADVISER, MathSmartRole.TEACHER_ADMIN)):
+            pass
+
+
+async def test_suspension_is_reversible(database, seeded):
+    await _set_account_status(LEARNER_ONE, "suspended")
+    with pytest.raises(AccountDisabled):
+        async with database.actor(token_for(LEARNER_ONE, MathSmartRole.STUDENT)):
+            pass
+
+    await _set_account_status(LEARNER_ONE, "active")
+
+    async with database.actor(token_for(LEARNER_ONE, MathSmartRole.STUDENT)) as connection:
+        rows = await connection.fetch("select user_id from app.student_profiles")
+
+    assert [row["user_id"] for row in rows] == [LEARNER_ONE]
+
+
+async def test_suspending_one_learner_does_not_affect_another(database, seeded):
+    await _set_account_status(LEARNER_ONE, "suspended")
+
+    async with database.actor(token_for(LEARNER_TWO, MathSmartRole.STUDENT)) as connection:
+        rows = await connection.fetch("select user_id from app.student_profiles")
+
+    assert [row["user_id"] for row in rows] == [LEARNER_TWO]
