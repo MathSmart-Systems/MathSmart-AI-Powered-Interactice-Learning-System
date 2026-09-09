@@ -114,12 +114,64 @@ async def _progress_for(connection: Any, student_id: UUID) -> dict[str, Any]:
     return {"data": progress.model_dump(mode="json")}
 
 
-@router.get("/progress/me")
-async def read_own_progress(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
-    """The caller's own progress. No learner identifier is read from the request."""
+def _path_item(row: Any) -> dict[str, Any]:
+    return {
+        "id": str(row["path_item_id"]),
+        "priority": row["priority"],
+        "reason": row["reason"],
+        "status": str(row["status"]),
+        "competency": {
+            "id": str(row["competency_id"]),
+            "code": row["competency_code"],
+            "name": row["competency_name"],
+        },
+        "module": {
+            "id": str(row["module_id"]),
+            "title": row["module_title"],
+            "estimated_minutes": row["estimated_minutes"],
+        },
+    }
+
+
+async def _own_student_id(connection: Any, actor: Any) -> UUID:
+    """The caller's own learner record, or a refusal. No request field names it."""
     student_id = await repository.own_student_id(connection, actor.user_id)
     if student_id is None:
         raise ApiError(403, "This action belongs to a learner")
+    return UUID(str(student_id))
+
+
+async def _may_name(connection: Any, actor: Any, student_id: UUID) -> None:
+    """A learner may name only themselves; naming anyone is an educator's action."""
+    if actor.role is MathSmartRole.TEACHER_ADMIN:
+        return
+    own = await repository.own_student_id(connection, actor.user_id)
+    if own is None or UUID(str(own)) != student_id:
+        raise ApiError(403, "This learner record does not belong to you")
+
+
+@router.get("/learning-path/me")
+async def read_own_learning_path(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
+    """The caller's own ordered targeted path."""
+    student_id = await _own_student_id(connection, actor)
+    rows = await repository.path(connection, student_id)
+    return {"data": [_path_item(row) for row in rows]}
+
+
+@router.get("/learning-path/{student_id}")
+async def read_learning_path(
+    actor: CurrentActor, connection: ActorDb, student_id: UUID
+) -> dict[str, Any]:
+    """A named learner's ordered path, with the reason each item was recommended."""
+    await _may_name(connection, actor, student_id)
+    rows = await repository.path(connection, student_id)
+    return {"data": [_path_item(row) for row in rows]}
+
+
+@router.get("/progress/me")
+async def read_own_progress(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
+    """The caller's own progress. No learner identifier is read from the request."""
+    student_id = await _own_student_id(connection, actor)
     return await _progress_for(connection, student_id)
 
 
@@ -128,8 +180,5 @@ async def read_progress(
     actor: CurrentActor, connection: ActorDb, student_id: UUID
 ) -> dict[str, Any]:
     """A named learner's progress: their own, or any learner for an educator."""
-    if actor.role is not MathSmartRole.TEACHER_ADMIN:
-        own = await repository.own_student_id(connection, actor.user_id)
-        if own is None or UUID(str(own)) != student_id:
-            raise ApiError(403, "This learner record does not belong to you")
+    await _may_name(connection, actor, student_id)
     return await _progress_for(connection, student_id)

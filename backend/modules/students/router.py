@@ -23,7 +23,12 @@ from modules.students.provisioning import (
     ProvisioningFailed,
     StudentProvisioning,
 )
-from modules.students.schemas import EnrolLearnerRequest, LearnerSummary
+from modules.students.schemas import (
+    EnrolLearnerRequest,
+    LearnerRecordChanges,
+    LearnerSummary,
+    OwnProfileChanges,
+)
 
 router = APIRouter(tags=["students"])
 
@@ -48,6 +53,28 @@ def _learner(row: Any) -> dict[str, Any]:
 @router.get("/students/me")
 async def read_own_learner_record(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
     """The caller's own learner record."""
+    row = await repository.own_learner(connection, actor.user_id)
+    if row is None:
+        raise ApiError(404, "No learner record belongs to this account")
+    return {"data": _learner(row)}
+
+
+@router.patch("/students/me")
+async def update_own_profile(
+    actor: CurrentActor, connection: ActorDb, body: OwnProfileChanges
+) -> dict[str, Any]:
+    """Change the caller's own display name.
+
+    One field, because one column is what a learner may write on their own
+    profile. Their role, their status and their learner id are not theirs to
+    change, and the column grant says so even if this route were wrong.
+    """
+    updated = await repository.update_own_name(
+        connection, user_id=actor.user_id, full_name=body.full_name
+    )
+    if updated is None:
+        raise ApiError(404, "No profile belongs to this account")
+
     row = await repository.own_learner(connection, actor.user_id)
     if row is None:
         raise ApiError(404, "No learner record belongs to this account")
@@ -146,3 +173,48 @@ async def enrol_learner(
             "learner_id": learner.learner_id,
         }
     }
+
+
+@router.get("/students/{student_id}")
+async def read_learner(
+    _actor: TeacherAdmin, connection: ActorDb, student_id: UUID
+) -> dict[str, Any]:
+    """A named learner's record.
+
+    A learner reads their own through `GET /students/me`; naming one is a
+    Teacher/Administrator's action, and the policies refuse it a second time.
+    """
+    row = await repository.learner(connection, student_id)
+    if row is None:
+        raise ApiError(404, "No learner record was found")
+    return {"data": _learner(row)}
+
+
+@router.patch("/students/{student_id}")
+async def update_learner(
+    _actor: TeacherAdmin,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    student_id: UUID,
+    body: LearnerRecordChanges,
+) -> dict[str, Any]:
+    """Change a learner's enrolment: their class, grade, school or monitoring.
+
+    Not their identity and not their access. Moving a learner between classes is
+    a security-critical school record, so it needs a live session too.
+    """
+    updated = await repository.update_learner(
+        connection,
+        student_id=student_id,
+        grade_id=body.grade_id,
+        section_id=body.section_id,
+        monitoring_status=body.monitoring_status,
+        school_name=body.school_name,
+    )
+    if updated is None:
+        raise ApiError(404, "No learner record was found")
+
+    row = await repository.learner(connection, student_id)
+    if row is None:
+        raise ApiError(404, "No learner record was found")
+    return {"data": _learner(row)}

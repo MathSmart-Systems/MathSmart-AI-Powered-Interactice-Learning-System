@@ -26,6 +26,34 @@ class EnrolLearnerRequest(BaseModel):
     school_name: str | None = Field(default=None, min_length=2, max_length=160)
 
 
+class OwnProfileChanges(BaseModel):
+    """What a learner may change about themselves.
+
+    One field, because one column is what `authenticated` may write on its own
+    profile. There is no role, no account status and no learner id here, and
+    `extra="forbid"` means asking for one is refused rather than ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=2, max_length=120)
+
+
+class LearnerRecordChanges(BaseModel):
+    """What a Teacher/Administrator may change about a learner's enrolment.
+
+    The school's own facts: which class they are in, which grade, and how they
+    are being monitored. Not who they are, and not whether they may sign in.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    grade_id: UUID | None = None
+    section_id: UUID | None = None
+    monitoring_status: str | None = Field(default=None, min_length=2, max_length=40)
+    school_name: str | None = Field(default=None, min_length=2, max_length=160)
+
+
 class LearnerSummary(BaseModel):
     """A learner as the roster and the enrolment response present them."""
 

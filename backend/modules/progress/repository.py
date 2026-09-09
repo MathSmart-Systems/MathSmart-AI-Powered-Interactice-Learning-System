@@ -65,13 +65,19 @@ _PATH_SQL = """
 select
   learning_path_items.path_item_id,
   learning_path_items.priority,
+  learning_path_items.reason,
   learning_path_items.status,
+  learning_path_items.competency_id,
+  competencies.code as competency_code,
+  competencies.name as competency_name,
   learning_path_items.module_id,
   learning_modules.title as module_title,
-  learning_path_items.competency_id
+  learning_modules.estimated_minutes
 from app.learning_path_items
 join app.learning_modules
   on learning_modules.module_id = learning_path_items.module_id
+join app.competencies
+  on competencies.competency_id = learning_path_items.competency_id
 where learning_path_items.student_id = $1
 order by learning_path_items.priority
 """
