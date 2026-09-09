@@ -49,62 +49,86 @@ def token_for(user_id: UUID, role: MathSmartRole) -> VerifiedToken:
 
 @pytest.fixture
 async def seeded() -> None:
-    """Two learners with their own evidence, and one Teacher/Administrator."""
+    """Two learners with their own evidence, and one Teacher/Administrator.
+
+    Statements are issued one at a time: asyncpg prepares any statement that
+    carries bind parameters, and a prepared statement cannot contain more than
+    one command.
+    """
     owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    email_one = f"rls.one.{SUFFIX}@mathsmart.test"
+    email_two = f"rls.two.{SUFFIX}@mathsmart.test"
+    email_adviser = f"rls.adviser.{SUFFIX}@mathsmart.test"
+    competency_code = f"RLSX-{SUFFIX}"
     try:
         await owner.execute(
+            "insert into auth.users (id, email) values ($1, $2), ($3, $4), ($5, $6)",
+            LEARNER_ONE, email_one, LEARNER_TWO, email_two, ADVISER, email_adviser,
+        )
+        await owner.execute(
             """
-            insert into auth.users (id, email) values
-              ($1, 'rls.one.' || $4 || '@mathsmart.test'),
-              ($2, 'rls.two.' || $4 || '@mathsmart.test'),
-              ($3, 'rls.adviser.' || $4 || '@mathsmart.test');
-
             insert into app.user_profiles (user_id, full_name, email, role) values
-              ($1, 'RLS Learner One', 'rls.one.' || $4 || '@mathsmart.test', 'student'),
-              ($2, 'RLS Learner Two', 'rls.two.' || $4 || '@mathsmart.test', 'student'),
-              ($3, 'RLS Adviser', 'rls.adviser.' || $4 || '@mathsmart.test', 'teacher_admin');
-
+              ($1, 'RLS Learner One', $2, 'student'),
+              ($3, 'RLS Learner Two', $4, 'student'),
+              ($5, 'RLS Adviser', $6, 'teacher_admin')
+            """,
+            LEARNER_ONE, email_one, LEARNER_TWO, email_two, ADVISER, email_adviser,
+        )
+        await owner.execute(
+            """
             insert into app.teacher_admin_profiles
               (user_id, employee_id, school_name, division_name)
-            values ($3, 'EMP-' || $4, 'Sample School', 'Sample Division');
-
+            values ($1, $2, 'Sample School', 'Sample Division')
+            """,
+            ADVISER, f"EMP-{SUFFIX}",
+        )
+        await owner.execute(
+            """
             insert into app.student_profiles (user_id, learner_id, grade_id) values
-              ($1, 'LRN-A-' || $4, (select grade_id from app.grade_levels where level = 6)),
-              ($2, 'LRN-B-' || $4, (select grade_id from app.grade_levels where level = 6));
-
+              ($1, $2, (select grade_id from app.grade_levels where level = 6)),
+              ($3, $4, (select grade_id from app.grade_levels where level = 6))
+            """,
+            LEARNER_ONE, f"LRN-A-{SUFFIX}", LEARNER_TWO, f"LRN-B-{SUFFIX}",
+        )
+        await owner.execute(
+            """
             insert into app.competencies (code, grade_id, domain, name, status)
-            values ('RLSX-' || $4,
-                    (select grade_id from app.grade_levels where level = 6),
-                    'Number Sense', 'RLS enforcement competency', 'published');
-
+            values ($1, (select grade_id from app.grade_levels where level = 6),
+                    'Number Sense', 'RLS enforcement competency', 'published')
+            """,
+            competency_code,
+        )
+        await owner.execute(
+            """
             insert into app.competency_progress
               (student_id, competency_id, current_score, mastery_band)
             select student_profiles.student_id,
-                   (select competency_id from app.competencies where code = 'RLSX-' || $4),
+                   (select competency_id from app.competencies where code = $3),
                    case when student_profiles.user_id = $1 then 40.00 else 90.00 end,
                    case when student_profiles.user_id = $1
                         then 'Needs Improvement'::app.mastery_band
                         else 'Mastered'::app.mastery_band end
             from app.student_profiles
-            where student_profiles.user_id in ($1, $2);
-
+            where student_profiles.user_id in ($1, $2)
+            """,
+            LEARNER_ONE, LEARNER_TWO, competency_code,
+        )
+        await owner.execute(
+            """
             insert into app.questions
               (competency_id, question_type, prompt, answer_key, status)
-            values ((select competency_id from app.competencies where code = 'RLSX-' || $4),
-                    'number_input', 'RLS enforcement prompt', '{"value":7}'::jsonb, 'published');
+            values ((select competency_id from app.competencies where code = $1),
+                    'number_input', 'RLS enforcement prompt', '{"value":7}'::jsonb, 'published')
             """,
-            LEARNER_ONE,
-            LEARNER_TWO,
-            ADVISER,
-            SUFFIX,
+            competency_code,
         )
         yield
     finally:
         await owner.execute(
-            "delete from app.competencies where code = 'RLSX-' || $1;", SUFFIX
+            "delete from app.competencies where code = $1", competency_code
         )
         await owner.execute(
-            "delete from auth.users where id = any($1::uuid[]);",
+            "delete from auth.users where id = any($1::uuid[])",
             [LEARNER_ONE, LEARNER_TWO, ADVISER],
         )
         await owner.close()
