@@ -33,6 +33,7 @@ from modules.learning_modules.router import router as learning_modules_router
 from modules.progress.router import router as progress_router
 from modules.shared.db import Database
 from modules.students.router import router as students_router
+from modules.teacher_admin.reporting_router import router as teacher_admin_reporting_router
 
 API_PREFIX = "/api/v1"
 
@@ -116,6 +117,7 @@ def create_app(
     application.include_router(activities_router, prefix=API_PREFIX)
     application.include_router(progress_router, prefix=API_PREFIX)
     application.include_router(interventions_router, prefix=API_PREFIX)
+    application.include_router(teacher_admin_reporting_router, prefix=API_PREFIX)
 
     return application
 
