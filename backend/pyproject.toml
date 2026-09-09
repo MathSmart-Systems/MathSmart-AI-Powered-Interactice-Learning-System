@@ -9,8 +9,10 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "RUF"]
-# S101 is assert-in-test, which is the point of a test.
-per-file-ignores = { "**/tests/*" = ["S101"] }
+# S101 is assert-in-test, which is the point of a test. S105/S106 flag string
+# literals that look like credentials; in a test they are fixtures, and the
+# assertions that use them are precisely what prove a real one never leaks.
+per-file-ignores = { "**/tests/*" = ["S101", "S105", "S106"] }
 
 [tool.pytest.ini_options]
 testpaths = ["app", "middleware", "modules"]

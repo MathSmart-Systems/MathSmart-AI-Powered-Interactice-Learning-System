@@ -8,6 +8,8 @@ fastapi==0.141.1
 uvicorn[standard]==0.52.4
 pydantic==2.13.5
 pydantic-settings==2.15.0
+# Backs pydantic's EmailStr, which the enrolment contract validates against.
+email-validator==2.3.0
 
 # Database access. asyncpg speaks the binary protocol directly, so the backend
 # reaches the private `app` schema without going through the Data API.

@@ -1,0 +1,157 @@
+"""Application wiring: who gets in, who is turned away, and in what shape."""
+
+from contextlib import asynccontextmanager
+from uuid import UUID
+
+import pytest
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+
+from app.config import Settings
+from app.main import create_app
+from middleware.auth import InvalidToken, MathSmartRole, VerifiedToken
+from middleware.request_context import REQUEST_ID_HEADER
+from modules.shared.db import AccountDisabled
+
+STUDENT = UUID("b0000000-0000-4000-8000-000000000001")
+ADVISER = UUID("a0000000-0000-4000-8000-0000000000a1")
+
+
+def settings() -> Settings:
+    return Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_secret_key=SecretStr("sb_secret"),
+        supabase_db_url=SecretStr("postgresql://u:p@127.0.0.1:5432/postgres"),
+        supabase_jwks_url="https://example.supabase.co/auth/v1/.well-known/jwks.json",
+        supabase_jwt_issuer="https://example.supabase.co/auth/v1",
+    )
+
+
+class FakeVerifier:
+    """Maps a bearer token straight onto a role, so routing can be tested."""
+
+    async def verify(self, token: str) -> VerifiedToken:
+        if token == "student-token":
+            return VerifiedToken(
+                user_id=STUDENT,
+                role=MathSmartRole.STUDENT,
+                claims={"sub": str(STUDENT), "app_metadata": {"role": "student"}},
+            )
+        if token == "adviser-token":
+            return VerifiedToken(
+                user_id=ADVISER,
+                role=MathSmartRole.TEACHER_ADMIN,
+                claims={"sub": str(ADVISER), "app_metadata": {"role": "teacher_admin"}},
+            )
+        raise InvalidToken("The access token could not be verified")
+
+
+class FakeConnection:
+    async def fetch(self, query, *args):
+        return []
+
+    async def fetchrow(self, query, *args):
+        return None
+
+    async def fetchval(self, query, *args):
+        return None
+
+    async def execute(self, query, *args):
+        return "OK"
+
+
+class FakeDatabase:
+    def __init__(self, *, account_active: bool = True):
+        self.account_active = account_active
+
+    async def connect(self, **_):
+        return None
+
+    async def disconnect(self):
+        return None
+
+    @asynccontextmanager
+    async def actor(self, token):
+        if not self.account_active:
+            raise AccountDisabled("The account is not active")
+        yield FakeConnection()
+
+
+def client_for(database: FakeDatabase | None = None) -> TestClient:
+    app = create_app(
+        settings=settings(),
+        token_verifier=FakeVerifier(),
+        database=database or FakeDatabase(),
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def client() -> TestClient:
+    return client_for()
+
+
+def test_health_needs_no_token(client):
+    response = client.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "ok"
+
+
+def test_a_request_without_a_token_is_unauthorized(client):
+    response = client.get("/api/v1/auth/me")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_a_request_with_an_unverifiable_token_is_unauthorized(client):
+    response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer nonsense"})
+
+    assert response.status_code == 401
+
+
+def test_an_error_response_carries_the_request_id(client):
+    response = client.get("/api/v1/auth/me")
+
+    assert response.json()["error"]["request_id"] == response.headers[REQUEST_ID_HEADER]
+
+
+def test_a_verified_learner_reaches_their_own_identity(client):
+    response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer student-token"})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["user_id"] == str(STUDENT)
+    assert data["role"] == "student"
+
+
+def test_a_verified_teacher_admin_is_identified_as_one(client):
+    response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer adviser-token"})
+
+    assert response.json()["data"]["role"] == "teacher_admin"
+
+
+def test_an_inactive_account_is_refused_despite_a_valid_token():
+    client = client_for(FakeDatabase(account_active=False))
+
+    response = client.get(
+        "/api/v1/students/me", headers={"Authorization": "Bearer student-token"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "account_disabled"
+
+
+def test_a_learner_cannot_reach_a_teacher_admin_route(client):
+    response = client.get("/api/v1/students", headers={"Authorization": "Bearer student-token"})
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
+
+
+def test_the_openapi_document_is_served(client):
+    response = client.get("/api/v1/openapi.json")
+
+    assert response.status_code == 200
+    assert "/api/v1/auth/me" in response.json()["paths"]

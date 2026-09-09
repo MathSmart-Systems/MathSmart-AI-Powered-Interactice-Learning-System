@@ -44,6 +44,29 @@ _CODE_BY_STATUS = {
 GENERIC_SERVER_MESSAGE = "The request could not be completed."
 
 
+class ApiError(Exception):
+    """A failure that names its own machine-readable code.
+
+    Most failures can take the code implied by their status. Some need to be
+    distinguishable from their neighbours — an account that has been disabled is
+    not the same thing to a client as an ownership refusal, though both are 403.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        *,
+        code: str | None = None,
+        fields: dict[str, list[str]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
+        self.code = code
+        self.fields = fields
+
+
 def error_code_for(status_code: int) -> str:
     if status_code in _CODE_BY_STATUS:
         return _CODE_BY_STATUS[status_code]
@@ -84,6 +107,10 @@ def _fields_from(exc: RequestValidationError) -> dict[str, list[str]]:
 def install_error_handlers(app: FastAPI) -> None:
     """Route every failure through the single envelope."""
 
+    @app.exception_handler(ApiError)
+    async def _api_error(request: Request, exc: ApiError) -> JSONResponse:
+        return error_response(exc.status_code, exc.message, code=exc.code, fields=exc.fields)
+
     @app.exception_handler(StarletteHTTPException)
     async def _http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         headers = getattr(exc, "headers", None)
@@ -105,6 +132,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
 __all__ = [
     "GENERIC_SERVER_MESSAGE",
+    "ApiError",
     "HTTPException",
     "error_code_for",
     "error_response",
