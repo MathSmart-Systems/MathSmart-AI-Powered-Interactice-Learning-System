@@ -30,10 +30,12 @@ select ok(
   'Grade 6 is the active MVP grade level'
 );
 
+-- True with or without the development seed: the reference data is owned by the
+-- migration chain, and the seed only re-asserts the same guarded row.
 select is(
   (select count(*) from app.grade_levels),
   1::bigint,
-  'Migrations and seed create Grade 6 and nothing else'
+  'A rebuilt database holds Grade 6 and nothing else'
 );
 
 -- ---------------------------------------------------------------------------

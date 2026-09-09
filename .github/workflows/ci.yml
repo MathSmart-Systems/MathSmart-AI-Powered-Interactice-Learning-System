@@ -106,7 +106,7 @@ jobs:
         run: supabase start
 
       - name: Rebuild The Database From Migrations Only
-        run: supabase db reset
+        run: supabase db reset --no-seed
 
       - name: Lint Database Functions
         run: supabase db lint --fail-on error
@@ -114,7 +114,13 @@ jobs:
       - name: Run Security And Performance Advisors
         run: supabase db advisors --local --type all --fail-on error
 
-      - name: Run pgTAP Database Tests
+      - name: Run pgTAP Database Tests Against Migrations Only
+        run: supabase test db
+
+      - name: Rebuild The Database With The Development Seed
+        run: supabase db reset
+
+      - name: Run pgTAP Database Tests With The Seed Applied
         run: supabase test db
 
       - name: Stop Local Supabase Stack
