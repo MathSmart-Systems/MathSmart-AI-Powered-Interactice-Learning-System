@@ -14,6 +14,7 @@ import json
 from typing import Annotated, Any
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Query, Response
 
 from app.dependencies import ActorDb, CurrentActor, SensitiveActor, TeacherAdmin
@@ -173,7 +174,18 @@ async def start_attempt(
     already_open = await repository.open_attempt_id(
         connection, assessment_id=assessment_id, user_id=actor.user_id
     )
-    attempt_row = await repository.start_attempt(connection, assessment_id)
+    try:
+        attempt_row = await repository.start_attempt(connection, assessment_id)
+    except asyncpg.InsufficientPrivilegeError as exc:
+        # A learner asking for a second sitting of an assessment they have
+        # already finished. app.start_assessment_attempt refuses that without an
+        # educator's authorization, and the refusal is an ordinary answer to an
+        # ordinary request, not a fault: it must not reach the caller as a 500.
+        raise ApiError(
+            403,
+            "Sitting this assessment again needs your teacher's authorisation",
+            code="reassessment_not_authorized",
+        ) from exc
     if attempt_row is None:
         raise ApiError(404, "No assessment was found")
 

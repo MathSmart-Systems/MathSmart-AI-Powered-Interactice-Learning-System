@@ -15,6 +15,7 @@ the response envelope; the arithmetic is proved against PostgreSQL in
 import re
 from uuid import UUID
 
+import asyncpg
 import pytest
 
 from modules.shared.testing import (
@@ -222,6 +223,27 @@ def test_a_repeated_start_resumes_rather_than_creating_a_second_attempt():
 
     assert response.status_code == 200
     assert response.json()["data"]["saved_answers"] == {str(QUESTION): "72"}
+
+
+def test_a_retake_without_authorisation_is_refused_rather_than_failing():
+    """The database refuses it with 42501; the caller must not see a 500."""
+
+    class Refusing(FakeConnection):
+        async def fetchrow(self, query, *args):
+            if "app.start_assessment_attempt" in query:
+                raise asyncpg.InsufficientPrivilegeError(
+                    "A reassessment needs an authorization"
+                )
+            return await super().fetchrow(query, *args)
+
+    client = build_client(Refusing(results={OPEN_ATTEMPT: None}))
+
+    response = client.post(
+        f"/api/v1/assessments/{ASSESSMENT}/attempts", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "reassessment_not_authorized"
 
 
 def test_a_teacher_admin_does_not_sit_an_assessment():
