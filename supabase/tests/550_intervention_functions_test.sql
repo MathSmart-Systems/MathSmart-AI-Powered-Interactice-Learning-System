@@ -180,11 +180,13 @@ select ok(
   'A reopened case is no longer resolved'
 );
 
+-- Two updates were accepted: resolving, and reopening with a reason. The two
+-- refused ones raised instead, so they left no audit row behind.
 select is(
   (select count(*) from app.audit_events
    where audit_events.action = 'intervention.updated'),
-  3::bigint,
-  'Every accepted transition is audited'
+  2::bigint,
+  'Every accepted transition is audited, and only the accepted ones'
 );
 
 -- ---------------------------------------------------------------------------
