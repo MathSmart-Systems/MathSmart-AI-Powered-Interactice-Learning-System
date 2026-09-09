@@ -1,0 +1,1 @@
+export { DiagnosticView } from "./DiagnosticView";
