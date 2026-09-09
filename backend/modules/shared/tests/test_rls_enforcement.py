@@ -127,14 +127,24 @@ async def seeded() -> None:
         )
         yield
     finally:
-        await owner.execute(
-            "delete from app.competencies where code = $1", competency_code
-        )
-        await owner.execute(
-            "delete from auth.users where id = any($1::uuid[])",
-            [LEARNER_ONE, LEARNER_TWO, ADVISER],
-        )
-        await owner.close()
+        # Order matters: questions and learner records both reference the
+        # competency with ON DELETE RESTRICT, and the schema is deliberately
+        # strict about that, so the references go first.
+        try:
+            await owner.execute(
+                """
+                delete from app.questions
+                where competency_id = (select competency_id from app.competencies where code = $1)
+                """,
+                competency_code,
+            )
+            await owner.execute(
+                "delete from auth.users where id = any($1::uuid[])",
+                [LEARNER_ONE, LEARNER_TWO, ADVISER],
+            )
+            await owner.execute("delete from app.competencies where code = $1", competency_code)
+        finally:
+            await owner.close()
 
 
 @pytest.fixture
