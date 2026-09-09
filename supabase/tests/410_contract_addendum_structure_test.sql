@@ -30,6 +30,7 @@ select has_column('app'::name, 'audit_events'::name, 'occurred_at'::name,   'app
 select has_column('app'::name, 'reassessment_authorizations'::name, 'reason'::name,        'app.reassessment_authorizations.reason exists');
 select has_column('app'::name, 'reassessment_authorizations'::name, 'authorized_by'::name, 'app.reassessment_authorizations.authorized_by exists');
 select has_column('app'::name, 'reassessment_authorizations'::name, 'consumed_at'::name,   'app.reassessment_authorizations.consumed_at exists');
+select has_column('app'::name, 'reassessment_authorizations'::name, 'superseded_at'::name, 'app.reassessment_authorizations.superseded_at exists');
 
 select has_column('app'::name, 'activity_responses'::name, 'check_count'::name,    'app.activity_responses.check_count exists');
 select has_column('app'::name, 'activity_responses'::name, 'hint_issued_at'::name, 'app.activity_responses.hint_issued_at exists');
