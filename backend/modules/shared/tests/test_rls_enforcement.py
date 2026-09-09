@@ -127,10 +127,22 @@ async def seeded() -> None:
         )
         yield
     finally:
-        # Order matters: questions and learner records both reference the
-        # competency with ON DELETE RESTRICT, and the schema is deliberately
-        # strict about that, so the references go first.
+        # Unwound in dependency order, because the schema is deliberately strict:
+        # learner evidence pins the learner with ON DELETE RESTRICT, and both
+        # questions and evidence pin the competency the same way. Deleting the
+        # Auth user alone is not enough.
+        learners = [LEARNER_ONE, LEARNER_TWO, ADVISER]
         try:
+            await owner.execute(
+                """
+                delete from app.competency_progress
+                where student_id in (
+                    select student_id from app.student_profiles
+                    where user_id = any($1::uuid[])
+                )
+                """,
+                learners,
+            )
             await owner.execute(
                 """
                 delete from app.questions
@@ -139,8 +151,7 @@ async def seeded() -> None:
                 competency_code,
             )
             await owner.execute(
-                "delete from auth.users where id = any($1::uuid[])",
-                [LEARNER_ONE, LEARNER_TWO, ADVISER],
+                "delete from auth.users where id = any($1::uuid[])", learners
             )
             await owner.execute("delete from app.competencies where code = $1", competency_code)
         finally:
