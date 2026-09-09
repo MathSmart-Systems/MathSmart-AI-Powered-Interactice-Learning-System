@@ -22,6 +22,7 @@ from pydantic import SecretStr
 
 from middleware.auth import MathSmartRole, VerifiedToken
 from modules.assessments import repository
+from modules.shared.actor_context import build_actor_context
 from modules.shared.db import Database
 
 DB_URL = os.environ.get("MATHSMART_TEST_DB_URL")
@@ -324,34 +325,64 @@ async def test_a_scored_assessment_cannot_be_retaken_without_a_grant(database, s
             await repository.start_attempt(connection, seeded["assessment_id"])
 
 
-async def test_one_grant_opens_exactly_one_reassessment_under_concurrency(
-    database, seeded
-):
-    """Two connections, one grant, at the same time.
+async def _held_actor(user_id: UUID):
+    """A transaction that stays open until it is told to finish.
 
-    The consumption is a compare-and-set inside the function's own transaction,
-    so whichever writer loses updates nothing. Either the loser is refused, or
-    it arrives after the winner has already opened the reassessment and resumes
-    that same attempt. Both outcomes are correct; two reassessments and two
-    consumptions are not.
+    `Database.actor` commits when its block exits, which is right for a request
+    and useless for a race: nothing would still be uncommitted when the second
+    caller runs. This opens the same kind of transaction — the actor context
+    installed as the first statement — on a connection of its own, and hands it
+    back for the test to hold.
     """
-    scored_attempt = await _score_an_attempt(database, seeded)
+    connection = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    context = build_actor_context(token_for(user_id))
+    transaction = connection.transaction()
+    await transaction.start()
+    await connection.execute(context.sql, *context.params)
+    return connection, transaction
+
+
+async def test_one_grant_is_contested_by_two_open_transactions(database, seeded):
+    """Two transactions, one grant, the second held against the first.
+
+    The first opens the reassessment and consumes the grant, and is kept open.
+    The second then asks for the same reassessment: it must not be allowed to
+    proceed while the outcome of the first is unknown, and once the first
+    commits it must be refused, because the grant it would have spent is spent.
+    The refusal is the documented one — 42501, not a unique-index violation —
+    and it takes the attempt the second transaction had opened with it.
+    """
+    await _score_an_attempt(database, seeded)
     owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    winner = winner_transaction = loser = loser_transaction = None
     try:
         authorization_id = await _grant(owner, seeded)
 
-        async def start():
-            async with database.actor(token_for(LEARNER)) as connection:
-                return await repository.start_attempt(connection, seeded["assessment_id"])
+        winner, winner_transaction = await _held_actor(LEARNER)
+        opened = await winner.fetchrow(
+            "select * from app.start_assessment_attempt($1)", seeded["assessment_id"]
+        )
+        assert str(opened["status"]) == "in_progress"
 
-        outcomes = await asyncio.gather(start(), start(), return_exceptions=True)
+        loser, loser_transaction = await _held_actor(LEARNER)
+        contested = asyncio.create_task(
+            loser.fetchrow(
+                "select * from app.start_assessment_attempt($1)", seeded["assessment_id"]
+            )
+        )
 
-        opened = [row for row in outcomes if not isinstance(row, BaseException)]
-        refused = [row for row in outcomes if isinstance(row, BaseException)]
-        assert opened, outcomes
-        assert len({row["attempt_id"] for row in opened}) == 1
-        for failure in refused:
-            assert isinstance(failure, asyncpg.InsufficientPrivilegeError), failure
+        # It blocks: the grant it wants is locked by a transaction that has not
+        # said yet whether it will keep it.
+        done, _pending = await asyncio.wait({contested}, timeout=2)
+        assert not done, "the second caller did not wait for the first"
+
+        await winner_transaction.commit()
+
+        with pytest.raises(asyncpg.InsufficientPrivilegeError) as refusal:
+            await asyncio.wait_for(contested, timeout=10)
+        assert "A reassessment needs an authorization" in str(refusal.value)
+
+        await loser_transaction.rollback()
 
         granted = await owner.fetchrow(
             """
@@ -362,7 +393,7 @@ async def test_one_grant_opens_exactly_one_reassessment_under_concurrency(
             authorization_id,
         )
         assert granted["consumed_at"] is not None
-        assert granted["consumed_attempt_id"] == opened[0]["attempt_id"]
+        assert granted["consumed_attempt_id"] == opened["attempt_id"]
 
         attempts = await owner.fetchval(
             """
@@ -372,8 +403,10 @@ async def test_one_grant_opens_exactly_one_reassessment_under_concurrency(
             seeded["student_id"], seeded["assessment_id"],
         )
         assert attempts == 2
-        assert opened[0]["attempt_id"] != scored_attempt
     finally:
+        for connection in (winner, loser):
+            if connection is not None:
+                await connection.close()
         await owner.close()
 
 

@@ -487,11 +487,64 @@ select throws_ok(
   'An expired authorization does not reopen the assessment'
 );
 
+-- An expired grant must not become a permanent block. The open-grant index
+-- cannot read a clock, so an expired row still occupies the one open slot per
+-- learner and assessment until something retires it.
+reset role;
+set local request.jwt.claims = '{"sub":"aa000000-0000-4000-8000-0000000000a1","role":"authenticated","app_metadata":{"role":"teacher_admin"}}';
+set local role authenticated;
+
+select lives_ok(
+  $$ select app.authorize_reassessment(
+       '5a000000-0000-4000-8000-000000000001',
+       'fa000000-0000-4000-8000-000000000001',
+       'The first grant expired before the learner could sit it.'
+     ) $$,
+  'An educator can replace an expired authorization'
+);
+
+reset role;
+
+select is(
+  (select count(*) from app.reassessment_authorizations
+   where reassessment_authorizations.superseded_at is not null),
+  1::bigint,
+  'The expired grant is retired rather than deleted, so the audit record survives'
+);
+
+select is(
+  (select count(*) from app.reassessment_authorizations
+   where reassessment_authorizations.consumed_at is null
+     and reassessment_authorizations.superseded_at is null),
+  1::bigint,
+  'Exactly one grant is open afterwards'
+);
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
+select is(
+  (select replaced.status
+   from app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') as replaced),
+  'in_progress'::app.attempt_status,
+  'The replacement authorization reopens the assessment'
+);
+
+-- Put the learner back to a finished sitting, so the assertions that follow
+-- read the same state as before this block.
+reset role;
+
+update app.assessment_attempts
+set status = 'scored'::app.attempt_status, submitted_at = now(), overall_score = 0.00
+where assessment_attempts.student_id = '5a000000-0000-4000-8000-000000000001'
+  and assessment_attempts.status = 'in_progress'::app.attempt_status;
+
 -- A grant belongs to one learner and one assessment.
 reset role;
 
 delete from app.reassessment_authorizations
-where reassessment_authorizations.consumed_at is null;
+where reassessment_authorizations.consumed_at is null
+  and reassessment_authorizations.superseded_at is null;
 
 insert into app.assessments
   (assessment_id, grade_id, title, assessment_type, status, duration_minutes)
