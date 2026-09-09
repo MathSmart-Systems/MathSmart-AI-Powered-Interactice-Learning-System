@@ -32,7 +32,10 @@ pytestmark = [
 LEARNER_ONE = uuid4()
 LEARNER_TWO = uuid4()
 ADVISER = uuid4()
+# Identifiers are stored normalised in upper case; email addresses are stored
+# normalised in lower case. Both constraints are real, so the fixture honours both.
 SUFFIX = uuid4().hex[:8].upper()
+EMAIL_SUFFIX = SUFFIX.lower()
 
 
 def token_for(user_id: UUID, role: MathSmartRole) -> VerifiedToken:
@@ -56,9 +59,9 @@ async def seeded() -> None:
     one command.
     """
     owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
-    email_one = f"rls.one.{SUFFIX}@mathsmart.test"
-    email_two = f"rls.two.{SUFFIX}@mathsmart.test"
-    email_adviser = f"rls.adviser.{SUFFIX}@mathsmart.test"
+    email_one = f"rls.one.{EMAIL_SUFFIX}@mathsmart.test"
+    email_two = f"rls.two.{EMAIL_SUFFIX}@mathsmart.test"
+    email_adviser = f"rls.adviser.{EMAIL_SUFFIX}@mathsmart.test"
     competency_code = f"RLSX-{SUFFIX}"
     try:
         await owner.execute(
