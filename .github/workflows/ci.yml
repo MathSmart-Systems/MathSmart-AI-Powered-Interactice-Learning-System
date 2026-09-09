@@ -88,6 +88,39 @@ jobs:
           echo "A human maintainer must explicitly approve the change and apply the docs-change-approved label."
           exit 1
 
+  database-check:
+    name: Database Migrations & pgTAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Local Supabase Stack
+        run: supabase start
+
+      - name: Rebuild The Database From Migrations Only
+        run: supabase db reset
+
+      - name: Lint Database Functions
+        run: supabase db lint --fail-on error
+
+      - name: Run Security And Performance Advisors
+        run: supabase db advisors --local --type all --fail-on error
+
+      - name: Run pgTAP Database Tests
+        run: supabase test db
+
+      - name: Stop Local Supabase Stack
+        if: always()
+        run: supabase stop --no-backup
+
   frontend-check:
     name: Frontend Build & Lint
     runs-on: ubuntu-latest
