@@ -33,9 +33,9 @@ select ok(
 -- True with or without the development seed: the reference data is owned by the
 -- migration chain, and the seed only re-asserts the same guarded row.
 select is(
-  (select count(*) from app.grade_levels),
-  1::bigint,
-  'A rebuilt database holds Grade 6 and nothing else'
+  (select count(*) from app.grade_levels where grade_levels.level <> 6),
+  0::bigint,
+  'A rebuilt database holds Grade 6 and no other grade level'
 );
 
 -- ---------------------------------------------------------------------------

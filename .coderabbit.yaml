@@ -12,12 +12,17 @@ reviews:
   poem: false
   enable_prompt_for_ai_agents: true
 
+  # Both slices of the first read are done, so the filter is back to excluding
+  # only what is not source. The remaining rounds are incremental: they read the
+  # commits pushed since the last review, which is far below the hundred-file
+  # limit that forced the slicing.
   path_filters:
     - "!node_modules/**"
     - "!.next/**"
     - "!dist/**"
     - "!build/**"
     - "!coverage/**"
+    - "!package-lock.json"
 
   auto_review:
     enabled: true

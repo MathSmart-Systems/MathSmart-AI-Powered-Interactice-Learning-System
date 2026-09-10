@@ -92,6 +92,9 @@ select col_type_is('app'::name, 'grade_levels'::name,     'is_active'::name,  'b
 -- ---------------------------------------------------------------------------
 -- Role vocabulary
 -- ---------------------------------------------------------------------------
+-- Asserted as exact equality on purpose. These values mirror the frozen
+-- canonical enum table, so an added label is a documentation conflict that
+-- should fail loudly rather than pass a containment check.
 select is(
   (select string_agg(role_value::text, ',' order by role_value::text) from unnest(enum_range(null::app.user_role)) as role_value),
   'student,teacher_admin',
@@ -171,12 +174,47 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 -- ---------------------------------------------------------------------------
 -- Helper routines are hardened
 -- ---------------------------------------------------------------------------
-select ok(
-  (select not bool_or(pg_proc.prosecdef)
+-- SECURITY INVOKER remains the rule. Every exception is listed here, and each
+-- one exists because the caller's own rights genuinely cannot do the work:
+--
+--   is_active_account        a policy on the table it reads consults it, so
+--                            invoker rights would recurse
+--   module_section_ids,      a learner's own record is SELECT-only for
+--   save_module_progress,    `authenticated`, so their own progress is written
+--   complete_module          through a function instead of a grant
+--   start_assessment_attempt,
+--   save_assessment_answers  the same, for attempts
+--   submit_assessment_attempt  grading reads app.questions.answer_key, which
+--                            `authenticated` deliberately cannot select
+--   authorize_reassessment   an authorization is a decision, and the table that
+--                            records it is SELECT-only for the caller
+--   start_activity_attempt,  the activity equivalents: answer checks and hints
+--   check_activity_answer,   read answer_key and hint, and the learner's own
+--   activity_hint,           records are SELECT-only for them
+--   submit_activity_attempt
+--   setting_integer          reads app.system_settings, which a learner cannot
+--   record_audit_event,      an audit row is evidence and a case is an
+--   open_intervention,       educator's record about a learner; neither may be
+--   update_intervention,     written by the caller directly
+--   archive_intervention
+--   set_account_status,      role and account_status are not in the column
+--   reset_diagnostic         grant for `authenticated`, and voiding an attempt
+--                            spans three tables that must agree
+--
+-- A new name appearing here is a review item, not a formatting change.
+select is(
+  (select string_agg(pg_proc.proname, ',' order by pg_proc.proname)
    from pg_proc
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
-   where pg_namespace.nspname = 'app'),
-  'No function in the app schema uses SECURITY DEFINER'
+   where pg_namespace.nspname = 'app'
+     and pg_proc.prosecdef),
+  'activity_hint,archive_intervention,authorize_reassessment,'
+  || 'check_activity_answer,complete_module,is_active_account,module_section_ids,'
+  || 'open_intervention,record_audit_event,reset_diagnostic,'
+  || 'save_assessment_answers,save_module_progress,set_account_status,'
+  || 'setting_integer,start_activity_attempt,start_assessment_attempt,'
+  || 'submit_activity_attempt,submit_assessment_attempt,update_intervention',
+  'Only the reviewed functions are SECURITY DEFINER'
 );
 
 select ok(
@@ -207,12 +245,16 @@ select ok(to_regclass('app.grade_levels_active_level_idx') is not null,         
 -- ---------------------------------------------------------------------------
 -- updated_at is maintained by the server
 -- ---------------------------------------------------------------------------
+-- Scoped to the Phase 1 tables by name. A schema-wide count would have to be
+-- revised by every later phase that adds a table with updated_at.
 select is(
   (select count(*)
    from pg_trigger
    join pg_class on pg_class.oid = pg_trigger.tgrelid
    join pg_namespace on pg_namespace.oid = pg_class.relnamespace
    where pg_namespace.nspname = 'app'
+     and pg_class.relname in ('user_profiles', 'grade_levels', 'teacher_admin_profiles',
+                              'sections', 'student_profiles')
      and not pg_trigger.tgisinternal
      and pg_trigger.tgname like '%_set_updated_at'),
   5::bigint,
