@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 
 from app.config import Settings, get_settings
 from middleware.errors import install_error_handlers
@@ -103,6 +104,17 @@ def create_app(
     )
     application.state.groq = groq or _default_groq(resolved)
 
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     application.add_middleware(RequestIdMiddleware)
     install_error_handlers(application)
 

@@ -44,6 +44,7 @@ import {
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 const IDEMPOTENCY_KEY_PREFIX = "mathsmart:diagnostic-submit:";
 const COMPLETED_ATTEMPT_STATUSES = new Set(["scored"]);
+const PENDING_ATTEMPT_STATUSES = new Set(["submitted"]);
 
 function submissionStorageKey(attemptId) {
   return `${IDEMPOTENCY_KEY_PREFIX}${attemptId}`;
@@ -224,19 +225,44 @@ export function DiagnosticView() {
         setTotal(preview.total_questions);
         setTimeLimitSeconds(preview.time_limit_minutes * 60);
 
-        if (preview.latest_status === "in_progress") {
+        if (preview.diagnostic_status === "in_progress") {
+          if (!preview.latest_attempt_id || preview.latest_status !== "in_progress") {
+            throw new AssessmentError(
+              "Your diagnostic is marked in progress, but the active attempt could not be found. Please ask your teacher for help.",
+            );
+          }
+
           const resumed = await startDiagnostic(preview.assessment_id);
           if (!cancelled) hydrateAttempt(resumed);
+        } else if (PENDING_ATTEMPT_STATUSES.has(preview.latest_status)) {
+          throw new AssessmentError(
+            "Your diagnostic has been submitted and is still being finalized. Please try again shortly.",
+          );
         } else if (
-          !preview.reassessment_eligible &&
-          COMPLETED_ATTEMPT_STATUSES.has(preview.latest_status) &&
-          preview.latest_attempt_id
+          preview.diagnostic_status === "completed" &&
+          !preview.reassessment_eligible
         ) {
+          if (
+            !preview.latest_attempt_id ||
+            !COMPLETED_ATTEMPT_STATUSES.has(preview.latest_status)
+          ) {
+            throw new AssessmentError(
+              "Your diagnostic is complete, but the saved result could not be found. Please ask your teacher for help.",
+            );
+          }
+
           const completed = await loadDiagnosticResult(preview.latest_attempt_id);
           if (!cancelled) {
             setResult(completed);
             setScreen("report");
           }
+        } else if (
+          preview.diagnostic_status !== "not_started" &&
+          !(preview.diagnostic_status === "completed" && preview.reassessment_eligible)
+        ) {
+          throw new AssessmentError(
+            "Your diagnostic status is unavailable right now. Please try again or ask your teacher for help.",
+          );
         }
       })
       .catch((error) => {

@@ -277,6 +277,7 @@ function mockDiagnosticPreview() {
     time_limit_minutes: diagnosticMock.time_limit_minutes,
     latest_attempt_id: mockAttempt?.attempt_id ?? mockResult?.attempt_id ?? null,
     latest_status: mockResult?.status ?? (mockAttempt ? "in_progress" : null),
+    diagnostic_status: mockResult ? "completed" : mockAttempt ? "in_progress" : "not_started",
     reassessment_eligible: false,
     reassessment_reason: null,
   };
