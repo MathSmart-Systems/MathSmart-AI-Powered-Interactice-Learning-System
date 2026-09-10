@@ -224,7 +224,8 @@ async def test_the_api_connection_cannot_select_an_answer_key(database, seeded):
 
 async def test_delivered_questions_carry_no_answer(database, seeded):
     async with database.actor(token_for(LEARNER)) as connection:
-        rows = await repository.questions_for(connection, seeded["assessment_id"])
+        attempt = await repository.start_attempt(connection, seeded["assessment_id"])
+        rows = await repository.questions_for(connection, attempt["attempt_id"])
 
     assert len(rows) == 2
     for row in rows:
@@ -346,11 +347,9 @@ async def test_one_grant_is_contested_by_two_open_transactions(database, seeded)
     """Two transactions, one grant, the second held against the first.
 
     The first opens the reassessment and consumes the grant, and is kept open.
-    The second then asks for the same reassessment: it must not be allowed to
-    proceed while the outcome of the first is unknown, and once the first
-    commits it must be refused, because the grant it would have spent is spent.
-    The refusal is the documented one — 42501, not a unique-index violation —
-    and it takes the attempt the second transaction had opened with it.
+    The second then asks for the same reassessment: it must wait while the first
+    outcome is unknown, then resume the committed open attempt rather than spend
+    the grant again or create a duplicate.
     """
     await _score_an_attempt(database, seeded)
     owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
@@ -378,9 +377,9 @@ async def test_one_grant_is_contested_by_two_open_transactions(database, seeded)
 
         await winner_transaction.commit()
 
-        with pytest.raises(asyncpg.InsufficientPrivilegeError) as refusal:
-            await asyncio.wait_for(contested, timeout=10)
-        assert "A reassessment needs an authorization" in str(refusal.value)
+        resumed = await asyncio.wait_for(contested, timeout=10)
+        assert resumed["attempt_id"] == opened["attempt_id"]
+        assert resumed["resumed"] is True
 
         await loser_transaction.rollback()
 

@@ -4,12 +4,11 @@ const API_BASE_URL =
 export const getApiUrl = (path) => `${API_BASE_URL}${path}`;
 
 /**
- * Serve features from local fixtures instead of the backend. Defaults to on, so
- * a checkout with no `.env.local` still runs; set `NEXT_PUBLIC_USE_MOCK=false`
- * to call the real FastAPI service.
+ * Serve features from local fixtures only when explicitly requested. Production
+ * and ordinary development use the canonical FastAPI service by default.
  */
 export const USE_MOCK =
-  process.env.NEXT_PUBLIC_USE_MOCK !== 'false';
+  process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 
 const apiConfig = { API_BASE_URL, getApiUrl, USE_MOCK };
 

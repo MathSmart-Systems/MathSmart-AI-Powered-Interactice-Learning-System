@@ -12,6 +12,8 @@ the response envelope; the arithmetic is proved against PostgreSQL in
 `supabase/tests/530_assessment_attempt_functions_test.sql`.
 """
 
+import hashlib
+import json
 import re
 from uuid import UUID
 
@@ -33,6 +35,8 @@ MODULE = UUID("4a39d286-e93e-4e75-9644-b873fcac185c")
 GRADE = UUID("3f0f0000-0000-4000-8000-000000000006")
 STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
 PATH_ITEM = UUID("821a14d6-c49a-4f42-bc04-96388ec76a31")
+IDEMPOTENCY_KEY = "assessment-submit-0001"
+SUBMISSION_HEADERS = {**LEARNER_HEADERS, "Idempotency-Key": IDEMPOTENCY_KEY}
 
 ASSESSMENT_ROW = {
     "assessment_id": ASSESSMENT,
@@ -56,6 +60,14 @@ ATTEMPT_ROW = {
     "overall_score": None,
     "started_at": None,
     "submitted_at": None,
+    "resumed": False,
+    "assessment_payload": {
+        "id": str(ASSESSMENT),
+        "title": "Grade 6 Mathematics Diagnostic Assessment",
+        "type": "diagnostic",
+        "duration_minutes": 30,
+    },
+    "result_payload": None,
 }
 
 SCORED_ROW = {
@@ -114,7 +126,7 @@ ATTEMPT_BY_ID = "where assessment_attempts.attempt_id = $1"
 ASSESSMENT_BY_ID = "where assessments.assessment_id"
 ASSESSMENT_LIST = "order by assessments.title"
 TOTAL = "count(*) as total"
-QUESTIONS = "order by assessment_questions.position"
+QUESTIONS = "order by assessment_responses.delivered_position"
 HISTORY = "limit $2 offset $3"
 
 
@@ -122,7 +134,14 @@ def attempt_connection(**overrides):
     results = {
         "app.start_assessment_attempt": ATTEMPT_ROW,
         "app.save_assessment_answers": 1,
+        "app.claim_assessment_submission_idempotency": {
+            "claim_status": "claimed",
+            "response_status": None,
+            "response_body": None,
+        },
         "app.submit_assessment_attempt": SCORED_ROW,
+        "app.complete_assessment_submission_idempotency": True,
+        "app.store_assessment_result_payload": True,
         "app.authorize_reassessment": None,
         QUESTIONS: [QUESTION_ROW],
         "from app.assessment_responses": [RESPONSE_ROW],
@@ -213,8 +232,23 @@ def test_starting_an_attempt_delivers_questions_without_answers():
         assert forbidden not in response.text
 
 
+def test_question_delivery_is_scoped_to_the_started_attempt_snapshot():
+    connection = attempt_connection(**{OPEN_ATTEMPT: None})
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessments/{ASSESSMENT}/attempts", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 201
+    _query, args = next(call for call in connection.calls if QUESTIONS in call[0])
+    assert args == (ATTEMPT,)
+
+
 def test_a_repeated_start_resumes_rather_than_creating_a_second_attempt():
-    connection = attempt_connection()
+    connection = attempt_connection(
+        **{"app.start_assessment_attempt": {**ATTEMPT_ROW, "resumed": True}}
+    )
     client = build_client(connection)
 
     response = client.post(
@@ -312,15 +346,20 @@ def test_an_autosave_request_cannot_name_a_learner():
 
 
 def test_submitting_returns_the_deterministic_report():
-    client = build_client(attempt_connection())
+    connection = attempt_connection()
+    client = build_client(connection)
 
     response = client.post(
         f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
         json={"answers": [{"question_id": str(QUESTION), "answer": "72"}]},
-        headers=LEARNER_HEADERS,
+        headers=SUBMISSION_HEADERS,
     )
 
     assert response.status_code == 200
+    assert any(
+        "app.complete_assessment_submission_idempotency" in query
+        for query, _args in connection.calls
+    )
     data = response.json()["data"]
     assert data["status"] == "scored"
     assert data["overall_score"] == 50
@@ -335,7 +374,7 @@ def test_a_submission_never_discloses_an_answer_key():
     response = client.post(
         f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
         json={"answers": []},
-        headers=LEARNER_HEADERS,
+        headers=SUBMISSION_HEADERS,
     )
 
     for forbidden in ("answer_key", "correct_answer"):
@@ -349,11 +388,202 @@ def test_a_teacher_admin_does_not_submit_a_learners_attempt():
     response = client.post(
         f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
         json={"answers": []},
-        headers=ADVISER_HEADERS,
+        headers={**ADVISER_HEADERS, "Idempotency-Key": IDEMPOTENCY_KEY},
     )
 
     assert response.status_code == 403
     assert not [c for c in connection.calls if "app.submit_assessment_attempt" in c[0]]
+
+
+@pytest.mark.parametrize("key", [None, "short", "        ", "x" * 256])
+def test_submission_requires_a_valid_length_idempotency_key(key):
+    connection = attempt_connection()
+    client = build_client(connection)
+    headers = dict(LEARNER_HEADERS)
+    if key is not None:
+        headers["Idempotency-Key"] = key
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "idempotency_key_required"
+    assert not [c for c in connection.calls if "claim_assessment_submission" in c[0]]
+
+
+def test_submission_replay_returns_the_exact_stored_body_and_status_without_grading():
+    stored_body = {
+        "data": {
+            "attempt_id": str(ATTEMPT),
+            "assessment_id": str(ASSESSMENT),
+            "status": "scored",
+            "overall_score": 50.0,
+            "marker": "stored-exactly",
+        }
+    }
+    connection = attempt_connection(
+        **{
+            "app.claim_assessment_submission_idempotency": {
+                "claim_status": "replay",
+                "response_status": 202,
+                "response_body": stored_body,
+            }
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": [{"question_id": str(QUESTION), "answer": "72"}]},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 202
+    assert response.json() == stored_body
+    assert not [c for c in connection.calls if "app.submit_assessment_attempt" in c[0]]
+    assert not [c for c in connection.calls if "complete_assessment_submission" in c[0]]
+
+
+@pytest.mark.parametrize("claim", [None, {"claim_status": "unexpected"}])
+def test_submission_fails_closed_for_an_invalid_idempotency_claim(claim):
+    connection = attempt_connection(
+        **{"app.claim_assessment_submission_idempotency": claim}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "idempotency_claim_failed"
+    assert not [c for c in connection.calls if "app.submit_assessment_attempt" in c[0]]
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [(None, {"data": {}}), (200, None), ("200", {"data": {}})],
+)
+def test_submission_fails_closed_for_an_invalid_stored_replay(status, body):
+    connection = attempt_connection(
+        **{
+            "app.claim_assessment_submission_idempotency": {
+                "claim_status": "replay",
+                "response_status": status,
+                "response_body": body,
+            }
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "idempotency_replay_invalid"
+    assert not [c for c in connection.calls if "app.submit_assessment_attempt" in c[0]]
+
+
+def test_reusing_a_submission_key_for_a_different_request_is_a_conflict():
+    connection = attempt_connection(
+        **{
+            "app.claim_assessment_submission_idempotency": {
+                "claim_status": "conflict",
+                "response_status": None,
+                "response_body": None,
+            }
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_key_reused"
+    assert not [c for c in connection.calls if "app.submit_assessment_attempt" in c[0]]
+
+
+def test_a_completed_attempt_with_a_new_key_returns_a_controlled_conflict():
+    class FinishedAttempt(FakeConnection):
+        async def fetchrow(self, query, *args):
+            if "app.submit_assessment_attempt" in query:
+                raise asyncpg.NoDataFoundError("No attempt of yours is in progress")
+            return await super().fetchrow(query, *args)
+
+    connection = FinishedAttempt(results=attempt_connection().results)
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers={**LEARNER_HEADERS, "Idempotency-Key": "a-different-valid-key"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "assessment_attempt_not_in_progress"
+    assert not [c for c in connection.calls if "complete_assessment_submission" in c[0]]
+
+
+def test_an_unrecorded_idempotency_completion_fails_closed():
+    connection = attempt_connection(
+        **{"app.complete_assessment_submission_idempotency": False}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "idempotency_completion_failed"
+
+
+def test_submission_fingerprint_contains_attempt_and_ordered_validated_answers():
+    connection = attempt_connection()
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": [{"answer": "72", "question_id": str(QUESTION)}]},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 200
+    _query, claim_args = next(
+        call for call in connection.calls if "claim_assessment_submission" in call[0]
+    )
+    _query, complete_args = next(
+        call for call in connection.calls if "complete_assessment_submission" in call[0]
+    )
+    expected_canonical = json.dumps(
+        {
+            "attempt_id": str(ATTEMPT),
+            "answers": [{"question_id": str(QUESTION), "answer": "72"}],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert claim_args == (
+        IDEMPOTENCY_KEY,
+        hashlib.sha256(expected_canonical.encode()).hexdigest(),
+    )
+    assert re.fullmatch(r"[0-9a-f]{64}", claim_args[1])
+    assert complete_args[:3] == (IDEMPOTENCY_KEY, claim_args[1], 200)
+    assert response.json() == json.loads(complete_args[3])
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +598,33 @@ def test_an_attempt_can_be_read_back():
 
     assert response.status_code == 200
     assert response.json()["data"]["attempt_id"] == str(ATTEMPT)
+
+
+def test_a_scored_attempt_read_back_returns_its_stored_immutable_report():
+    stored = {
+        "attempt_id": str(ATTEMPT),
+        "status": "scored",
+        "overall_score": 50,
+        "competency_results": [],
+        "recommended_learning_path": [{"priority": 1}],
+        "next_action": {"type": "learning_path", "label": "Start Your Learning Path"},
+    }
+    scored = {**SCORED_ROW, "result_payload": stored}
+    client = build_client(attempt_connection(**{ATTEMPT_BY_ID: scored}))
+
+    response = client.get(f"/api/v1/assessment-attempts/{ATTEMPT}", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"] == stored
+
+
+def test_a_legacy_scored_attempt_without_a_stored_report_is_controlled():
+    client = build_client(attempt_connection(**{ATTEMPT_BY_ID: SCORED_ROW}))
+
+    response = client.get(f"/api/v1/assessment-attempts/{ATTEMPT}", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "assessment_result_unavailable"
 
 
 def test_an_attempt_the_caller_cannot_see_is_not_found():
@@ -402,18 +659,22 @@ def test_a_learner_cannot_ask_for_another_learners_attempt_history():
     assert response.status_code == 403
 
 
-def test_diagnostic_status_is_reported():
-    connection = FakeConnection(
+def diagnostic_status_connection(*, eligible=False, own_student_id=STUDENT_ID):
+    return FakeConnection(
         results={
+            "where student_profiles.user_id = $1": own_student_id,
             "student_profiles.diagnostic_status": {
                 "diagnostic_status": "completed",
                 "latest_attempt_id": ATTEMPT,
                 "latest_score": 63,
-                "authorization_id": None,
-            }
+                "reassessment_eligible": eligible,
+            },
         }
     )
-    client = build_client(connection)
+
+
+def test_diagnostic_status_is_reported_to_a_teacher_admin():
+    client = build_client(diagnostic_status_connection())
 
     response = client.get(
         f"/api/v1/students/{STUDENT_ID}/diagnostic-status", headers=ADVISER_HEADERS
@@ -424,6 +685,31 @@ def test_diagnostic_status_is_reported():
     assert data["status"] == "completed"
     assert data["latest_score"] == 63
     assert data["reassessment_eligible"] is False
+
+
+def test_a_learner_can_read_their_own_authorized_reassessment_status():
+    client = build_client(diagnostic_status_connection(eligible=True))
+
+    response = client.get(
+        f"/api/v1/students/{STUDENT_ID}/diagnostic-status", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reassessment_eligible"] is True
+    assert data["reassessment_reason"] == (
+        "A Teacher/Administrator has authorised a reassessment."
+    )
+
+
+def test_a_learner_cannot_read_another_learners_diagnostic_status():
+    client = build_client(diagnostic_status_connection(own_student_id=None))
+
+    response = client.get(
+        f"/api/v1/students/{STUDENT_ID}/diagnostic-status", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------

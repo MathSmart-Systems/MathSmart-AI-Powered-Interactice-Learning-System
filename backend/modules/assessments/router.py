@@ -10,12 +10,14 @@ should not be able to do that.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Annotated, Any
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Header, Query, Response
+from fastapi.responses import JSONResponse
 
 from app.dependencies import ActorDb, CurrentActor, SensitiveActor, TeacherAdmin
 from middleware.auth import MathSmartRole
@@ -42,6 +44,8 @@ router = APIRouter(tags=["assessments"])
 
 MAX_PAGE_SIZE = 100
 DEFAULT_PAGE_SIZE = 20
+MIN_IDEMPOTENCY_KEY_LENGTH = 8
+MAX_IDEMPOTENCY_KEY_LENGTH = 255
 
 
 def _json_value(value: Any) -> Any:
@@ -85,6 +89,7 @@ def _question(row: Any) -> DeliveredQuestion:
         choices=_json_value(row["choices"]) or [],
         difficulty=str(row["difficulty"]),
         visual_aid_description=row["visual_aid_description"],
+        position=row["position"],
     )
 
 
@@ -171,9 +176,6 @@ async def start_attempt(
     """
     _only_a_learner(actor)
 
-    already_open = await repository.open_attempt_id(
-        connection, assessment_id=assessment_id, user_id=actor.user_id
-    )
     try:
         attempt_row = await repository.start_attempt(connection, assessment_id)
     except asyncpg.InsufficientPrivilegeError as exc:
@@ -186,23 +188,31 @@ async def start_attempt(
             "Sitting this assessment again needs your teacher's authorisation",
             code="reassessment_not_authorized",
         ) from exc
+    except asyncpg.NoDataFoundError as exc:
+        raise ApiError(404, "No published assessment was found") from exc
+    except asyncpg.PostgresError as exc:
+        if exc.sqlstate == "P0004":
+            raise ApiError(
+                409,
+                "This assessment does not have a complete deliverable question set",
+                code="assessment_question_set_unavailable",
+            ) from exc
+        raise
     if attempt_row is None:
         raise ApiError(404, "No assessment was found")
 
-    assessment_row = await repository.assessment(
-        connection, user_id=actor.user_id, assessment_id=assessment_id
-    )
-    questions = await repository.questions_for(connection, assessment_id)
+    questions = await repository.questions_for(connection, attempt_row["attempt_id"])
     saved = await repository.saved_answers(connection, attempt_row["attempt_id"])
+    assessment_snapshot = _json_value(attempt_row["assessment_payload"])
 
-    response.status_code = 200 if already_open else 201
+    response.status_code = 200 if attempt_row["resumed"] else 201
     delivery = AttemptDelivery(
         attempt_id=attempt_row["attempt_id"],
         assessment={
             "id": str(assessment_id),
-            "title": assessment_row["title"] if assessment_row else None,
-            "type": str(assessment_row["assessment_type"]) if assessment_row else None,
-            "duration_minutes": assessment_row["duration_minutes"] if assessment_row else None,
+            "title": assessment_snapshot.get("title"),
+            "type": assessment_snapshot.get("type"),
+            "duration_minutes": assessment_snapshot.get("duration_minutes"),
             "total_questions": len(questions),
         },
         questions=[_question(row) for row in questions],
@@ -229,24 +239,86 @@ async def save_answers(
     return {"data": {"attempt_id": str(attempt_id), "saved": saved}}
 
 
-@router.post("/assessment-attempts/{attempt_id}/submit")
+@router.post("/assessment-attempts/{attempt_id}/submit", response_model=None)
 async def submit_attempt(
-    actor: CurrentActor, connection: ActorDb, attempt_id: UUID, body: SaveAnswersRequest
-) -> dict[str, Any]:
-    """Finalise and grade an attempt.
+    actor: CurrentActor,
+    connection: ActorDb,
+    attempt_id: UUID,
+    body: SaveAnswersRequest,
+    response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> dict[str, Any] | JSONResponse:
+    """Finalise and grade an attempt exactly once for an idempotency key.
 
     Everything in the response is the database's deterministic answer: the
     score, the bands, the path and the next action. Nothing here consults Groq.
     """
     _only_a_learner(actor)
+    if idempotency_key is None or not (
+        MIN_IDEMPOTENCY_KEY_LENGTH
+        <= len(idempotency_key)
+        <= MAX_IDEMPOTENCY_KEY_LENGTH
+    ) or not idempotency_key.strip():
+        raise ApiError(
+            400,
+            "An Idempotency-Key header of 8 to 255 characters is required",
+            code="idempotency_key_required",
+        )
 
-    attempt_row = await repository.submit_attempt(
-        connection,
-        attempt_id=attempt_id,
-        answers=json.dumps(body.model_dump(mode="json")["answers"]),
+    validated_answers = body.model_dump(mode="json")["answers"]
+    canonical_request = json.dumps(
+        {"attempt_id": str(attempt_id), "answers": validated_answers},
+        sort_keys=True,
+        separators=(",", ":"),
     )
+    request_fingerprint = hashlib.sha256(canonical_request.encode()).hexdigest()
+    claim = await repository.claim_submission(
+        connection,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+    )
+    claim_status = claim["claim_status"] if claim else None
+    if claim_status not in {"claimed", "conflict", "replay"}:
+        raise ApiError(
+            500,
+            "The assessment submission could not be safely started",
+            code="idempotency_claim_failed",
+        )
+    if claim_status == "conflict":
+        raise ApiError(
+            409,
+            "That idempotency key was already used with a different request",
+            code="idempotency_key_reused",
+        )
+    if claim_status == "replay":
+        stored_body = _json_value(claim["response_body"])
+        stored_status = claim["response_status"]
+        if not isinstance(stored_body, dict) or not isinstance(stored_status, int):
+            raise ApiError(
+                500,
+                "The stored assessment submission response is invalid",
+                code="idempotency_replay_invalid",
+            )
+        return JSONResponse(content=stored_body, status_code=stored_status)
+
+    try:
+        attempt_row = await repository.submit_attempt(
+            connection,
+            attempt_id=attempt_id,
+            answers=json.dumps(validated_answers, separators=(",", ":")),
+        )
+    except asyncpg.NoDataFoundError as exc:
+        raise ApiError(
+            409,
+            "This assessment attempt is no longer in progress",
+            code="assessment_attempt_not_in_progress",
+        ) from exc
     if attempt_row is None:
-        raise ApiError(404, "No attempt of yours is in progress")
+        raise ApiError(
+            409,
+            "This assessment attempt is no longer in progress",
+            code="assessment_attempt_not_in_progress",
+        )
 
     results = await repository.results_for(connection, attempt_id)
     path_rows = await repository.path_for(connection, attempt_row["student_id"])
@@ -273,7 +345,34 @@ async def submit_attempt(
         recommended_learning_path=path,
         next_action=_next_action(path),
     )
-    return {"data": report.model_dump(mode="json")}
+    response_body = {"data": report.model_dump(mode="json")}
+    stored = await repository.store_result(
+        connection,
+        attempt_id=attempt_id,
+        result_payload=json.dumps(response_body["data"], separators=(",", ":")),
+    )
+    if not stored:
+        raise ApiError(
+            500,
+            "The assessment result could not be safely recorded",
+            code="assessment_result_recording_failed",
+        )
+
+    response.status_code = 200
+    completed = await repository.complete_submission(
+        connection,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+        response_status=response.status_code,
+        response_body=json.dumps(response_body, separators=(",", ":")),
+    )
+    if not completed:
+        raise ApiError(
+            500,
+            "The assessment submission response could not be safely recorded",
+            code="idempotency_completion_failed",
+        )
+    return response_body
 
 
 @router.get("/assessment-attempts/{attempt_id}")
@@ -289,6 +388,15 @@ async def read_attempt(
     attempt_row = await repository.attempt(connection, attempt_id)
     if attempt_row is None:
         raise ApiError(404, "No attempt was found")
+
+    if str(attempt_row["status"]) == "scored":
+        if not attempt_row["result_payload"]:
+            raise ApiError(
+                409,
+                "This historical assessment result is not available in the new report format",
+                code="assessment_result_unavailable",
+            )
+        return {"data": _json_value(attempt_row["result_payload"])}
 
     results = await repository.results_for(connection, attempt_id)
     report = AttemptReport(
@@ -357,14 +465,19 @@ async def list_attempts_for_student(
 
 @router.get("/students/{student_id}/diagnostic-status")
 async def read_diagnostic_status(
-    _actor: TeacherAdmin, connection: ActorDb, student_id: UUID
+    actor: CurrentActor, connection: ActorDb, student_id: UUID
 ) -> dict[str, Any]:
-    """Where a named learner stands on the diagnostic."""
+    """The learner's own diagnostic standing, or an educator's named learner."""
+    if actor.role is not MathSmartRole.TEACHER_ADMIN:
+        own_student_id = await repository.own_student_id(connection, actor.user_id)
+        if own_student_id is None or UUID(str(own_student_id)) != student_id:
+            raise ApiError(403, "This learner record does not belong to you")
+
     row = await repository.diagnostic_status(connection, student_id)
     if row is None:
         raise ApiError(404, "No learner was found")
 
-    authorised = row["authorization_id"] is not None
+    authorised = bool(row["reassessment_eligible"])
     status = DiagnosticStatus(
         status=str(row["diagnostic_status"]),
         latest_attempt_id=row["latest_attempt_id"],

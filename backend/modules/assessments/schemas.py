@@ -59,6 +59,7 @@ class DeliveredQuestion(BaseModel):
     choices: list[Any] = []
     difficulty: str
     visual_aid_description: str | None = None
+    position: int
 
 
 class AttemptDelivery(BaseModel):

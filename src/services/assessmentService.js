@@ -23,8 +23,14 @@ export const MASTERY_BAND = Object.freeze({
   NEEDS_IMPROVEMENT: "Needs Improvement",
 });
 
-/** `question_type` values the diagnostic UI can currently render. */
-const SUPPORTED_QUESTION_TYPE = "multiple_choice";
+/** Published `question_type` values supported by the canonical diagnostic UI. */
+export const QUESTION_TYPE = Object.freeze({
+  MULTIPLE_CHOICE: "multiple_choice",
+  NUMBER_INPUT: "number_input",
+  FILL_BLANK: "fill_blank",
+});
+
+const SUPPORTED_QUESTION_TYPES = new Set(Object.values(QUESTION_TYPE));
 
 /** Error carrying a message that is safe to show a learner. */
 export class AssessmentError extends Error {
@@ -167,15 +173,21 @@ function toDiagnosticView(attempt) {
 
     const group = groups.get(competencyId);
 
+    const questionType = question?.type ?? QUESTION_TYPE.MULTIPLE_CHOICE;
+
+    if (!SUPPORTED_QUESTION_TYPES.has(questionType)) {
+      throw new AssessmentError(
+        "This diagnostic contains a question format that is not supported yet. Please tell your teacher.",
+        { code: "unsupported_question_type" },
+      );
+    }
+
     group.questions.push({
       question_id: question?.id,
       question_text: question?.text ?? "",
-      question_type: question?.type ?? SUPPORTED_QUESTION_TYPE,
-      // Canonical calls these `choices`. Types without choices (number_input,
-      // fill_blank) normalize to an empty list, and the UI says so rather than
-      // rendering a question that cannot be answered.
+      question_type: questionType,
       options: toOptions(question?.choices),
-      order_index: group.questions.length + 1,
+      order_index: Number(question?.position) || questions.indexOf(question) + 1,
     });
   }
 
@@ -253,9 +265,34 @@ function toReportView(result) {
 }
 
 /** The mock fixture is already domain-grouped; only the vocabulary differs. */
-function mockDiagnosticView() {
+const MOCK_ASSESSMENT_ID = "mock-diagnostic";
+let mockAttempt = null;
+let mockResult = null;
+
+function mockDiagnosticPreview() {
   return {
-    attempt_id: `mock-attempt-${Date.now()}`,
+    assessment_id: MOCK_ASSESSMENT_ID,
+    title: "Grade 6 Mathematics Diagnostic Assessment",
+    total_questions: diagnosticMock.total_questions,
+    time_limit_minutes: diagnosticMock.time_limit_minutes,
+    latest_attempt_id: mockAttempt?.attempt_id ?? mockResult?.attempt_id ?? null,
+    latest_status: mockResult?.status ?? (mockAttempt ? "in_progress" : null),
+    reassessment_eligible: false,
+    reassessment_reason: null,
+  };
+}
+
+function mockDiagnosticView() {
+  if (!mockAttempt) {
+    mockAttempt = {
+      attempt_id: `mock-attempt-${Date.now()}`,
+      started_at: new Date().toISOString(),
+      saved_answers: {},
+    };
+  }
+
+  return {
+    ...mockAttempt,
     total_questions: diagnosticMock.total_questions,
     time_limit_minutes: diagnosticMock.time_limit_minutes,
     domains: diagnosticMock.domains.map((domain) => ({
@@ -264,13 +301,11 @@ function mockDiagnosticView() {
       questions: domain.questions.map((question) => ({
         question_id: question.question_id,
         question_text: question.question_text,
-        question_type: SUPPORTED_QUESTION_TYPE,
+        question_type: QUESTION_TYPE.MULTIPLE_CHOICE,
         options: toOptions(question.options),
         order_index: question.order_index,
       })),
     })),
-    started_at: null,
-    saved_answers: {},
   };
 }
 
@@ -299,35 +334,133 @@ function mockReportView(attemptId) {
   };
 }
 
-/**
- * Starts the learner's diagnostic attempt, or resumes the one already open.
- *
- * Replaces the retired `GET /assessment/questions`. Two canonical calls:
- * `GET /assessments?type=diagnostic` to find the published diagnostic, then
- * `POST /assessments/{assessment_id}/attempts` to start or resume.
- */
-export async function startDiagnostic() {
+/** Load the learner's one published diagnostic without starting its clock. */
+export async function loadDiagnostic() {
   if (USE_MOCK) {
-    await delay(400);
-    return mockDiagnosticView();
+    await delay(300);
+    return mockDiagnosticPreview();
   }
 
-  const assessments = await request("/assessments?type=diagnostic");
-  const list = Array.isArray(assessments) ? assessments : [];
-  const diagnostic = list.find((entry) => entry?.type === "diagnostic") ?? list[0];
+  const me = await request("/students/me");
+  const gradeId = me?.grade_id ?? null;
+  const studentId = me?.student_id ?? null;
 
+  if (!gradeId) {
+    throw new AssessmentError(
+      "Your learner profile does not have a grade yet. Please ask your teacher to update it.",
+      { code: "learner_grade_missing" },
+    );
+  }
+
+  const query = new URLSearchParams({
+    type: "diagnostic",
+    grade_id: gradeId,
+    status: "published",
+    page_size: "100",
+  });
+  const assessments = await request(`/assessments?${query.toString()}`);
+  const matching = (Array.isArray(assessments) ? assessments : []).filter(
+    (entry) =>
+      entry?.type === "diagnostic" &&
+      String(entry?.grade_id) === String(gradeId) &&
+      entry?.status === "published",
+  );
+  const open = matching.filter((entry) => entry?.latest_status === "in_progress");
+
+  if (open.length > 1 || (open.length === 0 && matching.length > 1)) {
+    throw new AssessmentError(
+      "More than one diagnostic assessment is available for your grade. Please ask your teacher which one to use.",
+      { code: "diagnostic_ambiguous" },
+    );
+  }
+
+  const diagnostic = open[0] ?? matching[0];
   if (!diagnostic?.id) {
     throw new AssessmentError(
       "No diagnostic assessment has been published for your grade yet.",
       { status: 404 },
     );
   }
+  if (!studentId) {
+    throw new AssessmentError("We could not load your learner profile.");
+  }
 
-  const attempt = await request(`/assessments/${diagnostic.id}/attempts`, {
+  const status = await request(`/students/${studentId}/diagnostic-status`);
+
+  return {
+    assessment_id: diagnostic.id,
+    title: diagnostic.title,
+    total_questions: diagnostic.total_questions ?? 0,
+    time_limit_minutes: diagnostic.duration_minutes ?? 60,
+    latest_attempt_id: diagnostic.latest_attempt_id ?? null,
+    latest_status: diagnostic.latest_status ?? null,
+    diagnostic_status: status?.status ?? null,
+    reassessment_eligible: status?.reassessment_eligible === true,
+    reassessment_reason: status?.reassessment_reason ?? null,
+  };
+}
+
+/** Reads a completed attempt so its report remains available after navigation/reload. */
+export async function loadDiagnosticResult(attemptId) {
+  if (USE_MOCK) {
+    await delay(200);
+    if (mockResult?.attempt_id === attemptId) return mockResult;
+    throw new AssessmentError("Your completed diagnostic result could not be found.", {
+      status: 404,
+    });
+  }
+
+  if (!attemptId) {
+    throw new AssessmentError("Your completed diagnostic result could not be found.", {
+      status: 404,
+    });
+  }
+
+  const result = await request(`/assessment-attempts/${attemptId}`);
+  return toReportView(result);
+}
+
+/** Starts a new attempt or resumes the already-open attempt. */
+export async function startDiagnostic(assessmentId = MOCK_ASSESSMENT_ID) {
+  if (USE_MOCK) {
+    await delay(400);
+    return mockDiagnosticView();
+  }
+
+  if (!assessmentId) {
+    throw new AssessmentError("The diagnostic assessment is not available yet.", {
+      status: 404,
+    });
+  }
+
+  const attempt = await request(`/assessments/${assessmentId}/attempts`, {
     method: "POST",
   });
 
   return toDiagnosticView(attempt);
+}
+
+/** Persist partial answers without grading the attempt. */
+export async function saveDiagnosticAnswers({ attemptId, answers }) {
+  if (USE_MOCK) {
+    await delay(150);
+    if (mockAttempt?.attempt_id === attemptId) {
+      mockAttempt.saved_answers = {
+        ...mockAttempt.saved_answers,
+        ...Object.fromEntries(answers.map((entry) => [entry.question_id, entry.answer])),
+      };
+    }
+    return { attempt_id: attemptId, saved: answers.length };
+  }
+
+  if (!attemptId) {
+    throw new AssessmentError("This attempt is no longer active. Reload the page.");
+  }
+
+  return request(`/assessment-attempts/${attemptId}`, {
+    method: "PATCH",
+    body: { answers },
+  });
 }
 
 /**
@@ -339,7 +472,13 @@ export async function startDiagnostic() {
 export async function submitDiagnostic({ attemptId, answers, idempotencyKey }) {
   if (USE_MOCK) {
     await delay(600);
-    return mockReportView(attemptId);
+    if (mockResult?.attempt_id === attemptId) return mockResult;
+    if (mockAttempt?.attempt_id !== attemptId) {
+      throw new AssessmentError("This attempt is no longer active. Reload the page.");
+    }
+    mockResult = mockReportView(attemptId);
+    mockAttempt = null;
+    return mockResult;
   }
 
   if (!attemptId) {
@@ -355,33 +494,4 @@ export async function submitDiagnostic({ attemptId, answers, idempotencyKey }) {
   });
 
   return toReportView(result);
-}
-
-/**
- * Whether this learner has already completed the diagnostic.
- *
- * Replaces the retired `GET /assessment/status/{student_id}`. The learner's
- * `student_id` is read from `GET /students/me` rather than assumed from the
- * token: `app.student_profiles.student_id` is its own key and is not the auth
- * user id carried in `sub`.
- */
-export async function getDiagnosticStatus() {
-  if (USE_MOCK) {
-    await delay(200);
-    return {
-      status: "not_started",
-      latest_attempt_id: null,
-      latest_score: null,
-      reassessment_eligible: false,
-    };
-  }
-
-  const me = await request("/students/me");
-  const studentId = me?.student_id ?? me?.id ?? null;
-
-  if (!studentId) {
-    throw new AssessmentError("We could not load your learner profile.");
-  }
-
-  return request(`/students/${studentId}/diagnostic-status`);
 }

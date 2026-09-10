@@ -19,6 +19,8 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -30,12 +32,40 @@ import {
 import {
   AssessmentError,
   MASTERY_BAND,
+  QUESTION_TYPE,
+  loadDiagnostic,
+  loadDiagnosticResult,
   newIdempotencyKey,
+  saveDiagnosticAnswers,
   startDiagnostic,
   submitDiagnostic,
 } from "@/services/assessmentService";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
+const IDEMPOTENCY_KEY_PREFIX = "mathsmart:diagnostic-submit:";
+const COMPLETED_ATTEMPT_STATUSES = new Set(["scored"]);
+
+function submissionStorageKey(attemptId) {
+  return `${IDEMPOTENCY_KEY_PREFIX}${attemptId}`;
+}
+
+function idempotencyKeyForAttempt(attemptId) {
+  if (typeof window === "undefined" || !attemptId) return newIdempotencyKey();
+
+  const storageKey = submissionStorageKey(attemptId);
+  const saved = window.localStorage.getItem(storageKey);
+  if (saved) return saved;
+
+  const created = newIdempotencyKey();
+  window.localStorage.setItem(storageKey, created);
+  return created;
+}
+
+function clearIdempotencyKey(attemptId) {
+  if (typeof window !== "undefined" && attemptId) {
+    window.localStorage.removeItem(submissionStorageKey(attemptId));
+  }
+}
 
 /**
  * Presentation for each `mastery_band`. The bands and their thresholds are the
@@ -83,22 +113,26 @@ function flattenQuestions(domains) {
         prompt: question.question_text,
         type: question.question_type,
         options: question.options,
+        orderIndex: question.order_index ?? flat.length + 1,
       });
     }
   }
 
-  return flat;
+  return flat.sort((left, right) => left.orderIndex - right.orderIndex);
 }
 
-/** Seconds still on the clock for an attempt that was started earlier. */
-function remainingSeconds(startedAt, limitSeconds) {
-  if (!startedAt) return limitSeconds;
-
+function attemptDeadline(startedAt, limitSeconds) {
   const started = Date.parse(startedAt);
-  if (Number.isNaN(started)) return limitSeconds;
+  return Number.isNaN(started) ? Date.now() + limitSeconds * 1000 : started + limitSeconds * 1000;
+}
 
-  const elapsed = Math.floor((Date.now() - started) / 1000);
-  return Math.max(0, limitSeconds - elapsed);
+function remainingSeconds(deadline, limitSeconds) {
+  if (!deadline) return limitSeconds;
+  return Math.min(limitSeconds, Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+}
+
+function hasAnswer(value) {
+  return value !== undefined && String(value).trim().length > 0;
 }
 
 function CenteredNotice({ icon: Icon, title, children, tone = "muted" }) {
@@ -131,8 +165,12 @@ export function DiagnosticView() {
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [submitError, setSubmitError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [assessment, setAssessment] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [domains, setDomains] = useState([]);
   const [total, setTotal] = useState(0);
@@ -141,36 +179,65 @@ export function DiagnosticView() {
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const scrollAnchor = useRef(null);
+  const deadline = useRef(null);
+  const answersRef = useRef({});
+  const pendingSaves = useRef(new Map());
+  const saveLoop = useRef(null);
+  const submissionStarted = useRef(false);
+  const timerSubmissionAttempted = useRef(false);
 
   // One key per attempt, reused across retries: a resend after a dropped
   // connection must not score the attempt twice.
   const idempotencyKey = useRef(null);
 
+  const hydrateAttempt = useCallback((data) => {
+    const limitSeconds = data.time_limit_minutes * 60;
+    const flatQuestions = flattenQuestions(data.domains);
+    const deliveredIds = new Set(flatQuestions.map((question) => question.id));
+    const saved = Object.fromEntries(
+      Object.entries(data.saved_answers ?? {})
+        .filter(([questionId]) => deliveredIds.has(questionId))
+        .map(([questionId, answer]) => [questionId, String(answer ?? "")]),
+    );
+
+    setQuestions(flatQuestions);
+    setDomains(data.domains.map((domain) => domain.domain));
+    setTotal(flatQuestions.length);
+    setTimeLimitSeconds(limitSeconds);
+    deadline.current = attemptDeadline(data.started_at, limitSeconds);
+    setSecondsLeft(remainingSeconds(deadline.current, limitSeconds));
+    setAttemptId(data.attempt_id);
+    setAnswers(saved);
+    answersRef.current = saved;
+    idempotencyKey.current = idempotencyKeyForAttempt(data.attempt_id);
+    timerSubmissionAttempted.current = false;
+    setScreen("test");
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    startDiagnostic()
-      .then((data) => {
+    loadDiagnostic()
+      .then(async (preview) => {
         if (cancelled) return;
+        setAssessment(preview);
+        setTotal(preview.total_questions);
+        setTimeLimitSeconds(preview.time_limit_minutes * 60);
 
-        const limitSeconds = data.time_limit_minutes * 60;
-
-        setQuestions(flattenQuestions(data.domains));
-        setDomains(data.domains.map((domain) => domain.domain));
-        setTotal(data.total_questions);
-        setTimeLimitSeconds(limitSeconds);
-        setSecondsLeft(remainingSeconds(data.started_at, limitSeconds));
-        setAttemptId(data.attempt_id);
-        idempotencyKey.current = newIdempotencyKey();
-
-        // A resumed attempt brings its saved answers back with it.
-        const saved = data.saved_answers;
-        if (saved && Object.keys(saved).length > 0) {
-          setAnswers(saved);
-          setScreen("test");
+        if (preview.latest_status === "in_progress") {
+          const resumed = await startDiagnostic(preview.assessment_id);
+          if (!cancelled) hydrateAttempt(resumed);
+        } else if (
+          !preview.reassessment_eligible &&
+          COMPLETED_ATTEMPT_STATUSES.has(preview.latest_status) &&
+          preview.latest_attempt_id
+        ) {
+          const completed = await loadDiagnosticResult(preview.latest_attempt_id);
+          if (!cancelled) {
+            setResult(completed);
+            setScreen("report");
+          }
         }
-
-        setLoading(false);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -179,76 +246,143 @@ export function DiagnosticView() {
             ? error.message
             : "We could not load your assessment. Please try again.",
         );
-        setLoading(false);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hydrateAttempt]);
 
   const current = questions[index] ?? null;
-  const answeredCount = Object.keys(answers).length;
+  const answeredCount = questions.filter((question) => hasAnswer(answers[question.id])).length;
   const unanswered = useMemo(
-    () => questions.filter((question) => answers[question.id] === undefined),
+    () => questions.filter((question) => !hasAnswer(answers[question.id])),
     [questions, answers],
   );
   const progress = total ? ((index + 1) / total) * 100 : 0;
   const isLast = index === total - 1;
   const lowTime = secondsLeft <= 60;
 
+  const flushSaves = useCallback(async () => {
+    if (saveLoop.current) return saveLoop.current;
+
+    saveLoop.current = (async () => {
+      setSaving(true);
+      try {
+        while (pendingSaves.current.size > 0) {
+          const batch = [...pendingSaves.current.entries()].map(([questionId, answer]) => ({
+            question_id: questionId,
+            answer,
+          }));
+          pendingSaves.current.clear();
+
+          try {
+            await saveDiagnosticAnswers({ attemptId, answers: batch });
+            setSaveError(null);
+          } catch (error) {
+            for (const entry of batch) {
+              if (!pendingSaves.current.has(entry.question_id)) {
+                pendingSaves.current.set(entry.question_id, entry.answer);
+              }
+            }
+            setSaveError(
+              error instanceof AssessmentError
+                ? error.message
+                : "Your latest answer has not been saved yet.",
+            );
+            break;
+          }
+        }
+      } finally {
+        setSaving(false);
+        saveLoop.current = null;
+      }
+    })();
+
+    return saveLoop.current;
+  }, [attemptId]);
+
+  const recordAnswer = useCallback(
+    (questionId, answer) => {
+      setAnswers((previous) => {
+        const next = { ...previous, [questionId]: answer };
+        answersRef.current = next;
+        return next;
+      });
+      pendingSaves.current.set(questionId, answer);
+      setPendingSubmit(false);
+      void flushSaves();
+    },
+    [flushSaves],
+  );
+
   const finish = useCallback(
     async (viaTimer = false) => {
-      if (submitting) return;
+      if (submissionStarted.current) return;
 
+      submissionStarted.current = true;
       setSubmitting(true);
       setSubmitError(null);
       setPendingSubmit(false);
       setAutoSubmitted(viaTimer);
 
       try {
+        await flushSaves();
+        const latestAnswers = answersRef.current;
         const response = await submitDiagnostic({
           attemptId,
           idempotencyKey: idempotencyKey.current,
           answers: questions.map((question) => ({
             question_id: question.id,
-            answer: answers[question.id] ?? "",
+            answer: latestAnswers[question.id] ?? "",
           })),
         });
 
+        clearIdempotencyKey(attemptId);
         setResult(response);
         setScreen("report");
       } catch (error) {
-        // Stay on the assessment so the learner can retry. Their answers are
-        // still in state, and the idempotency key makes a resend safe.
+        // Stay on the assessment so the learner can retry. Their answers remain
+        // local and persisted answers can be restored after a reload.
         setSubmitError(
           error instanceof AssessmentError
             ? error.message
             : "We could not submit your assessment. Please try again.",
         );
       } finally {
+        submissionStarted.current = false;
         setSubmitting(false);
       }
     },
-    [submitting, attemptId, questions, answers],
+    [attemptId, questions, flushSaves],
   );
 
   useEffect(() => {
     if (screen !== "test") return undefined;
 
-    const ticker = window.setInterval(() => {
-      setSecondsLeft((value) => {
-        if (value <= 1) {
-          window.clearInterval(ticker);
-          finish(true);
-          return 0;
-        }
-        return value - 1;
-      });
-    }, 1000);
+    const updateClock = () => {
+      const next = remainingSeconds(deadline.current, timeLimitSeconds);
+      setSecondsLeft(next);
+      if (next === 0 && !timerSubmissionAttempted.current) {
+        timerSubmissionAttempted.current = true;
+        void finish(true);
+      }
+    };
+    const ticker = window.setInterval(updateClock, 1000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") updateClock();
+    };
 
-    return () => window.clearInterval(ticker);
-  }, [screen, finish]);
+    updateClock();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(ticker);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [screen, finish, timeLimitSeconds]);
 
   useEffect(() => {
     if (screen === "test" && scrollAnchor.current) {
@@ -257,7 +391,9 @@ export function DiagnosticView() {
   }, [index, screen]);
 
   useEffect(() => {
-    if (screen !== "test") return undefined;
+    if (screen !== "test" || current?.type !== QUESTION_TYPE.MULTIPLE_CHOICE) {
+      return undefined;
+    }
 
     const onKey = (event) => {
       if (!current) return;
@@ -265,30 +401,41 @@ export function DiagnosticView() {
       const numeric = Number(event.key);
       if (numeric >= 1 && numeric <= current.options.length) {
         const option = current.options[numeric - 1];
-        if (option) {
-          setAnswers((prev) => ({ ...prev, [current.id]: option.key }));
-        }
+        if (option) recordAnswer(current.id, option.key);
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen, current]);
+  }, [screen, current, recordAnswer]);
 
-  const beginAssessment = () => {
-    setIndex(0);
-    setPendingSubmit(false);
-    setAutoSubmitted(false);
-    setShowReview(false);
-    setSubmitError(null);
-    setResult(null);
-    setScreen("test");
+  const beginAssessment = async () => {
+    if (!assessment?.assessment_id || starting) return;
+
+    setStarting(true);
+    setLoadError(null);
+    try {
+      const data = await startDiagnostic(assessment.assessment_id);
+      setIndex(0);
+      setPendingSubmit(false);
+      setAutoSubmitted(false);
+      setShowReview(false);
+      setSubmitError(null);
+      setResult(null);
+      hydrateAttempt(data);
+    } catch (error) {
+      setLoadError(
+        error instanceof AssessmentError
+          ? error.message
+          : "We could not start your assessment. Please try again.",
+      );
+    } finally {
+      setStarting(false);
+    }
   };
 
   const selectOption = (optionKey) => {
-    if (!current) return;
-    setAnswers((prev) => ({ ...prev, [current.id]: optionKey }));
-    setPendingSubmit(false);
+    if (current) recordAnswer(current.id, optionKey);
   };
 
   const goNext = () => {
@@ -348,6 +495,10 @@ export function DiagnosticView() {
   }
 
   const gaps = result?.domain_scores.filter((entry) => entry.gap_identified) ?? [];
+  const primaryActionHref =
+    result?.next_action?.type === "dashboard"
+      ? "/student/dashboard"
+      : "/student/my-learning";
 
   return (
     <div className="flex flex-col gap-8">
@@ -367,21 +518,25 @@ export function DiagnosticView() {
           <Card>
             <CardHeader className="gap-3">
               <Badge variant="outline" className="w-fit">
-                Grade 6 · Entry diagnostic
+                {assessment?.reassessment_eligible
+                  ? "Authorized reassessment"
+                  : "Entry diagnostic"}
               </Badge>
               <CardTitle className="text-xl font-semibold">
-                {total} questions across {domains.length} mathematics domains
+                {assessment?.title ?? `${total} question mathematics diagnostic`}
               </CardTitle>
               <CardDescription className="max-w-prose leading-relaxed">
-                Your answers map your competency gaps and unlock a personalized
-                module path. This is placement, not a graded exam.
+                {assessment?.reassessment_eligible
+                  ? assessment.reassessment_reason ??
+                    "Your teacher has authorized another diagnostic attempt."
+                  : "Your answers map your competency gaps and unlock a personalized module path. This is placement, not a graded exam."}
               </CardDescription>
             </CardHeader>
 
             <CardContent className="flex flex-col gap-8">
               <dl className="grid gap-3 sm:grid-cols-3">
                 {[
-                  { icon: BookOpen, term: `${total} questions`, detail: "Multiple choice" },
+                  { icon: BookOpen, term: `${total} questions`, detail: "Mixed answer formats" },
                   {
                     icon: Timer,
                     term: `~${Math.round(timeLimitSeconds / 60)} minutes`,
@@ -389,8 +544,8 @@ export function DiagnosticView() {
                   },
                   {
                     icon: BarChart3,
-                    term: `${domains.length} domains`,
-                    detail: "Competency mapped",
+                    term: "Competency mapped",
+                    detail: "Personalized results",
                   },
                 ].map(({ icon: Icon, term, detail }) => (
                   <div
@@ -446,12 +601,23 @@ export function DiagnosticView() {
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Your results save to your learner profile the moment you submit.
               </p>
-              <Button size="lg" onClick={beginAssessment} className="group">
-                Begin assessment
-                <ArrowRight
-                  aria-hidden="true"
-                  className="transition-transform duration-300 ease-out group-hover:translate-x-1"
-                />
+              <Button
+                size="lg"
+                onClick={beginAssessment}
+                className="group"
+                disabled={starting}
+              >
+                {starting
+                  ? "Starting…"
+                  : assessment?.reassessment_eligible
+                    ? "Start reassessment"
+                    : "Begin assessment"}
+                {!starting && (
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="transition-transform duration-300 ease-out group-hover:translate-x-1"
+                  />
+                )}
               </Button>
             </CardFooter>
           </Card>
@@ -518,16 +684,7 @@ export function DiagnosticView() {
             </CardHeader>
 
             <CardContent>
-              {current.options.length === 0 ? (
-                <p className="flex items-start gap-3 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-foreground">
-                  <AlertCircle
-                    aria-hidden="true"
-                    className="mt-0.5 size-4 shrink-0 text-destructive"
-                  />
-                  This question needs an answer format MathSmart cannot show yet.
-                  Skip it and tell your teacher.
-                </p>
-              ) : (
+              {current.type === QUESTION_TYPE.MULTIPLE_CHOICE ? (
                 <fieldset className="flex flex-col gap-3">
                   <legend className="sr-only">
                     Choose one answer for question {index + 1}
@@ -567,10 +724,62 @@ export function DiagnosticView() {
                     );
                   })}
                 </fieldset>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <Label htmlFor={`answer-${current.id}`}>
+                    {current.type === QUESTION_TYPE.NUMBER_INPUT
+                      ? "Enter your numerical answer"
+                      : "Enter your answer"}
+                  </Label>
+                  <Input
+                    id={`answer-${current.id}`}
+                    type="text"
+                    inputMode={
+                      current.type === QUESTION_TYPE.NUMBER_INPUT ? "decimal" : "text"
+                    }
+                    autoComplete="off"
+                    value={answers[current.id] ?? ""}
+                    onChange={(event) => recordAnswer(current.id, event.target.value)}
+                    className="h-11 text-base"
+                  />
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {current.type === QUESTION_TYPE.NUMBER_INPUT
+                      ? "You may use a whole number, decimal, or signed value."
+                      : "Type only the answer that completes the blank."}
+                  </p>
+                </div>
               )}
             </CardContent>
 
             <CardFooter className="flex flex-col gap-5 border-t border-border pt-6">
+              {(saving || saveError) && (
+                <p
+                  role={saveError ? "alert" : "status"}
+                  className={`flex w-full items-start gap-3 border-l-[3px] px-4 py-3 text-sm text-foreground ${
+                    saveError
+                      ? "border-destructive bg-destructive/5"
+                      : "border-primary bg-primary/5"
+                  }`}
+                >
+                  {saveError ? (
+                    <AlertCircle
+                      aria-hidden="true"
+                      className="mt-0.5 size-4 shrink-0 text-destructive"
+                    />
+                  ) : (
+                    <RefreshCw
+                      aria-hidden="true"
+                      className="mt-0.5 size-4 shrink-0 animate-spin text-primary"
+                    />
+                  )}
+                  <span>
+                    {saveError
+                      ? `${saveError} Your answer remains on this page; change it or continue to retry saving.`
+                      : "Saving your latest answer…"}
+                  </span>
+                </p>
+              )}
+
               {submitError && (
                 <p
                   role="alert"
@@ -581,8 +790,8 @@ export function DiagnosticView() {
                     className="mt-0.5 size-4 shrink-0 text-destructive"
                   />
                   <span>
-                    {submitError} Your answers are safe — press submit again to
-                    retry.
+                    {submitError} Your answers remain available — press submit again
+                    to retry.
                   </span>
                 </p>
               )}
@@ -658,7 +867,7 @@ export function DiagnosticView() {
           <nav aria-label="Question navigator" className="flex flex-wrap gap-1.5">
             {questions.map((question, position) => {
               const isCurrent = position === index;
-              const isAnswered = answers[question.id] !== undefined;
+              const isAnswered = hasAnswer(answers[question.id]);
 
               return (
                 <button
@@ -832,20 +1041,22 @@ export function DiagnosticView() {
 
             <CardFooter className="flex flex-col items-stretch gap-4 border-t border-border pt-6 sm:flex-row sm:items-center">
               <Button asChild size="lg">
-                <Link href="/student/my-learning">
+                <Link href={primaryActionHref}>
                   <Sparkles aria-hidden="true" />
                   {result.next_action?.label ?? "Start recommended modules"}
                 </Link>
               </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() => setShowReview((value) => !value)}
-                aria-expanded={showReview}
-              >
-                <BookOpen aria-hidden="true" />
-                {showReview ? "Hide my answers" : "Review my answers"}
-              </Button>
+              {questions.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setShowReview((value) => !value)}
+                  aria-expanded={showReview}
+                >
+                  <BookOpen aria-hidden="true" />
+                  {showReview ? "Hide my answers" : "Review my answers"}
+                </Button>
+              )}
               <Button asChild variant="ghost" size="lg" className="sm:ml-auto">
                 <Link href="/student/dashboard">Back to dashboard</Link>
               </Button>
@@ -871,14 +1082,14 @@ export function DiagnosticView() {
                           </p>
                         </div>
                         <span
-                          aria-label={picked !== undefined ? "Answered" : "Left blank"}
+                          aria-label={hasAnswer(picked) ? "Answered" : "Left blank"}
                           className={`flex size-7 shrink-0 items-center justify-center rounded-full border ${
-                            picked !== undefined
+                            hasAnswer(picked)
                               ? "border-primary/40 bg-primary/10 text-primary"
                               : "border-destructive/40 bg-destructive/10 text-destructive"
                           }`}
                         >
-                          {picked !== undefined ? (
+                          {hasAnswer(picked) ? (
                             <Check aria-hidden="true" className="size-4" />
                           ) : (
                             <X aria-hidden="true" className="size-4" />
@@ -886,34 +1097,41 @@ export function DiagnosticView() {
                         </span>
                       </div>
 
-                      <ul className="mt-4 flex flex-col gap-2">
-                        {question.options.map((option, optionIndex) => {
-                          const isPicked = picked === option.key;
+                      {question.type === QUESTION_TYPE.MULTIPLE_CHOICE ? (
+                        <ul className="mt-4 flex flex-col gap-2">
+                          {question.options.map((option, optionIndex) => {
+                            const isPicked = picked === option.key;
 
-                          return (
-                            <li
-                              key={option.key}
-                              className={`flex items-center gap-3 rounded-md border px-3 py-2 text-sm ${
-                                isPicked
-                                  ? "border-primary/40 bg-primary/5 text-foreground"
-                                  : "border-border text-muted-foreground"
-                              }`}
-                            >
-                              <span className="font-mono text-xs text-muted-foreground">
-                                {LETTERS[optionIndex] ?? optionIndex + 1}
-                              </span>
-                              <span className="leading-relaxed">{option.label}</span>
-                              {isPicked && (
-                                <span className="ml-auto shrink-0 text-xs font-medium text-primary">
-                                  Your answer
+                            return (
+                              <li
+                                key={option.key}
+                                className={`flex items-center gap-3 rounded-md border px-3 py-2 text-sm ${
+                                  isPicked
+                                    ? "border-primary/40 bg-primary/5 text-foreground"
+                                    : "border-border text-muted-foreground"
+                                }`}
+                              >
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  {LETTERS[optionIndex] ?? optionIndex + 1}
                                 </span>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
+                                <span className="leading-relaxed">{option.label}</span>
+                                {isPicked && (
+                                  <span className="ml-auto shrink-0 text-xs font-medium text-primary">
+                                    Your answer
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : hasAnswer(picked) ? (
+                        <p className="mt-4 rounded-md border border-primary/40 bg-primary/5 px-3 py-3 text-sm text-foreground">
+                          <span className="text-xs font-medium text-primary">Your answer</span>
+                          <span className="mt-1 block leading-relaxed">{picked || "Blank"}</span>
+                        </p>
+                      ) : null}
 
-                      {picked === undefined && (
+                      {!hasAnswer(picked) && (
                         <p className="mt-3 text-xs text-destructive">
                           Left blank during the assessment.
                         </p>

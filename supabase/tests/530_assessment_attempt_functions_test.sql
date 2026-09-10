@@ -53,6 +53,59 @@ select ok(
 );
 
 select ok(
+  (select count(*) = 2 and bool_and(pg_proc.prosecdef)
+     and bool_and(pg_proc.proconfig @> array['search_path='])
+   from pg_proc
+   join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
+   where pg_namespace.nspname = 'app'
+     and pg_proc.proname in ('claim_assessment_submission_idempotency',
+                             'complete_assessment_submission_idempotency')),
+  'The assessment idempotency functions are SECURITY DEFINER with an empty search_path'
+);
+
+select ok(
+  not exists (
+    select 1
+    from pg_proc
+    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
+    cross join lateral aclexplode(coalesce(pg_proc.proacl, acldefault('f', pg_proc.proowner)))
+      as privilege
+    where pg_namespace.nspname = 'app'
+      and pg_proc.proname = 'claim_assessment_submission_idempotency'
+      and privilege.grantee = 0
+      and privilege.privilege_type = 'EXECUTE'
+  )
+  and not has_function_privilege(
+    'anon', 'app.claim_assessment_submission_idempotency(text, text)', 'execute')
+  and has_function_privilege(
+    'authenticated', 'app.claim_assessment_submission_idempotency(text, text)', 'execute')
+  and has_function_privilege(
+    'service_role', 'app.claim_assessment_submission_idempotency(text, text)', 'execute'),
+  'Only authenticated and service_role can execute the assessment idempotency claim function'
+);
+
+select ok(
+  not exists (
+    select 1
+    from pg_proc
+    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
+    cross join lateral aclexplode(coalesce(pg_proc.proacl, acldefault('f', pg_proc.proowner)))
+      as privilege
+    where pg_namespace.nspname = 'app'
+      and pg_proc.proname = 'complete_assessment_submission_idempotency'
+      and privilege.grantee = 0
+      and privilege.privilege_type = 'EXECUTE'
+  )
+  and not has_function_privilege(
+    'anon', 'app.complete_assessment_submission_idempotency(text, text, integer, jsonb)', 'execute')
+  and has_function_privilege(
+    'authenticated', 'app.complete_assessment_submission_idempotency(text, text, integer, jsonb)', 'execute')
+  and has_function_privilege(
+    'service_role', 'app.complete_assessment_submission_idempotency(text, text, integer, jsonb)', 'execute'),
+  'Only authenticated and service_role can execute the assessment idempotency completion function'
+);
+
+select ok(
   not has_function_privilege('anon', 'app.submit_assessment_attempt(uuid, jsonb)', 'execute'),
   'anon cannot execute app.submit_assessment_attempt'
 );
@@ -60,7 +113,17 @@ select ok(
 select ok(not has_table_privilege('authenticated', 'app.assessment_attempts', 'insert'),
           'authenticated still holds no INSERT on app.assessment_attempts');
 select ok(not has_table_privilege('authenticated', 'app.competency_results', 'insert'),
-          'authenticated still holds no INSERT on app.competency_results');
+           'authenticated still holds no INSERT on app.competency_results');
+select ok(
+  has_column_privilege('authenticated', 'app.assessment_responses', 'delivered_payload', 'select')
+  and not has_column_privilege(
+    'authenticated', 'app.assessment_responses', 'grading_answer_key', 'select'),
+  'Authenticated actors can read frozen delivery payloads but never grading keys'
+);
+select ok(not has_any_column_privilege(
+            'authenticated', 'app.idempotency_keys'::regclass, 'select'),
+          'The functions do not expose direct reads of confidential idempotency records');
+
 
 -- ---------------------------------------------------------------------------
 -- Fixture: one diagnostic over two competencies, two questions each
@@ -167,6 +230,88 @@ select is(
   'Beginning the diagnostic moves the learner off not_started'
 );
 
+select is(
+  (select assessment_attempts.question_snapshot_count
+   from app.assessment_attempts),
+  4,
+  'Starting freezes every delivered question into the attempt'
+);
+
+select is(
+  (select count(*) from app.assessment_responses
+   where delivered_payload is not null
+     and grading_answer_key is not null
+     and question_version is not null),
+  4::bigint,
+  'Every frozen question carries its safe payload, version and confidential key'
+);
+
+select throws_ok(
+  $$ select grading_answer_key from app.assessment_responses $$,
+  '42501',
+  null,
+  'A learner cannot select a frozen grading key'
+);
+
+-- ---------------------------------------------------------------------------
+-- Final-submission idempotency claim and completion
+-- ---------------------------------------------------------------------------
+select is(
+  (select claim_status from app.claim_assessment_submission_idempotency(
+    'assessment-submit-key-1', 'fingerprint-one')),
+  'claimed'::text,
+  'A learner claims a new final-submission key'
+);
+
+select is(
+  (select claim_status from app.claim_assessment_submission_idempotency(
+    'assessment-submit-key-1', 'fingerprint-two')),
+  'conflict'::text,
+  'The same key with a different fingerprint signals conflict'
+);
+
+select ok(
+  app.complete_assessment_submission_idempotency(
+    'assessment-submit-key-1', 'fingerprint-one', 200,
+    '{"data":{"status":"scored","exact":true}}'::jsonb),
+  'The claimed key stores its exact response envelope and status'
+);
+
+select is(
+  (select claim_status from app.claim_assessment_submission_idempotency(
+    'assessment-submit-key-1', 'fingerprint-one')),
+  'replay'::text,
+  'The completed key and matching fingerprint replay'
+);
+
+select is(
+  (select response_status from app.claim_assessment_submission_idempotency(
+    'assessment-submit-key-1', 'fingerprint-one')),
+  200,
+  'Replay returns the stored HTTP status'
+);
+
+select is(
+  (select response_body from app.claim_assessment_submission_idempotency(
+    'assessment-submit-key-1', 'fingerprint-one')),
+  '{"data":{"status":"scored","exact":true}}'::jsonb,
+  'Replay returns the exact stored JSON envelope'
+);
+
+select throws_ok(
+  $$ select app.claim_assessment_submission_idempotency('short', 'fingerprint') $$,
+  '22023',
+  'Idempotency key must contain between 8 and 255 characters',
+  'The claim function enforces the lower key bound'
+);
+
+select throws_ok(
+  $$ select app.claim_assessment_submission_idempotency(repeat('x', 256), 'fingerprint') $$,
+  '22023',
+  'Idempotency key must contain between 8 and 255 characters',
+  'The claim function enforces the upper key bound'
+);
+
 -- ---------------------------------------------------------------------------
 -- Autosave
 -- ---------------------------------------------------------------------------
@@ -185,6 +330,34 @@ select is(
    where assessment_responses.is_correct is not null),
   0::bigint,
   'Autosave grades nothing'
+);
+
+-- Authoring changes after start cannot alter this sitting.
+reset role;
+update app.questions
+set prompt = 'Changed after delivery',
+    answer_key = '"17"'::jsonb,
+    version = version + 1
+where question_id = 'ea000000-0000-4000-8000-000000000001';
+delete from app.assessment_questions
+where assessment_id = 'fa000000-0000-4000-8000-000000000001'
+  and question_id = 'ea000000-0000-4000-8000-000000000004';
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
+select is(
+  (select delivered_payload ->> 'text'
+   from app.assessment_responses
+   where question_id = 'ea000000-0000-4000-8000-000000000001'),
+  'What is (-9) x (-8)?',
+  'The delivered prompt remains the start-time prompt after authoring changes'
+);
+
+select is(
+  (select count(*) from app.assessment_responses),
+  4::bigint,
+  'Removing live assessment membership does not remove a delivered question'
 );
 
 -- ---------------------------------------------------------------------------
@@ -219,7 +392,7 @@ select is(
   (select competency_results.percentage from app.competency_results
    where competency_results.competency_id = 'ca000000-0000-4000-8000-000000000001'),
   100.00::numeric(5,2),
-  'The competency answered correctly twice scores one hundred'
+  'The competency uses the frozen answer key even after the live key changes'
 );
 
 select is(
@@ -319,6 +492,23 @@ select is(
   'The second learner sees none of the first learner''s path'
 );
 
+select is(
+  (select claim_status from app.claim_assessment_submission_idempotency(
+    'assessment-submit-key-1', 'fingerprint-two')),
+  'claimed'::text,
+  'The same endpoint and key are isolated by the actor derived from auth.uid()'
+);
+
+reset role;
+select is(
+  (select count(*) from app.idempotency_keys
+   where idempotency_keys.endpoint = 'POST /assessment-attempts/{id}/submit'),
+  2::bigint,
+  'Each learner owns a separate confidential idempotency record'
+);
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b2","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
 select throws_ok(
   $$ select app.submit_assessment_attempt(
        (select attempt_id from app.assessment_attempts) ) $$,
@@ -381,6 +571,17 @@ select is(
   'Authorising a reassessment writes its audit event in the same transaction'
 );
 
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+select ok(
+  app.may_start_reassessment(
+    '5a000000-0000-4000-8000-000000000001',
+    'fa000000-0000-4000-8000-000000000001'
+  ),
+  'A learner can see the usable grant for their own diagnostic without reading its row'
+);
+reset role;
+
 select ok(
   not has_table_privilege('authenticated', 'app.reassessment_authorizations', 'insert'),
   'authenticated still holds no INSERT on app.reassessment_authorizations'
@@ -408,6 +609,17 @@ select is(
   1::bigint,
   'Starting the reassessment spent the authorization'
 );
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+select ok(
+  not app.may_start_reassessment(
+    '5a000000-0000-4000-8000-000000000001',
+    'fa000000-0000-4000-8000-000000000001'
+  ),
+  'A consumed grant is no longer reported as eligible'
+);
+reset role;
 
 select is(
   (select reassessment_authorizations.consumed_attempt_id
