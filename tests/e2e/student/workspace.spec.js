@@ -27,11 +27,19 @@ describe("student workspace", () => {
     await expect(links).toHaveText(STUDENT_NAV_LABELS);
   });
 
-  test("every destination opens its own UI-in-progress page", async ({ page }) => {
+  test("every destination opens and marks itself in the sidebar", async ({ page }) => {
     for (const route of STUDENT_ROUTES) {
       await page.goto(route);
       await expect(page).toHaveURL(new RegExp(`${route}$`));
-      await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
+
+      // The dashboard is built; the rest are still development placeholders.
+      if (route === "/student/dashboard") {
+        await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
+        await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+      } else {
+        await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
+      }
+
       await expect(page.locator('nav[aria-label="Workspace"] a[aria-current="page"]')).toHaveCount(1);
     }
   });
