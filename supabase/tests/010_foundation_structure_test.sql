@@ -209,7 +209,8 @@ select is(
    where pg_namespace.nspname = 'app'
      and pg_proc.prosecdef),
   'activity_hint,archive_intervention,authorize_reassessment,'
-  || 'check_activity_answer,complete_module,is_active_account,module_section_ids,'
+  || 'check_activity_answer,claim_assessment_submission_idempotency,'
+  || 'complete_assessment_submission_idempotency,complete_module,is_active_account,may_start_reassessment,module_section_ids,'
   || 'open_intervention,record_audit_event,reset_diagnostic,'
   || 'save_assessment_answers,save_module_progress,set_account_status,'
   || 'setting_integer,start_activity_attempt,start_assessment_attempt,'

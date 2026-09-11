@@ -225,16 +225,16 @@ insert into app.system_settings (setting_key, setting_value, updated_by) values
   ('features.groq_feedback_enabled', 'false'::jsonb, 'a5000000-0000-4000-8000-0000000000a1');
 
 select is(
-  (select setting_value from app.system_settings
+  (select setting_value::text from app.system_settings
     where system_settings.setting_key = 'thresholds.activity_pass_percentage'),
-  '75'::jsonb,
+  '75'::text,
   'A pass threshold is safe configuration'
 );
 
 select is(
-  (select setting_value from app.system_settings
+  (select setting_value::text from app.system_settings
     where system_settings.setting_key = 'features.groq_feedback_enabled'),
-  'false'::jsonb,
+  'false'::text,
   'A Groq feature flag is safe configuration'
 );
 
