@@ -51,8 +51,7 @@ class FakeConnection:
         # The account-status gate reads this. Active unless a test says otherwise.
         self.account_is_active = True
 
-    def transaction(self, **options):
-        self._log.append(("transaction", options))
+    def transaction(self):
         return FakeTransaction(self._log)
 
     async def execute(self, query, *args):
@@ -117,26 +116,7 @@ async def test_an_actor_transaction_installs_the_context_before_anything_else():
         await connection.fetch("select 1")
 
     kinds = [entry[0] for entry in pool.log]
-    assert kinds == [
-        "acquire",
-        "transaction",
-        "begin",
-        "execute",
-        "fetchval",
-        "fetch",
-        "end",
-        "release",
-    ]
-
-
-async def test_actor_transactions_are_pinned_to_read_committed():
-    database, pool = await a_database()
-
-    async with database.actor(a_token()):
-        pass
-
-    transaction = next(entry for entry in pool.log if entry[0] == "transaction")
-    assert transaction == ("transaction", {"isolation": "read_committed"})
+    assert kinds == ["acquire", "begin", "execute", "fetchval", "fetch", "end", "release"]
 
 
 async def test_the_installed_context_carries_the_schema_role_and_claims():

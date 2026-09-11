@@ -28,7 +28,6 @@ export const STUDENT_ROUTE = Object.freeze({
   MY_LEARNING: "/student/my-learning",
   ACTIVITIES: "/student/activities",
   ASSESSMENTS: "/student/assessments",
-  DIAGNOSTIC_ASSESSMENT: "/student/assessments/diagnostic",
   PROGRESS: "/student/progress",
 });
 
@@ -50,7 +49,7 @@ function nextActionForDiagnostic(status) {
       ? "The diagnostic finds what you already know, so MathSmart can plot your starting point and build a path that fits you."
       : "You have answers saved already. Finishing the diagnostic plots your starting point and opens your learning path.",
     cta: starting ? "Start the diagnostic" : "Finish the diagnostic",
-    href: STUDENT_ROUTE.DIAGNOSTIC_ASSESSMENT,
+    href: STUDENT_ROUTE.ASSESSMENTS,
     meta: null,
   };
 }

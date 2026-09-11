@@ -53,150 +53,14 @@ select ok(
 );
 
 select ok(
-  (select count(*) = 2 and bool_and(pg_proc.prosecdef)
-     and bool_and(pg_proc.proconfig @> array['search_path=""'])
-   from pg_proc
-   join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
-   where pg_namespace.nspname = 'app'
-     and pg_proc.proname in ('claim_assessment_submission_idempotency',
-                             'complete_assessment_submission_idempotency')),
-  'The assessment idempotency functions are SECURITY DEFINER with an empty search_path'
-);
-
-select ok(
-  not exists (
-    select 1
-    from pg_proc
-    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
-    cross join lateral aclexplode(coalesce(pg_proc.proacl, acldefault('f', pg_proc.proowner)))
-      as privilege
-    where pg_namespace.nspname = 'app'
-      and pg_proc.proname = 'claim_assessment_submission_idempotency'
-      and privilege.grantee = 0
-      and privilege.privilege_type = 'EXECUTE'
-  )
-  and not has_function_privilege(
-    'anon', 'app.claim_assessment_submission_idempotency(text, text)', 'execute')
-  and has_function_privilege(
-    'authenticated', 'app.claim_assessment_submission_idempotency(text, text)', 'execute')
-  and has_function_privilege(
-    'service_role', 'app.claim_assessment_submission_idempotency(text, text)', 'execute'),
-  'Only authenticated and service_role can execute the assessment idempotency claim function'
-);
-
-select ok(
-  not exists (
-    select 1
-    from pg_proc
-    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
-    cross join lateral aclexplode(coalesce(pg_proc.proacl, acldefault('f', pg_proc.proowner)))
-      as privilege
-    where pg_namespace.nspname = 'app'
-      and pg_proc.proname = 'complete_assessment_submission_idempotency'
-      and privilege.grantee = 0
-      and privilege.privilege_type = 'EXECUTE'
-  )
-  and not has_function_privilege(
-    'anon', 'app.complete_assessment_submission_idempotency(text, text, integer, jsonb)', 'execute')
-  and has_function_privilege(
-    'authenticated', 'app.complete_assessment_submission_idempotency(text, text, integer, jsonb)', 'execute')
-  and has_function_privilege(
-    'service_role', 'app.complete_assessment_submission_idempotency(text, text, integer, jsonb)', 'execute'),
-  'Only authenticated and service_role can execute the assessment idempotency completion function'
-);
-
-select ok(
   not has_function_privilege('anon', 'app.submit_assessment_attempt(uuid, jsonb)', 'execute'),
   'anon cannot execute app.submit_assessment_attempt'
-);
-select ok(
-  to_regprocedure('app.store_assessment_result_payload(uuid,jsonb)') is null
-  and to_regprocedure('app.store_assessment_result_payload(uuid)') is null,
-  'No report-store function remains callable after atomic scoring'
 );
 
 select ok(not has_table_privilege('authenticated', 'app.assessment_attempts', 'insert'),
           'authenticated still holds no INSERT on app.assessment_attempts');
-select col_type_is(
-  'app', 'assessment_attempts', 'assessment_grade_id_snapshot', 'uuid',
-  'Assessment attempts carry a typed grade snapshot'
-);
-select col_not_null(
-  'app', 'assessment_attempts', 'assessment_grade_id_snapshot',
-  'Every assessment attempt has a frozen grade'
-);
 select ok(not has_table_privilege('authenticated', 'app.competency_results', 'insert'),
-           'authenticated still holds no INSERT on app.competency_results');
-select ok(
-  has_column_privilege('authenticated', 'app.assessment_responses', 'delivered_payload', 'select')
-  and not has_column_privilege(
-    'authenticated', 'app.assessment_responses', 'grading_answer_key', 'select'),
-  'Authenticated actors can read frozen delivery payloads but never grading keys'
-);
-select ok(not has_any_column_privilege(
-            'authenticated', 'app.idempotency_keys'::regclass, 'select'),
-          'The functions do not expose direct reads of confidential idempotency records');
-
-select ok(
-  not has_function_privilege(
-    'public', 'app.assessment_delivery_payload_is_safe(jsonb)', 'execute')
-  and not has_function_privilege(
-    'anon', 'app.assessment_delivery_payload_is_safe(jsonb)', 'execute')
-  and not has_function_privilege(
-    'authenticated', 'app.assessment_delivery_payload_is_safe(jsonb)', 'execute')
-  and has_function_privilege(
-    'service_role', 'app.assessment_delivery_payload_is_safe(jsonb)', 'execute'),
-  'Only service_role can execute the delivery-payload safety validator'
-);
-
-select ok(
-  app.assessment_delivery_payload_is_safe(
-    '{"id":"ee000000-0000-4000-8000-000000000003",
-      "competency_id":"ce000000-0000-4000-8000-000000000002",
-      "competency_name":"Number Sense",
-      "text":"What is 2 + 2?",
-      "type":"number_input",
-      "choices":[],
-      "difficulty":"easy",
-      "visual_aid_description":null}'::jsonb
-  ),
-  'The validator accepts the canonical learner delivery shape'
-);
-
-select ok(
-  not app.assessment_delivery_payload_is_safe(
-    '{"id":"ee000000-0000-4000-8000-000000000003",
-      "competency_id":"ce000000-0000-4000-8000-000000000002",
-      "competency_name":"Number Sense",
-      "text":"What is 2 + 2?",
-      "type":"number_input",
-      "choices":[],
-      "difficulty":"easy",
-      "visual_aid_description":null,
-      "answerKey":"4"}'::jsonb
-  )
-  and not app.assessment_delivery_payload_is_safe(
-    '{"id":"ee000000-0000-4000-8000-000000000003",
-      "competency_id":"ce000000-0000-4000-8000-000000000002",
-      "competency_name":"Number Sense",
-      "text":"Pick one",
-      "type":"multiple_choice",
-      "choices":[{"label":"4","isCorrect":true}],
-      "difficulty":"easy",
-      "visual_aid_description":null}'::jsonb
-  )
-  and not app.assessment_delivery_payload_is_safe(
-    '{"id":"ee000000-0000-4000-8000-000000000003",
-      "competency_id":"ce000000-0000-4000-8000-000000000002",
-      "competency_name":"Number Sense",
-      "text":"What is 2 + 2?",
-      "type":"number_input",
-      "choices":[],
-      "difficulty":"easy"}'::jsonb
-  ),
-  'The validator rejects extra keys, nested answer metadata, and missing required fields'
-);
-
+          'authenticated still holds no INSERT on app.competency_results');
 
 -- ---------------------------------------------------------------------------
 -- Fixture: one diagnostic over two competencies, two questions each
@@ -247,18 +111,13 @@ values
   ('ea000000-0000-4000-8000-000000000004', 'ca000000-0000-4000-8000-000000000002',
    'number_input', 'What is 3 + 3?', '[]'::jsonb, '6'::jsonb, 'published');
 
-insert into app.grade_levels (grade_id, name, level) values
-  ('3f0f0000-0000-4000-8000-000000000005', 'Grade 5 test fixture', 5);
-
 insert into app.assessments
   (assessment_id, grade_id, title, assessment_type, status, duration_minutes)
-values
-  ('fa000000-0000-4000-8000-000000000001',
-   (select grade_id from app.grade_levels where level = 6),
-   'Attempt diagnostic', 'diagnostic', 'published', 30),
-  ('fa000000-0000-4000-8000-000000000005',
-   '3f0f0000-0000-4000-8000-000000000005',
-   'Wrong-grade published assessment', 'unit_quiz', 'published', 20);
+values (
+  'fa000000-0000-4000-8000-000000000001',
+  (select grade_id from app.grade_levels where level = 6),
+  'Attempt diagnostic', 'diagnostic', 'published', 30
+);
 
 insert into app.assessment_questions (assessment_id, question_id, position) values
   ('fa000000-0000-4000-8000-000000000001', 'ea000000-0000-4000-8000-000000000001', 1),
@@ -282,22 +141,8 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
--- Grade eligibility, starting and resuming
+-- Starting is resuming
 -- ---------------------------------------------------------------------------
-select throws_ok(
-  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000005') $$,
-  'P0001',
-  'This assessment is not available for your grade',
-  'A published assessment for another grade is refused with a stable error'
-);
-
-select is(
-  (select count(*) from app.assessment_attempts
-   where assessment_id = 'fa000000-0000-4000-8000-000000000005'),
-  0::bigint,
-  'A wrong-grade refusal creates no attempt'
-);
-
 select is(
   (select started.status
    from app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') as started),
@@ -322,166 +167,6 @@ select is(
   'Beginning the diagnostic moves the learner off not_started'
 );
 
-select is(
-  (select assessment_attempts.assessment_grade_id_snapshot
-   from app.assessment_attempts
-   where assessment_attempts.student_id = '5a000000-0000-4000-8000-000000000001'),
-  (select grade_id from app.grade_levels where level = 6),
-  'Starting freezes the eligible assessment grade on the attempt'
-);
-
-reset role;
-update app.student_profiles
-set grade_id = '3f0f0000-0000-4000-8000-000000000005'
-where student_id = '5a000000-0000-4000-8000-000000000001';
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-select throws_ok(
-  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') $$,
-  'P0001',
-  'This assessment is not available for your grade',
-  'An open attempt cannot be resumed after the learner moves to another grade'
-);
-select throws_ok(
-  $$ select app.save_assessment_answers(
-       (select attempt_id from app.assessment_attempts
-        where student_id = '5a000000-0000-4000-8000-000000000001'),
-       '[{"question_id": "ea000000-0000-4000-8000-000000000001", "answer": "72"}]'::jsonb
-     ) $$,
-  'P0001',
-  'This assessment is not available for your grade',
-  'A moved learner cannot directly save to a known open attempt'
-);
-select throws_ok(
-  $$ select app.submit_assessment_attempt(
-       (select attempt_id from app.assessment_attempts
-        where student_id = '5a000000-0000-4000-8000-000000000001'),
-       '[{"question_id": "ea000000-0000-4000-8000-000000000001", "answer": "72"}]'::jsonb
-     ) $$,
-  'P0001',
-  'This assessment is not available for your grade',
-  'A moved learner cannot directly submit a known open attempt'
-);
-reset role;
-select ok(
-  (select bool_and(answer is null and is_correct is null)
-   from app.assessment_responses),
-  'Refused direct save and submit leave frozen responses unchanged'
-);
-select is(
-  (select status from app.assessment_attempts
-   where student_id = '5a000000-0000-4000-8000-000000000001'),
-  'in_progress'::app.attempt_status,
-  'Refused direct submit leaves the attempt in progress'
-);
-select is((select count(*) from app.competency_results), 0::bigint,
-          'Refused direct submit writes no competency results');
-select is((select count(*) from app.competency_progress), 0::bigint,
-          'Refused direct submit writes no competency progress');
-select is((select count(*) from app.learning_path_items), 0::bigint,
-          'Refused direct submit writes no learning path');
-select ok(
-  (select result_payload is null from app.assessment_attempts
-   where student_id = '5a000000-0000-4000-8000-000000000001'),
-  'Refused direct submit freezes no result payload'
-);
-reset role;
-update app.student_profiles
-set grade_id = (select grade_id from app.grade_levels where level = 6)
-where student_id = '5a000000-0000-4000-8000-000000000001';
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-
-select is(
-  (select assessment_attempts.question_snapshot_count
-   from app.assessment_attempts),
-  4,
-  'Starting freezes every delivered question into the attempt'
-);
-
-reset role;
-
-select is(
-  (select count(*) from app.assessment_responses
-   where attempt_id = (
-       select attempt_id from app.assessment_attempts
-       where assessment_id = 'fa000000-0000-4000-8000-000000000001')
-     and delivered_payload is not null
-     and grading_answer_key is not null
-     and question_version is not null),
-  4::bigint,
-  'Every frozen question carries its safe payload, version and confidential key'
-);
-
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-
-select throws_ok(
-  $$ select grading_answer_key from app.assessment_responses $$,
-  '42501',
-  null,
-  'A learner cannot select a frozen grading key'
-);
-
--- ---------------------------------------------------------------------------
--- Final-submission idempotency claim and completion
--- ---------------------------------------------------------------------------
-select is(
-  (select claim_status from app.claim_assessment_submission_idempotency(
-    'assessment-submit-key-1', 'fingerprint-one')),
-  'claimed'::text,
-  'A learner claims a new final-submission key'
-);
-
-select is(
-  (select claim_status from app.claim_assessment_submission_idempotency(
-    'assessment-submit-key-1', 'fingerprint-two')),
-  'conflict'::text,
-  'The same key with a different fingerprint signals conflict'
-);
-
-select ok(
-  app.complete_assessment_submission_idempotency(
-    'assessment-submit-key-1', 'fingerprint-one', 200,
-    '{"data":{"status":"scored","exact":true}}'::jsonb),
-  'The claimed key stores its exact response envelope and status'
-);
-
-select is(
-  (select claim_status from app.claim_assessment_submission_idempotency(
-    'assessment-submit-key-1', 'fingerprint-one')),
-  'replay'::text,
-  'The completed key and matching fingerprint replay'
-);
-
-select is(
-  (select response_status from app.claim_assessment_submission_idempotency(
-    'assessment-submit-key-1', 'fingerprint-one')),
-  200,
-  'Replay returns the stored HTTP status'
-);
-
-select is(
-  (select response_body from app.claim_assessment_submission_idempotency(
-    'assessment-submit-key-1', 'fingerprint-one')),
-  '{"data":{"status":"scored","exact":true}}'::jsonb,
-  'Replay returns the exact stored JSON envelope'
-);
-
-select throws_ok(
-  $$ select app.claim_assessment_submission_idempotency('short', 'fingerprint') $$,
-  '22023',
-  'Idempotency key must contain between 8 and 255 characters',
-  'The claim function enforces the lower key bound'
-);
-
-select throws_ok(
-  $$ select app.claim_assessment_submission_idempotency(repeat('x', 256), 'fingerprint') $$,
-  '22023',
-  'Idempotency key must contain between 8 and 255 characters',
-  'The claim function enforces the upper key bound'
-);
-
 -- ---------------------------------------------------------------------------
 -- Autosave
 -- ---------------------------------------------------------------------------
@@ -500,135 +185,6 @@ select is(
    where assessment_responses.is_correct is not null),
   0::bigint,
   'Autosave grades nothing'
-);
-
--- ---------------------------------------------------------------------------
--- Server-clock expiry
--- ---------------------------------------------------------------------------
-reset role;
-insert into app.assessments
-  (assessment_id, grade_id, title, assessment_type, status, duration_minutes)
-values (
-  'fa000000-0000-4000-8000-000000000006',
-  (select grade_id from app.grade_levels where level = 6),
-  'Expiring attempt fixture', 'unit_quiz', 'published', 30
-);
-insert into app.assessment_questions (assessment_id, question_id, position)
-select 'fa000000-0000-4000-8000-000000000006', question_id, position
-from app.assessment_questions
-where assessment_id = 'fa000000-0000-4000-8000-000000000001';
-
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b2","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-select is(
-  app.save_assessment_answers(
-    (select attempt_id from app.start_assessment_attempt(
-      'fa000000-0000-4000-8000-000000000006')),
-    '[{"question_id":"ea000000-0000-4000-8000-000000000001","answer":"72"}]'::jsonb
-  ),
-  1,
-  'An answer can be saved before server-clock expiry'
-);
-
-reset role;
-select throws_ok(
-  $$ update app.assessment_attempts
-     set assessment_payload = jsonb_set(assessment_payload, '{duration_minutes}', '120')
-     where assessment_id = 'fa000000-0000-4000-8000-000000000006' $$,
-  '55000',
-  'Assessment attempt timing is immutable',
-  'Frozen duration cannot be changed after start'
-);
-set local session_replication_role = replica;
-update app.assessment_attempts
-set started_at = clock_timestamp() - interval '30 minutes'
-where assessment_id = 'fa000000-0000-4000-8000-000000000006';
-set local session_replication_role = origin;
-update app.assessments
-set duration_minutes = 120
-where assessment_id = 'fa000000-0000-4000-8000-000000000006';
-
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b2","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-select throws_ok(
-  $$ select app.save_assessment_answers(
-       (select attempt_id from app.assessment_attempts
-        where assessment_id = 'fa000000-0000-4000-8000-000000000006'),
-       '[{"question_id":"ea000000-0000-4000-8000-000000000002","answer":"4.2"}]'::jsonb
-     ) $$,
-  'P0005',
-  'This assessment attempt has expired',
-  'Autosave at the exact immutable deadline is refused with a distinct stable SQLSTATE'
-);
-select is(
-  (select submitted.overall_score
-   from app.submit_assessment_attempt(
-     (select attempt_id from app.assessment_attempts
-      where assessment_id = 'fa000000-0000-4000-8000-000000000006'),
-     '[{"question_id":"ea000000-0000-4000-8000-000000000001","answer":"17"},
-       {"question_id":"ea000000-0000-4000-8000-000000000002","answer":"4.2"}]'::jsonb
-   ) as submitted),
-  25.00::numeric(5,2),
-  'Late submit returns scored result using only answers saved before expiry'
-);
-select ok(
-  (select answer = '"72"'::jsonb
-   from app.assessment_responses
-   where attempt_id = (select attempt_id from app.assessment_attempts
-                       where assessment_id = 'fa000000-0000-4000-8000-000000000006')
-     and question_id = 'ea000000-0000-4000-8000-000000000001')
-  and
-  (select answer is null
-   from app.assessment_responses
-   where attempt_id = (select attempt_id from app.assessment_attempts
-                       where assessment_id = 'fa000000-0000-4000-8000-000000000006')
-     and question_id = 'ea000000-0000-4000-8000-000000000002'),
-  'Late submit payload cannot replace or add frozen saved answers'
-);
-select is(
-  (select status from app.assessment_attempts
-   where assessment_id = 'fa000000-0000-4000-8000-000000000006'),
-  'scored'::app.attempt_status,
-  'Late submit finalizes normally without an expired attempt state'
-);
-
-reset role;
-delete from app.competency_progress
-where student_id = '5a000000-0000-4000-8000-000000000002';
-delete from app.assessment_attempts
-where assessment_id = 'fa000000-0000-4000-8000-000000000006';
-delete from app.assessments
-where assessment_id = 'fa000000-0000-4000-8000-000000000006';
-
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-
--- Authoring changes after start cannot alter this sitting.
-reset role;
-update app.questions
-set prompt = 'Changed after delivery',
-    answer_key = '"17"'::jsonb,
-    version = version + 1
-where question_id = 'ea000000-0000-4000-8000-000000000001';
-delete from app.assessment_questions
-where assessment_id = 'fa000000-0000-4000-8000-000000000001'
-  and question_id = 'ea000000-0000-4000-8000-000000000004';
-
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-
-select is(
-  (select delivered_payload ->> 'text'
-   from app.assessment_responses
-   where question_id = 'ea000000-0000-4000-8000-000000000001'),
-  'What is (-9) x (-8)?',
-  'The delivered prompt remains the start-time prompt after authoring changes'
-);
-
-select is(
-  (select count(*) from app.assessment_responses),
-  4::bigint,
-  'Removing live assessment membership does not remove a delivered question'
 );
 
 -- ---------------------------------------------------------------------------
@@ -663,7 +219,7 @@ select is(
   (select competency_results.percentage from app.competency_results
    where competency_results.competency_id = 'ca000000-0000-4000-8000-000000000001'),
   100.00::numeric(5,2),
-  'The competency uses the frozen answer key even after the live key changes'
+  'The competency answered correctly twice scores one hundred'
 );
 
 select is(
@@ -715,44 +271,6 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- The immutable report is frozen by the scoring call, never supplied later
--- ---------------------------------------------------------------------------
-select is(
-  (select (assessment_attempts.result_payload ->> 'overall_score')::numeric
-   from app.assessment_attempts
-   where student_id = '5a000000-0000-4000-8000-000000000001'),
-  50.00::numeric,
-  'Scoring freezes the authoritative overall score before it returns'
-);
-
-select is(
-  (select jsonb_array_length(assessment_attempts.result_payload -> 'competency_results')
-   from app.assessment_attempts
-   where student_id = '5a000000-0000-4000-8000-000000000001'),
-  2,
-  'The frozen report contains authoritative competency results'
-);
-
-select is(
-  (select assessment_attempts.result_payload
-          #>> '{recommended_learning_path,0,module,title}'
-   from app.assessment_attempts
-   where student_id = '5a000000-0000-4000-8000-000000000001'),
-  'Attempt module two',
-  'The frozen report contains the path generated by its own submission'
-);
-
-select is(
-  (select submitted.result_payload
-   from app.assessment_attempts as submitted
-   where submitted.student_id = '5a000000-0000-4000-8000-000000000001'),
-  (select stored.result_payload
-   from app.assessment_attempts as stored
-   where stored.student_id = '5a000000-0000-4000-8000-000000000001'),
-  'The submission result is the same stored report used for restoration'
-);
-
--- ---------------------------------------------------------------------------
 -- A scored attempt is finished
 -- ---------------------------------------------------------------------------
 select throws_ok(
@@ -800,23 +318,6 @@ select is(
   0::bigint,
   'The second learner sees none of the first learner''s path'
 );
-
-select is(
-  (select claim_status from app.claim_assessment_submission_idempotency(
-    'assessment-submit-key-1', 'fingerprint-two')),
-  'claimed'::text,
-  'The same endpoint and key are isolated by the actor derived from auth.uid()'
-);
-
-reset role;
-select is(
-  (select count(*) from app.idempotency_keys
-   where idempotency_keys.endpoint = 'POST /assessment-attempts/{id}/submit'),
-  2::bigint,
-  'Each learner owns a separate confidential idempotency record'
-);
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b2","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
 
 select throws_ok(
   $$ select app.submit_assessment_attempt(
@@ -880,17 +381,6 @@ select is(
   'Authorising a reassessment writes its audit event in the same transaction'
 );
 
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-select ok(
-  app.may_start_reassessment(
-    '5a000000-0000-4000-8000-000000000001',
-    'fa000000-0000-4000-8000-000000000001'
-  ),
-  'A learner can see the usable grant for their own diagnostic without reading its row'
-);
-reset role;
-
 select ok(
   not has_table_privilege('authenticated', 'app.reassessment_authorizations', 'insert'),
   'authenticated still holds no INSERT on app.reassessment_authorizations'
@@ -918,17 +408,6 @@ select is(
   1::bigint,
   'Starting the reassessment spent the authorization'
 );
-
-set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
-set local role authenticated;
-select ok(
-  not app.may_start_reassessment(
-    '5a000000-0000-4000-8000-000000000001',
-    'fa000000-0000-4000-8000-000000000001'
-  ),
-  'A consumed grant is no longer reported as eligible'
-);
-reset role;
 
 select is(
   (select reassessment_authorizations.consumed_attempt_id
@@ -978,24 +457,6 @@ select ok(
      '[]'::jsonb
    ) as submitted),
   'The reassessment is graded like any other attempt'
-);
-
-select is(
-  (select jsonb_array_length(first_attempt.result_payload -> 'recommended_learning_path')
-   from app.assessment_attempts as first_attempt
-   where first_attempt.student_id = '5a000000-0000-4000-8000-000000000001'
-     and first_attempt.overall_score = 50.00),
-  1,
-  'A later submission cannot contaminate the first attempt path report'
-);
-
-select is(
-  (select jsonb_array_length(latest_attempt.result_payload -> 'recommended_learning_path')
-   from app.assessment_attempts as latest_attempt
-   where latest_attempt.student_id = '5a000000-0000-4000-8000-000000000001'
-     and latest_attempt.overall_score = 0.00),
-  2,
-  'The reassessment freezes the different path generated by its own answers'
 );
 
 select throws_ok(

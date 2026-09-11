@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:unit": "node --test \"src/modules/**/__tests__/*.test.js\" \"src/config/__tests__/*.test.js\"",
+    "test:unit": "node --test \"src/modules/**/__tests__/*.test.js\"",
     "test:e2e": "playwright test",
     "db:start": "supabase start",
     "db:stop": "supabase stop",

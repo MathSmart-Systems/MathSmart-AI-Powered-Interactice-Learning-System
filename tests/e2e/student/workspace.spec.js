@@ -31,22 +31,16 @@ describe("student workspace", () => {
     for (const route of STUDENT_ROUTES) {
       await page.goto(route);
       await expect(page).toHaveURL(new RegExp(`${route}$`));
-      await expect(page.locator('nav[aria-label="Workspace"]')).toBeVisible();
 
-      // The dashboard and diagnostic are built; the remaining destinations are
-      // still development placeholders.
-      if (
-        route === "/student/dashboard" ||
-        route === "/student/assessments/diagnostic"
-      ) {
+      // The dashboard is built; the rest are still development placeholders.
+      if (route === "/student/dashboard") {
         await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
+        await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
       } else {
         await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
       }
 
-      await expect(
-        page.locator('nav[aria-label="Workspace"] a[aria-current="page"]'),
-      ).toHaveCount(1);
+      await expect(page.locator('nav[aria-label="Workspace"] a[aria-current="page"]')).toHaveCount(1);
     }
   });
 

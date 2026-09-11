@@ -58,15 +58,12 @@ insert into app.assessments (assessment_id, grade_id, title, assessment_type, st
 
 -- One attempt each, with its own evidence.
 insert into app.assessment_attempts
-  (attempt_id, assessment_id, student_id, status, submitted_at, overall_score,
-   assessment_grade_id_snapshot)
+  (attempt_id, assessment_id, student_id, status, submitted_at, overall_score)
 values
   ('14000000-0000-4000-8000-000000000001', 'f4000000-0000-4000-8000-000000000001',
-   '54000000-0000-4000-8000-000000000001', 'scored', now(), 40.00,
-   (select grade_id from app.grade_levels where level = 6)),
+   '54000000-0000-4000-8000-000000000001', 'scored', now(), 40.00),
   ('14000000-0000-4000-8000-000000000002', 'f4000000-0000-4000-8000-000000000001',
-   '54000000-0000-4000-8000-000000000002', 'scored', now(), 90.00,
-   (select grade_id from app.grade_levels where level = 6));
+   '54000000-0000-4000-8000-000000000002', 'scored', now(), 90.00);
 
 insert into app.assessment_responses (attempt_id, question_id, answer, is_correct) values
   ('14000000-0000-4000-8000-000000000001', 'e4000000-0000-4000-8000-000000000001', '{"value":2}'::jsonb, false),
