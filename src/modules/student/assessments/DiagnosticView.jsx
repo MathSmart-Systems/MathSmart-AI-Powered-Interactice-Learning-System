@@ -41,6 +41,8 @@ import {
   submitDiagnostic,
 } from "@/services/assessmentService";
 
+import { initialDiagnosticScreen, submissionConfirmation } from "./utils";
+
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 const IDEMPOTENCY_KEY_PREFIX = "mathsmart:diagnostic-submit:";
 const COMPLETED_ATTEMPT_STATUSES = new Set(["scored"]);
@@ -157,7 +159,10 @@ function CenteredNotice({ icon: Icon, title, children, tone = "muted" }) {
  * Scoring lives entirely on the server. This view sends answers and renders the
  * competency results that come back; it never sees an answer key.
  */
-export function DiagnosticView() {
+export function DiagnosticView({
+  requestedAttemptId = null,
+  invalidAttemptLink = false,
+}) {
   const [screen, setScreen] = useState("intro");
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -180,6 +185,8 @@ export function DiagnosticView() {
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const scrollAnchor = useRef(null);
+  const confirmationHeading = useRef(null);
+  const finalSubmitTrigger = useRef(null);
   const deadline = useRef(null);
   const answersRef = useRef({});
   const pendingSaves = useRef(new Map());
@@ -216,6 +223,8 @@ export function DiagnosticView() {
   }, []);
 
   useEffect(() => {
+    if (invalidAttemptLink) return undefined;
+
     let cancelled = false;
 
     loadDiagnostic()
@@ -224,8 +233,15 @@ export function DiagnosticView() {
         setAssessment(preview);
         setTotal(preview.total_questions);
         setTimeLimitSeconds(preview.time_limit_minutes * 60);
+        const initial = initialDiagnosticScreen(preview, requestedAttemptId);
 
-        if (preview.diagnostic_status === "in_progress") {
+        if (initial.screen === "report" && requestedAttemptId) {
+          const requested = await loadDiagnosticResult(initial.attemptId);
+          if (!cancelled) {
+            setResult(requested);
+            setScreen("report");
+          }
+        } else if (preview.diagnostic_status === "in_progress") {
           if (!preview.latest_attempt_id || preview.latest_status !== "in_progress") {
             throw new AssessmentError(
               "Your diagnostic is marked in progress, but the active attempt could not be found. Please ask your teacher for help.",
@@ -280,14 +296,15 @@ export function DiagnosticView() {
     return () => {
       cancelled = true;
     };
-  }, [hydrateAttempt]);
+  }, [hydrateAttempt, invalidAttemptLink, requestedAttemptId]);
 
   const current = questions[index] ?? null;
   const answeredCount = questions.filter((question) => hasAnswer(answers[question.id])).length;
-  const unanswered = useMemo(
-    () => questions.filter((question) => !hasAnswer(answers[question.id])),
+  const confirmation = useMemo(
+    () => submissionConfirmation(questions, answers),
     [questions, answers],
   );
+  const unanswered = confirmation.unanswered;
   const progress = total ? ((index + 1) / total) * 100 : 0;
   const isLast = index === total - 1;
   const lowTime = secondsLeft <= 60;
@@ -417,6 +434,10 @@ export function DiagnosticView() {
   }, [index, screen]);
 
   useEffect(() => {
+    if (pendingSubmit) confirmationHeading.current?.focus();
+  }, [pendingSubmit]);
+
+  useEffect(() => {
     if (screen !== "test" || current?.type !== QUESTION_TYPE.MULTIPLE_CHOICE) {
       return undefined;
     }
@@ -466,11 +487,7 @@ export function DiagnosticView() {
 
   const goNext = () => {
     if (isLast) {
-      if (unanswered.length > 0 && !pendingSubmit) {
-        setPendingSubmit(true);
-        return;
-      }
-      finish(false);
+      setPendingSubmit(true);
       return;
     }
     setIndex((value) => Math.min(total - 1, value + 1));
@@ -485,6 +502,25 @@ export function DiagnosticView() {
     setPendingSubmit(false);
     setIndex(target);
   };
+
+  const cancelSubmission = () => {
+    setPendingSubmit(false);
+    window.requestAnimationFrame(() => finalSubmitTrigger.current?.focus());
+  };
+
+  if (invalidAttemptLink) {
+    return (
+      <CenteredNotice icon={AlertCircle} title="Invalid assessment link" tone="destructive">
+        <p className="max-w-prose text-sm text-muted-foreground">
+          This report link is incomplete or invalid. Open your assessment history to choose a
+          valid report.
+        </p>
+        <Button asChild variant="outline">
+          <Link href="/student/assessments">Return to assessments</Link>
+        </Button>
+      </CenteredNotice>
+    );
+  }
 
   if (loading) {
     return (
@@ -823,45 +859,67 @@ export function DiagnosticView() {
               )}
 
               {pendingSubmit && (
-                <div className="flex w-full flex-col gap-3 border-l-[3px] border-destructive bg-destructive/5 px-4 py-4">
-                  <p className="flex items-start gap-3 text-sm font-medium text-foreground">
-                    <AlertCircle
-                      aria-hidden="true"
-                      className="mt-0.5 size-4 shrink-0 text-destructive"
-                    />
-                    {unanswered.length}{" "}
-                    {unanswered.length === 1 ? "question is" : "questions are"} still
-                    blank. Blank counts as incorrect.
+                <div
+                  role="alertdialog"
+                  aria-labelledby="submission-confirmation-heading"
+                  aria-describedby="submission-confirmation-description"
+                  data-testid="submission-confirmation"
+                  className={`flex w-full flex-col gap-3 border-l-[3px] px-4 py-4 ${
+                    confirmation.isComplete
+                      ? "border-primary bg-primary/5"
+                      : "border-destructive bg-destructive/5"
+                  }`}
+                >
+                  <h2
+                    ref={confirmationHeading}
+                    id="submission-confirmation-heading"
+                    tabIndex={-1}
+                    className="flex items-start gap-3 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    {confirmation.isComplete ? (
+                      <CheckCircle2
+                        aria-hidden="true"
+                        className="mt-0.5 size-4 shrink-0 text-primary"
+                      />
+                    ) : (
+                      <AlertCircle
+                        aria-hidden="true"
+                        className="mt-0.5 size-4 shrink-0 text-destructive"
+                      />
+                    )}
+                    Confirm assessment submission
+                  </h2>
+                  <p id="submission-confirmation-description" className="text-sm text-foreground">
+                    {confirmation.message}
                   </p>
 
-                  <div className="flex flex-wrap gap-2">
-                    {unanswered.map((question) => (
-                      <Button
-                        key={question.id}
-                        type="button"
-                        variant="outline"
-                        size="xs"
-                        onClick={() => jumpTo(question.number - 1)}
-                      >
-                        Q{question.number}
-                      </Button>
-                    ))}
-                  </div>
+                  {unanswered.length > 0 && (
+                    <div className="flex flex-wrap gap-2" aria-label="Unanswered questions">
+                      {unanswered.map((question) => (
+                        <Button
+                          key={question.id}
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={() => jumpTo(question.number - 1)}
+                        >
+                          Review Q{question.number}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap gap-3 pt-1">
                     <Button size="sm" onClick={() => finish(false)} disabled={submitting}>
-                      {submitting ? "Submitting…" : "Submit anyway"}
+                      {submitting ? "Submitting…" : "Confirm and finish"}
                     </Button>
                     <Button
                       size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        const first = unanswered[0];
-                        setPendingSubmit(false);
-                        if (first) setIndex(first.number - 1);
-                      }}
+                      variant="outline"
+                      onClick={cancelSubmission}
+                      disabled={submitting}
                     >
-                      Go to first blank
+                      Cancel and review
                     </Button>
                   </div>
                 </div>
@@ -873,7 +931,12 @@ export function DiagnosticView() {
                   Previous
                 </Button>
 
-                <Button onClick={goNext} disabled={submitting}>
+                <Button
+                  ref={isLast ? finalSubmitTrigger : undefined}
+                  data-testid={isLast ? "final-submit-trigger" : undefined}
+                  onClick={goNext}
+                  disabled={submitting}
+                >
                   {isLast ? (
                     <>
                       {submitting ? "Submitting…" : "Submit assessment"}

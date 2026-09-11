@@ -268,6 +268,91 @@ async def test_a_submission_is_graded_against_the_stored_key(database, seeded):
     assert str(path[0]["status"]) == "available"
 
 
+async def test_two_submissions_keep_attempt_specific_paths_immutable(database, seeded):
+    first_answers = json.dumps(
+        [
+            {"question_id": str(seeded["questions"][0]), "answer": "72"},
+            {"question_id": str(seeded["questions"][1]), "answer": "9"},
+        ]
+    )
+    mastered_answers = json.dumps(
+        [
+            {"question_id": str(seeded["questions"][0]), "answer": "72"},
+            {"question_id": str(seeded["questions"][1]), "answer": "4.2"},
+        ]
+    )
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        async with database.actor(token_for(LEARNER)) as connection:
+            first = await repository.start_attempt(connection, seeded["assessment_id"])
+            first_scored = await repository.submit_attempt(
+                connection, attempt_id=first["attempt_id"], answers=first_answers
+            )
+        first_report = json.loads(first_scored["result_payload"])
+        assert len(first_report["recommended_learning_path"]) == 1
+
+        await _grant(owner, seeded)
+        async with database.actor(token_for(LEARNER)) as connection:
+            second = await repository.start_attempt(connection, seeded["assessment_id"])
+            second_scored = await repository.submit_attempt(
+                connection, attempt_id=second["attempt_id"], answers=mastered_answers
+            )
+        second_report = json.loads(second_scored["result_payload"])
+        restored_first = json.loads(
+            await owner.fetchval(
+                "select result_payload from app.assessment_attempts where attempt_id = $1",
+                first["attempt_id"],
+            )
+        )
+
+        assert second_report["recommended_learning_path"] == []
+        assert restored_first == first_report
+        assert len(restored_first["recommended_learning_path"]) == 1
+    finally:
+        await owner.close()
+
+
+async def test_selected_diagnostic_status_does_not_inherit_another_assessment(
+    database, seeded
+):
+    other_assessment = None
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        other_assessment = await owner.fetchval(
+            """
+            insert into app.assessments
+              (grade_id, title, assessment_type, status, duration_minutes)
+            values ((select grade_id from app.grade_levels where level = 6),
+                    $1, 'diagnostic', 'published', 15)
+            returning assessment_id
+            """,
+            f"Other diagnostic {SUFFIX}",
+        )
+        await _score_an_attempt(database, seeded)
+
+        async with database.actor(token_for(LEARNER)) as connection:
+            selected = await repository.diagnostic_status(
+                connection, seeded["student_id"], other_assessment
+            )
+            unfiltered = await repository.diagnostic_status(
+                connection, seeded["student_id"]
+            )
+
+        assert str(selected["diagnostic_status"]) == "not_started"
+        assert selected["assessment_id"] == other_assessment
+        assert selected["latest_attempt_id"] is None
+        assert selected["latest_status"] is None
+        assert selected["reassessment_eligible"] is False
+        assert str(unfiltered["diagnostic_status"]) == "completed"
+        assert str(unfiltered["latest_status"]) == "scored"
+    finally:
+        if other_assessment is not None:
+            await owner.execute(
+                "delete from app.assessments where assessment_id = $1", other_assessment
+            )
+        await owner.close()
+
+
 async def test_another_learner_cannot_submit_the_attempt(database, seeded):
     async with database.actor(token_for(LEARNER)) as connection:
         attempt = await repository.start_attempt(connection, seeded["assessment_id"])

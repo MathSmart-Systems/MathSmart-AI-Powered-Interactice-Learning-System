@@ -54,7 +54,7 @@ select ok(
 
 select ok(
   (select count(*) = 2 and bool_and(pg_proc.prosecdef)
-     and bool_and(pg_proc.proconfig @> array['search_path='])
+     and bool_and(pg_proc.proconfig @> array['search_path=""'])
    from pg_proc
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
    where pg_namespace.nspname = 'app'
@@ -108,6 +108,11 @@ select ok(
 select ok(
   not has_function_privilege('anon', 'app.submit_assessment_attempt(uuid, jsonb)', 'execute'),
   'anon cannot execute app.submit_assessment_attempt'
+);
+select ok(
+  to_regprocedure('app.store_assessment_result_payload(uuid,jsonb)') is null
+  and to_regprocedure('app.store_assessment_result_payload(uuid)') is null,
+  'No report-store function remains callable after atomic scoring'
 );
 
 select ok(not has_table_privilege('authenticated', 'app.assessment_attempts', 'insert'),
@@ -174,13 +179,18 @@ values
   ('ea000000-0000-4000-8000-000000000004', 'ca000000-0000-4000-8000-000000000002',
    'number_input', 'What is 3 + 3?', '[]'::jsonb, '6'::jsonb, 'published');
 
+insert into app.grade_levels (grade_id, name, level) values
+  ('3f0f0000-0000-4000-8000-000000000005', 'Grade 5 test fixture', 5);
+
 insert into app.assessments
   (assessment_id, grade_id, title, assessment_type, status, duration_minutes)
-values (
-  'fa000000-0000-4000-8000-000000000001',
-  (select grade_id from app.grade_levels where level = 6),
-  'Attempt diagnostic', 'diagnostic', 'published', 30
-);
+values
+  ('fa000000-0000-4000-8000-000000000001',
+   (select grade_id from app.grade_levels where level = 6),
+   'Attempt diagnostic', 'diagnostic', 'published', 30),
+  ('fa000000-0000-4000-8000-000000000005',
+   '3f0f0000-0000-4000-8000-000000000005',
+   'Wrong-grade published assessment', 'unit_quiz', 'published', 20);
 
 insert into app.assessment_questions (assessment_id, question_id, position) values
   ('fa000000-0000-4000-8000-000000000001', 'ea000000-0000-4000-8000-000000000001', 1),
@@ -204,8 +214,22 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
--- Starting is resuming
+-- Grade eligibility, starting and resuming
 -- ---------------------------------------------------------------------------
+select throws_ok(
+  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000005') $$,
+  'P0001',
+  'This assessment is not available for your grade',
+  'A published assessment for another grade is refused with a stable error'
+);
+
+select is(
+  (select count(*) from app.assessment_attempts
+   where assessment_id = 'fa000000-0000-4000-8000-000000000005'),
+  0::bigint,
+  'A wrong-grade refusal creates no attempt'
+);
+
 select is(
   (select started.status
    from app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') as started),
@@ -230,6 +254,25 @@ select is(
   'Beginning the diagnostic moves the learner off not_started'
 );
 
+reset role;
+update app.student_profiles
+set grade_id = '3f0f0000-0000-4000-8000-000000000005'
+where student_id = '5a000000-0000-4000-8000-000000000001';
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+select throws_ok(
+  $$ select app.start_assessment_attempt('fa000000-0000-4000-8000-000000000001') $$,
+  'P0001',
+  'This assessment is not available for your grade',
+  'An open attempt cannot be resumed after the learner moves to another grade'
+);
+reset role;
+update app.student_profiles
+set grade_id = (select grade_id from app.grade_levels where level = 6)
+where student_id = '5a000000-0000-4000-8000-000000000001';
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
+
 select is(
   (select assessment_attempts.question_snapshot_count
    from app.assessment_attempts),
@@ -237,14 +280,22 @@ select is(
   'Starting freezes every delivered question into the attempt'
 );
 
+reset role;
+
 select is(
   (select count(*) from app.assessment_responses
-   where delivered_payload is not null
+   where attempt_id = (
+       select attempt_id from app.assessment_attempts
+       where assessment_id = 'fa000000-0000-4000-8000-000000000001')
+     and delivered_payload is not null
      and grading_answer_key is not null
      and question_version is not null),
   4::bigint,
   'Every frozen question carries its safe payload, version and confidential key'
 );
+
+set local request.jwt.claims = '{"sub":"ba000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
+set local role authenticated;
 
 select throws_ok(
   $$ select grading_answer_key from app.assessment_responses $$,
@@ -441,6 +492,44 @@ select is(
    where student_profiles.student_id = '5a000000-0000-4000-8000-000000000001'),
   'completed'::app.diagnostic_status,
   'Submitting the diagnostic completes it'
+);
+
+-- ---------------------------------------------------------------------------
+-- The immutable report is frozen by the scoring call, never supplied later
+-- ---------------------------------------------------------------------------
+select is(
+  (select (assessment_attempts.result_payload ->> 'overall_score')::numeric
+   from app.assessment_attempts
+   where student_id = '5a000000-0000-4000-8000-000000000001'),
+  50.00::numeric,
+  'Scoring freezes the authoritative overall score before it returns'
+);
+
+select is(
+  (select jsonb_array_length(assessment_attempts.result_payload -> 'competency_results')
+   from app.assessment_attempts
+   where student_id = '5a000000-0000-4000-8000-000000000001'),
+  2,
+  'The frozen report contains authoritative competency results'
+);
+
+select is(
+  (select assessment_attempts.result_payload
+          #>> '{recommended_learning_path,0,module,title}'
+   from app.assessment_attempts
+   where student_id = '5a000000-0000-4000-8000-000000000001'),
+  'Attempt module two',
+  'The frozen report contains the path generated by its own submission'
+);
+
+select is(
+  (select submitted.result_payload
+   from app.assessment_attempts as submitted
+   where submitted.student_id = '5a000000-0000-4000-8000-000000000001'),
+  (select stored.result_payload
+   from app.assessment_attempts as stored
+   where stored.student_id = '5a000000-0000-4000-8000-000000000001'),
+  'The submission result is the same stored report used for restoration'
 );
 
 -- ---------------------------------------------------------------------------
@@ -669,6 +758,24 @@ select ok(
      '[]'::jsonb
    ) as submitted),
   'The reassessment is graded like any other attempt'
+);
+
+select is(
+  (select jsonb_array_length(first_attempt.result_payload -> 'recommended_learning_path')
+   from app.assessment_attempts as first_attempt
+   where first_attempt.student_id = '5a000000-0000-4000-8000-000000000001'
+     and first_attempt.overall_score = 50.00),
+  1,
+  'A later submission cannot contaminate the first attempt path report'
+);
+
+select is(
+  (select jsonb_array_length(latest_attempt.result_payload -> 'recommended_learning_path')
+   from app.assessment_attempts as latest_attempt
+   where latest_attempt.student_id = '5a000000-0000-4000-8000-000000000001'
+     and latest_attempt.overall_score = 0.00),
+  2,
+  'The reassessment freezes the different path generated by its own answers'
 );
 
 select throws_ok(

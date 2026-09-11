@@ -105,6 +105,44 @@ RESULT_ROW = {
     "mastery_band": "Developing",
 }
 
+CANONICAL_REPORT = {
+    "attempt_id": str(ATTEMPT),
+    "assessment_id": str(ASSESSMENT),
+    "status": "scored",
+    "overall_score": 50,
+    "started_at": None,
+    "submitted_at": None,
+    "competency_results": [
+        {
+            "competency_id": str(COMPETENCY),
+            "competency_name": "Multiplication and Division of Integers",
+            "raw_score": 1,
+            "max_score": 2,
+            "percentage": 50,
+            "mastery_band": "Developing",
+        }
+    ],
+    "recommended_learning_path": [
+        {
+            "id": str(PATH_ITEM),
+            "priority": 1,
+            "reason": "Assessment score of 50% places this competency in the Developing band.",
+            "status": "available",
+            "competency": {
+                "id": str(COMPETENCY),
+                "code": "MATH6-INT-02",
+                "name": "Multiplication and Division of Integers",
+            },
+            "module": {
+                "id": str(MODULE),
+                "title": "Multiplication and Division of Integers",
+                "estimated_minutes": 15,
+            },
+        }
+    ],
+    "next_action": {"type": "learning_path", "label": "Start Your Learning Path"},
+}
+
 PATH_ROW = {
     "path_item_id": PATH_ITEM,
     "priority": 1,
@@ -139,9 +177,11 @@ def attempt_connection(**overrides):
             "response_status": None,
             "response_body": None,
         },
-        "app.submit_assessment_attempt": SCORED_ROW,
+        "app.submit_assessment_attempt": {
+            **SCORED_ROW,
+            "result_payload": CANONICAL_REPORT,
+        },
         "app.complete_assessment_submission_idempotency": True,
-        "app.store_assessment_result_payload": True,
         "app.authorize_reassessment": None,
         QUESTIONS: [QUESTION_ROW],
         "from app.assessment_responses": [RESPONSE_ROW],
@@ -280,6 +320,25 @@ def test_a_retake_without_authorisation_is_refused_rather_than_failing():
     assert response.json()["error"]["code"] == "reassessment_not_authorized"
 
 
+def test_a_wrong_grade_assessment_is_a_controlled_refusal():
+    class WrongGrade(FakeConnection):
+        async def fetchrow(self, query, *args):
+            if "app.start_assessment_attempt" in query:
+                raise asyncpg.RaiseError(
+                    "This assessment is not available for your grade"
+                )
+            return await super().fetchrow(query, *args)
+
+    client = build_client(WrongGrade(results={OPEN_ATTEMPT: None}))
+
+    response = client.post(
+        f"/api/v1/assessments/{ASSESSMENT}/attempts", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "assessment_grade_mismatch"
+
+
 def test_a_teacher_admin_does_not_sit_an_assessment():
     connection = attempt_connection()
     client = build_client(connection)
@@ -366,6 +425,54 @@ def test_submitting_returns_the_deterministic_report():
     assert data["competency_results"][0]["mastery_band"] == "Developing"
     assert data["recommended_learning_path"][0]["priority"] == 1
     assert data["next_action"]["type"]
+
+
+def test_submission_trusts_only_the_report_frozen_by_scoring():
+    authoritative = {**CANONICAL_REPORT, "overall_score": 75}
+    connection = attempt_connection(
+        **{
+            "app.submit_assessment_attempt": {
+                **SCORED_ROW,
+                "result_payload": authoritative,
+            }
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["overall_score"] == 75
+    assert not [
+        call for call in connection.calls
+        if "store_assessment_result_payload" in call[0]
+    ]
+
+
+def test_malformed_frozen_report_maps_to_a_sanitized_recording_failure():
+    connection = attempt_connection(
+        **{
+            "app.submit_assessment_attempt": {
+                **SCORED_ROW,
+                "result_payload": {"attempt_id": "not-a-uuid"},
+            }
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "assessment_result_recording_failed"
+    assert "uuid" not in response.text.lower()
 
 
 def test_a_submission_never_discloses_an_answer_key():
@@ -601,14 +708,7 @@ def test_an_attempt_can_be_read_back():
 
 
 def test_a_scored_attempt_read_back_returns_its_stored_immutable_report():
-    stored = {
-        "attempt_id": str(ATTEMPT),
-        "status": "scored",
-        "overall_score": 50,
-        "competency_results": [],
-        "recommended_learning_path": [{"priority": 1}],
-        "next_action": {"type": "learning_path", "label": "Start Your Learning Path"},
-    }
+    stored = CANONICAL_REPORT
     scored = {**SCORED_ROW, "result_payload": stored}
     client = build_client(attempt_connection(**{ATTEMPT_BY_ID: scored}))
 
@@ -616,6 +716,17 @@ def test_a_scored_attempt_read_back_returns_its_stored_immutable_report():
 
     assert response.status_code == 200
     assert response.json()["data"] == stored
+
+
+def test_a_malformed_stored_report_is_a_sanitized_recording_failure():
+    scored = {**SCORED_ROW, "result_payload": {"attempt_id": "invalid"}}
+    client = build_client(attempt_connection(**{ATTEMPT_BY_ID: scored}))
+
+    response = client.get(f"/api/v1/assessment-attempts/{ATTEMPT}", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "assessment_result_recording_failed"
+    assert "uuid" not in response.text.lower()
 
 
 def test_a_legacy_scored_attempt_without_a_stored_report_is_controlled():
@@ -634,6 +745,90 @@ def test_an_attempt_the_caller_cannot_see_is_not_found():
     response = client.get(f"/api/v1/assessment-attempts/{ATTEMPT}", headers=LEARNER_HEADERS)
 
     assert response.status_code == 404
+
+
+def test_a_learner_reads_their_own_attempt_history():
+    connection = FakeConnection(
+        results={
+            "where student_profiles.user_id = $1": STUDENT_ID,
+            TOTAL: 1,
+            HISTORY: [HISTORY_ROW],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get("/api/v1/assessment-attempts/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["attempt_id"] == str(ATTEMPT)
+    history_call = next(call for call in connection.calls if HISTORY in call[0])
+    assert history_call[1] == (STUDENT_ID, 20, 0)
+
+
+def test_own_attempt_history_paginates_with_the_derived_student():
+    connection = FakeConnection(
+        results={
+            "where student_profiles.user_id = $1": STUDENT_ID,
+            TOTAL: 45,
+            HISTORY: [HISTORY_ROW],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/assessment-attempts/me?page=3&page_size=10", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.json()["meta"] == {
+        "page": 3,
+        "page_size": 10,
+        "total_items": 45,
+        "total_pages": 5,
+    }
+    history_call = next(call for call in connection.calls if HISTORY in call[0])
+    assert history_call[1] == (STUDENT_ID, 10, 20)
+
+
+def test_a_non_student_cannot_read_own_attempt_history():
+    connection = FakeConnection()
+    client = build_client(connection)
+
+    response = client.get("/api/v1/assessment-attempts/me", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 403
+    assert not connection.calls
+
+
+def test_own_attempt_history_requires_a_learner_profile():
+    connection = FakeConnection(results={"where student_profiles.user_id = $1": None})
+    client = build_client(connection)
+
+    response = client.get("/api/v1/assessment-attempts/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 403
+    assert not [call for call in connection.calls if HISTORY in call[0]]
+
+
+def test_own_history_cannot_be_scoped_to_another_student():
+    connection = FakeConnection(
+        results={
+            "where student_profiles.user_id = $1": STUDENT_ID,
+            TOTAL: 0,
+            HISTORY: [],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/assessment-attempts/me",
+        params={"student_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    history_call = next(call for call in connection.calls if HISTORY in call[0])
+    assert history_call[1][0] == STUDENT_ID
 
 
 def test_a_teacher_admin_reads_a_learners_attempt_history():
@@ -665,12 +860,68 @@ def diagnostic_status_connection(*, eligible=False, own_student_id=STUDENT_ID):
             "where student_profiles.user_id = $1": own_student_id,
             "student_profiles.diagnostic_status": {
                 "diagnostic_status": "completed",
+                "assessment_id": ASSESSMENT,
                 "latest_attempt_id": ATTEMPT,
+                "latest_status": "scored",
                 "latest_score": 63,
                 "reassessment_eligible": eligible,
             },
         }
     )
+
+
+def test_a_learner_reads_their_own_diagnostic_status_without_an_id():
+    connection = diagnostic_status_connection(eligible=True)
+    client = build_client(connection)
+
+    response = client.get("/api/v1/diagnostic-status/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "completed"
+    assert response.json()["data"]["reassessment_eligible"] is True
+
+
+def test_own_diagnostic_status_is_correlated_to_the_selected_assessment():
+    selected = UUID("fa000000-0000-4000-8000-000000000099")
+    connection = diagnostic_status_connection()
+    connection.results["student_profiles.diagnostic_status"] = {
+        "diagnostic_status": "not_started",
+        "assessment_id": selected,
+        "latest_attempt_id": None,
+        "latest_status": None,
+        "latest_score": None,
+        "reassessment_eligible": False,
+    }
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/diagnostic-status/me",
+        params={"assessment_id": str(selected)},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "status": "not_started",
+        "assessment_id": str(selected),
+        "latest_attempt_id": None,
+        "latest_status": None,
+        "latest_score": None,
+        "reassessment_eligible": False,
+        "reassessment_reason": None,
+    }
+    status_call = next(
+        call for call in connection.calls if "student_profiles.diagnostic_status" in call[0]
+    )
+    assert status_call[1] == (STUDENT_ID, selected)
+
+
+def test_own_diagnostic_status_requires_a_learner_profile():
+    client = build_client(diagnostic_status_connection(own_student_id=None))
+
+    response = client.get("/api/v1/diagnostic-status/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 403
 
 
 def test_diagnostic_status_is_reported_to_a_teacher_admin():
@@ -685,6 +936,33 @@ def test_diagnostic_status_is_reported_to_a_teacher_admin():
     assert data["status"] == "completed"
     assert data["latest_score"] == 63
     assert data["reassessment_eligible"] is False
+
+
+def test_named_diagnostic_status_accepts_the_same_assessment_scope():
+    selected = UUID("fa000000-0000-4000-8000-000000000099")
+    connection = diagnostic_status_connection()
+    connection.results["student_profiles.diagnostic_status"] = {
+        "diagnostic_status": "not_started",
+        "assessment_id": selected,
+        "latest_attempt_id": None,
+        "latest_status": None,
+        "latest_score": None,
+        "reassessment_eligible": False,
+    }
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/students/{STUDENT_ID}/diagnostic-status",
+        params={"assessment_id": str(selected)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "not_started"
+    status_call = next(
+        call for call in connection.calls if "student_profiles.diagnostic_status" in call[0]
+    )
+    assert status_call[1] == (STUDENT_ID, selected)
 
 
 def test_a_learner_can_read_their_own_authorized_reassessment_status():
@@ -781,6 +1059,8 @@ def test_authorising_a_reassessment_needs_a_live_session():
         "/api/v1/assessments",
         f"/api/v1/assessments/{ASSESSMENT}",
         f"/api/v1/assessment-attempts/{ATTEMPT}",
+        "/api/v1/assessment-attempts/me",
+        "/api/v1/diagnostic-status/me",
     ],
 )
 def test_assessment_reads_need_a_token(path):

@@ -344,7 +344,6 @@ export async function loadDiagnostic() {
 
   const me = await request("/students/me");
   const gradeId = me?.grade_id ?? null;
-  const studentId = me?.student_id ?? null;
 
   if (!gradeId) {
     throw new AssessmentError(
@@ -382,22 +381,27 @@ export async function loadDiagnostic() {
       { status: 404 },
     );
   }
-  if (!studentId) {
-    throw new AssessmentError("We could not load your learner profile.");
+
+  const statusQuery = new URLSearchParams({ assessment_id: diagnostic.id });
+  const status = await request(`/diagnostic-status/me?${statusQuery.toString()}`);
+
+  if (String(status?.assessment_id ?? "") !== String(diagnostic.id)) {
+    throw new AssessmentError(
+      "We could not verify the status of the selected diagnostic. Please try again or ask your teacher for help.",
+      { code: "diagnostic_status_mismatch" },
+    );
   }
 
-  const status = await request(`/students/${studentId}/diagnostic-status`);
-
   return {
-    assessment_id: diagnostic.id,
+    assessment_id: status.assessment_id,
     title: diagnostic.title,
     total_questions: diagnostic.total_questions ?? 0,
     time_limit_minutes: diagnostic.duration_minutes ?? 60,
-    latest_attempt_id: diagnostic.latest_attempt_id ?? null,
-    latest_status: diagnostic.latest_status ?? null,
-    diagnostic_status: status?.status ?? null,
-    reassessment_eligible: status?.reassessment_eligible === true,
-    reassessment_reason: status?.reassessment_reason ?? null,
+    latest_attempt_id: status.latest_attempt_id ?? null,
+    latest_status: status.latest_status ?? null,
+    diagnostic_status: status.status ?? null,
+    reassessment_eligible: status.reassessment_eligible === true,
+    reassessment_reason: status.reassessment_reason ?? null,
   };
 }
 
