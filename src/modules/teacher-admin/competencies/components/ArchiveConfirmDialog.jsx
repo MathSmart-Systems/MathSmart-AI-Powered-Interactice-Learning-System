@@ -37,7 +37,7 @@ export function ArchiveConfirmDialog({
                   Archive competency?
                 </DialogPrimitive.Title>
                 <DialogPrimitive.Description className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">{competency.name}</span>{" "}
+                  <span className="font-medium text-foreground">{competency?.name}</span>{" "}
                   leaves the live curriculum, but learners keep the history they
                   already recorded against it.
                 </DialogPrimitive.Description>
@@ -49,7 +49,7 @@ export function ArchiveConfirmDialog({
               </DialogPrimitive.Close>
             </div>
 
-            <ArchiveForm competency={competency} onSaved={onSaved} />
+            {competency ? <ArchiveForm competency={competency} onSaved={onSaved} /> : null}
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
