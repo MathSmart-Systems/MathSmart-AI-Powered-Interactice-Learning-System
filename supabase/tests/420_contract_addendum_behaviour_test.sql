@@ -158,9 +158,12 @@ select is(
 -- ---------------------------------------------------------------------------
 -- Voiding an assessment attempt is accountable
 -- ---------------------------------------------------------------------------
-insert into app.assessment_attempts (attempt_id, assessment_id, student_id) values
+insert into app.assessment_attempts
+  (attempt_id, assessment_id, student_id, assessment_grade_id_snapshot)
+values
   ('18000000-0000-4000-8000-000000000001', 'f7000000-0000-4000-8000-000000000001',
-   '57000000-0000-4000-8000-000000000001');
+   '57000000-0000-4000-8000-000000000001',
+   (select grade_id from app.grade_levels where level = 6));
 
 select throws_ok(
   $$ update app.assessment_attempts set status = 'voided'

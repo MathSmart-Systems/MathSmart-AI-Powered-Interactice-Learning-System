@@ -93,30 +93,31 @@ from app.assessments
 where assessments.assessment_id = $2
 """  # noqa: S608
 
-# No answer_key, no explanation, no hint. The privileges make that a rule; this
-# is the query that observes it.
+# The learner-safe payload is frozen when the attempt starts. The confidential
+# grading key lives in a separate column that authenticated actors cannot select.
 _ATTEMPT_QUESTIONS_SQL = """
 select
-  questions.question_id,
-  questions.competency_id,
-  competencies.name as competency_name,
-  questions.prompt,
-  questions.question_type,
-  questions.choices,
-  questions.difficulty,
-  questions.visual_aid_description,
-  assessment_questions.position
-from app.assessment_questions
-join app.questions on questions.question_id = assessment_questions.question_id
-join app.competencies on competencies.competency_id = questions.competency_id
-where assessment_questions.assessment_id = $1
-order by assessment_questions.position
+  assessment_responses.question_id,
+  assessment_responses.delivered_competency_id as competency_id,
+  assessment_responses.delivered_payload ->> 'competency_name' as competency_name,
+  assessment_responses.delivered_payload ->> 'text' as prompt,
+  assessment_responses.delivered_payload ->> 'type' as question_type,
+  coalesce(assessment_responses.delivered_payload -> 'choices', '[]'::jsonb) as choices,
+  assessment_responses.delivered_payload ->> 'difficulty' as difficulty,
+  assessment_responses.delivered_payload ->> 'visual_aid_description'
+    as visual_aid_description,
+  assessment_responses.delivered_position as position
+from app.assessment_responses
+where assessment_responses.attempt_id = $1
+  and assessment_responses.delivered_position is not null
+order by assessment_responses.delivered_position
 """
 
 _SAVED_ANSWERS_SQL = """
 select assessment_responses.question_id, assessment_responses.answer
 from app.assessment_responses
 where assessment_responses.attempt_id = $1
+  and assessment_responses.answer is not null
 """
 
 _OPEN_ATTEMPT_SQL = """
@@ -137,7 +138,8 @@ select
   assessment_attempts.status,
   assessment_attempts.overall_score,
   assessment_attempts.started_at,
-  assessment_attempts.submitted_at
+  assessment_attempts.submitted_at,
+  assessment_attempts.result_payload
 from app.assessment_attempts
 where assessment_attempts.attempt_id = $1
 """
@@ -147,7 +149,8 @@ select
   assessment_attempts.attempt_id,
   assessment_attempts.assessment_id,
   assessments.title,
-  assessments.assessment_type,
+  coalesce(assessment_attempts.assessment_type_snapshot, assessments.assessment_type)
+    as assessment_type,
   assessment_attempts.status,
   assessment_attempts.overall_score,
   assessment_attempts.started_at,
@@ -200,38 +203,71 @@ where learning_path_items.student_id = $1
 order by learning_path_items.priority
 """
 
+# $2 names the assessment the caller is actually looking at. Without it the
+# latest diagnostic of any assessment answers for the one on screen, and the
+# eligibility that comes back belongs to a different assessment than the one the
+# learner is about to sit.
 _DIAGNOSTIC_STATUS_SQL = """
 select
-  student_profiles.diagnostic_status,
-  (select assessment_attempts.attempt_id
-   from app.assessment_attempts
-   join app.assessments
-     on assessments.assessment_id = assessment_attempts.assessment_id
-   where assessment_attempts.student_id = student_profiles.student_id
-     and assessments.assessment_type = 'diagnostic'
-   order by assessment_attempts.started_at desc limit 1) as latest_attempt_id,
-  (select assessment_attempts.overall_score
-   from app.assessment_attempts
-   join app.assessments
-     on assessments.assessment_id = assessment_attempts.assessment_id
-   where assessment_attempts.student_id = student_profiles.student_id
-     and assessments.assessment_type = 'diagnostic'
-   order by assessment_attempts.started_at desc limit 1) as latest_score,
-  (select reassessment_authorizations.authorization_id
-   from app.reassessment_authorizations
-   where reassessment_authorizations.student_id = student_profiles.student_id
-     and reassessment_authorizations.consumed_at is null
-     and (reassessment_authorizations.expires_at is null
-          or reassessment_authorizations.expires_at > now())
-   order by reassessment_authorizations.granted_at desc limit 1) as authorization_id
+  student_profiles.diagnostic_status as profile_status,
+  case
+    when $2::uuid is null then student_profiles.diagnostic_status
+    when latest.status = 'in_progress'::app.attempt_status
+      then 'in_progress'::app.diagnostic_status
+    when latest.status in (
+      'submitted'::app.attempt_status,
+      'scored'::app.attempt_status
+    ) then 'completed'::app.diagnostic_status
+    else 'not_started'::app.diagnostic_status
+  end as diagnostic_status,
+  coalesce($2::uuid, latest.assessment_id) as assessment_id,
+  latest.attempt_id as latest_attempt_id,
+  latest.status as latest_status,
+  latest.overall_score as latest_score,
+  case
+    when latest.attempt_id is null then false
+    else app.may_start_reassessment(
+      student_profiles.student_id,
+      coalesce($2::uuid, latest.assessment_id)
+    )
+  end as reassessment_eligible
 from app.student_profiles
+left join lateral (
+  select
+    assessment_attempts.attempt_id,
+    assessment_attempts.assessment_id,
+    assessment_attempts.status,
+    assessment_attempts.overall_score
+  from app.assessment_attempts
+  join app.assessments
+    on assessments.assessment_id = assessment_attempts.assessment_id
+  where assessment_attempts.student_id = student_profiles.student_id
+    and coalesce(
+      assessment_attempts.assessment_type_snapshot,
+      assessments.assessment_type
+    ) = 'diagnostic'
+    and ($2::uuid is null or assessment_attempts.assessment_id = $2)
+  order by assessment_attempts.started_at desc, assessment_attempts.attempt_id desc
+  limit 1
+) as latest on true
 where student_profiles.student_id = $1
 """
 
 _START_ATTEMPT_SQL = "select * from app.start_assessment_attempt($1)"
 _SAVE_ANSWERS_SQL = "select app.save_assessment_answers($1, $2::jsonb)"
+_CLAIM_SUBMISSION_SQL = (
+    "select * from app.claim_assessment_submission_idempotency($1, $2)"
+)
 _SUBMIT_SQL = "select * from app.submit_assessment_attempt($1, $2::jsonb)"
+_COMPLETE_SUBMISSION_SQL = (
+    "select app.complete_assessment_submission_idempotency($1, $2, $3, $4::jsonb)"
+)
 _AUTHORISE_SQL = "select * from app.authorize_reassessment($1, $2, $3, $4, $5)"
+_OWN_STUDENT_SQL = """
+select student_profiles.student_id
+from app.student_profiles
+where student_profiles.user_id = $1
+"""
 
 
 async def listing(
@@ -267,8 +303,8 @@ async def assessment(connection: ActorConnection, *, user_id: UUID, assessment_i
     return await connection.fetchrow(_DETAIL_SQL, user_id, assessment_id)
 
 
-async def questions_for(connection: ActorConnection, assessment_id: UUID) -> list[Any]:
-    return await connection.fetch(_ATTEMPT_QUESTIONS_SQL, assessment_id)
+async def questions_for(connection: ActorConnection, attempt_id: UUID) -> list[Any]:
+    return await connection.fetch(_ATTEMPT_QUESTIONS_SQL, attempt_id)
 
 
 async def saved_answers(connection: ActorConnection, attempt_id: UUID) -> list[Any]:
@@ -303,8 +339,14 @@ async def path_for(connection: ActorConnection, student_id: UUID) -> list[Any]:
     return await connection.fetch(_PATH_SQL, student_id)
 
 
-async def diagnostic_status(connection: ActorConnection, student_id: UUID) -> Any:
-    return await connection.fetchrow(_DIAGNOSTIC_STATUS_SQL, student_id)
+async def diagnostic_status(
+    connection: ActorConnection, student_id: UUID, assessment_id: UUID | None = None
+) -> Any:
+    return await connection.fetchrow(_DIAGNOSTIC_STATUS_SQL, student_id, assessment_id)
+
+
+async def own_student_id(connection: ActorConnection, user_id: UUID) -> Any:
+    return await connection.fetchval(_OWN_STUDENT_SQL, user_id)
 
 
 async def start_attempt(connection: ActorConnection, assessment_id: UUID) -> Any:
@@ -315,10 +357,37 @@ async def save_answers(connection: ActorConnection, *, attempt_id: UUID, answers
     return await connection.fetchval(_SAVE_ANSWERS_SQL, attempt_id, answers) or 0
 
 
+async def claim_submission(
+    connection: ActorConnection, *, idempotency_key: str, request_fingerprint: str
+) -> Any:
+    return await connection.fetchrow(
+        _CLAIM_SUBMISSION_SQL, idempotency_key, request_fingerprint
+    )
+
+
 async def submit_attempt(
     connection: ActorConnection, *, attempt_id: UUID, answers: str | None
 ) -> Any:
     return await connection.fetchrow(_SUBMIT_SQL, attempt_id, answers)
+
+
+async def complete_submission(
+    connection: ActorConnection,
+    *,
+    idempotency_key: str,
+    request_fingerprint: str,
+    response_status: int,
+    response_body: str,
+) -> bool:
+    return bool(
+        await connection.fetchval(
+            _COMPLETE_SUBMISSION_SQL,
+            idempotency_key,
+            request_fingerprint,
+            response_status,
+            response_body,
+        )
+    )
 
 
 async def authorise_reassessment(

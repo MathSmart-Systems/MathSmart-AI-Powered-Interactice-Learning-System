@@ -59,6 +59,7 @@ class DeliveredQuestion(BaseModel):
     choices: list[Any] = []
     difficulty: str
     visual_aid_description: str | None = None
+    position: int
 
 
 class AttemptDelivery(BaseModel):
@@ -138,10 +139,12 @@ class AttemptSummary(BaseModel):
 
 
 class DiagnosticStatus(BaseModel):
-    """Where a learner stands on the diagnostic."""
+    """Where a learner stands on a diagnostic assessment."""
 
     status: str
+    assessment_id: UUID | None = None
     latest_attempt_id: UUID | None = None
+    latest_status: str | None = None
     latest_score: float | None = None
     reassessment_eligible: bool = False
     reassessment_reason: str | None = None

@@ -52,3 +52,6 @@ env/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+feature-f2/
+.opencode/

@@ -453,10 +453,26 @@ select is(
 reset role;
 
 insert into app.assessment_attempts
-  (attempt_id, assessment_id, student_id, assessment_version)
+  (attempt_id, assessment_id, student_id, assessment_version,
+   assessment_type_snapshot, assessment_grade_id_snapshot, assessment_payload,
+   question_snapshot_created_at, question_snapshot_count)
 values ('1e000000-0000-4000-8000-000000000001',
         'fe000000-0000-4000-8000-000000000002',
-        '5e000000-0000-4000-8000-000000000001', 1);
+        '5e000000-0000-4000-8000-000000000001', 1,
+        'unit_quiz', (select grade_id from app.grade_levels where level = 6),
+        '{"id":"fe000000-0000-4000-8000-000000000002","title":"Harden unit quiz","type":"unit_quiz","duration_minutes":15}'::jsonb,
+        now(), 1);
+
+insert into app.assessment_responses
+  (attempt_id, question_id, question_version, delivered_position,
+   delivered_competency_id, delivered_payload, grading_answer_key)
+values (
+  '1e000000-0000-4000-8000-000000000001',
+  'ee000000-0000-4000-8000-000000000003', 1, 1,
+  'ce000000-0000-4000-8000-000000000002',
+  '{"id":"ee000000-0000-4000-8000-000000000003","competency_id":"ce000000-0000-4000-8000-000000000002","competency_name":"Harden competency two","text":"What is 2 + 2?","type":"number_input","choices":[],"difficulty":"easy","visual_aid_description":null}'::jsonb,
+  '4'::jsonb
+);
 
 insert into app.activity_attempts
   (attempt_id, student_id, activity_id, attempt_number, activity_version)
