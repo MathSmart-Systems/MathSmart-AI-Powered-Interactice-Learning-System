@@ -1,10 +1,18 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { TEACHER_ADMIN_WORKSPACE } from "@/modules/teacher-admin";
+import { GradesSectionsView, readGradesSections } from "@/modules/teacher-admin/grades-sections";
 
 export const metadata = { title: "Grades and Sections | MathSmart" };
 
-export default function TeacherGradesSectionsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function TeacherGradesSectionsPage() {
+  const { grades, sections, advisers, error } = await readGradesSections();
+
   return (
-    <WorkspacePlaceholder title="Grades and Sections" workspaceName={TEACHER_ADMIN_WORKSPACE.name} />
+    <GradesSectionsView
+      initialGrades={grades}
+      initialSections={sections}
+      advisers={advisers}
+      initialError={error}
+    />
   );
 }
