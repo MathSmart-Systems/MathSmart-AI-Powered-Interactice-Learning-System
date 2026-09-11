@@ -110,11 +110,7 @@ class Database:
             raise DatabaseNotReady("The database pool has not been created")
 
         async with self._pool.acquire() as connection:
-            # Submission idempotency deliberately rendezvouses across statements:
-            # after waiting on a competing insert, its lookup must receive a fresh
-            # snapshot and see the committed response. Pin this rather than rely
-            # on a deployment-specific database default.
-            async with connection.transaction(isolation="read_committed"):
+            async with connection.transaction():
                 await connection.execute(context.sql, *context.params)
 
                 # Asked as the caller, inside the caller's own context, so the

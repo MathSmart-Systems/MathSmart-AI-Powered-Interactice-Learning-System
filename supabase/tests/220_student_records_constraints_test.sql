@@ -61,12 +61,9 @@ insert into app.assessments (assessment_id, grade_id, title, assessment_type, st
 -- ---------------------------------------------------------------------------
 -- Attempt history accumulates
 -- ---------------------------------------------------------------------------
-insert into app.assessment_attempts
-  (attempt_id, assessment_id, student_id, status, assessment_grade_id_snapshot)
-values
+insert into app.assessment_attempts (attempt_id, assessment_id, student_id, status) values
   ('11110000-0000-4000-8000-000000000001', 'f3000000-0000-4000-8000-000000000001',
-   '53000000-0000-4000-8000-000000000001', 'in_progress',
-   (select grade_id from app.grade_levels where level = 6));
+   '53000000-0000-4000-8000-000000000001', 'in_progress');
 
 select is(
   (select status from app.assessment_attempts
@@ -76,9 +73,8 @@ select is(
 );
 
 select throws_ok(
-  $$ insert into app.assessment_attempts (assessment_id, student_id, status, assessment_grade_id_snapshot)
-     values ('f3000000-0000-4000-8000-000000000001', '53000000-0000-4000-8000-000000000001',
-             'in_progress', (select grade_id from app.grade_levels where level = 6)) $$,
+  $$ insert into app.assessment_attempts (assessment_id, student_id, status)
+     values ('f3000000-0000-4000-8000-000000000001', '53000000-0000-4000-8000-000000000001', 'in_progress') $$,
   '23505', null::text,
   'A learner resumes an attempt rather than starting a second one on the same assessment'
 );
@@ -88,13 +84,9 @@ update app.assessment_attempts
 set status = 'scored', submitted_at = now(), overall_score = 62.50
 where assessment_attempts.attempt_id = '11110000-0000-4000-8000-000000000001';
 
-insert into app.assessment_attempts
-  (attempt_id, assessment_id, student_id, status, submitted_at, overall_score,
-   assessment_grade_id_snapshot)
-values
+insert into app.assessment_attempts (attempt_id, assessment_id, student_id, status, submitted_at, overall_score) values
   ('11110000-0000-4000-8000-000000000002', 'f3000000-0000-4000-8000-000000000001',
-   '53000000-0000-4000-8000-000000000001', 'scored', now(), 88.00,
-   (select grade_id from app.grade_levels where level = 6));
+   '53000000-0000-4000-8000-000000000001', 'scored', now(), 88.00);
 
 select is(
   (select count(*) from app.assessment_attempts
@@ -114,64 +106,56 @@ select is(
 -- Attempt state transitions
 -- ---------------------------------------------------------------------------
 select throws_ok(
-  $$ insert into app.assessment_attempts (assessment_id, student_id, status, submitted_at, assessment_grade_id_snapshot)
+  $$ insert into app.assessment_attempts (assessment_id, student_id, status, submitted_at)
      values ('f3000000-0000-4000-8000-000000000002', '53000000-0000-4000-8000-000000000002',
-             'in_progress', now(), (select grade_id from app.grade_levels where level = 6)) $$,
+             'in_progress', now()) $$,
   '23514', null::text,
   'An attempt in progress cannot already have a submission time'
 );
 
 select throws_ok(
-  $$ insert into app.assessment_attempts (assessment_id, student_id, status, overall_score, assessment_grade_id_snapshot)
+  $$ insert into app.assessment_attempts (assessment_id, student_id, status, overall_score)
      values ('f3000000-0000-4000-8000-000000000002', '53000000-0000-4000-8000-000000000002',
-             'in_progress', 50, (select grade_id from app.grade_levels where level = 6)) $$,
+             'in_progress', 50) $$,
   '23514', null::text,
   'An attempt in progress cannot already carry a score'
 );
 
 select throws_ok(
-  $$ insert into app.assessment_attempts (assessment_id, student_id, status, assessment_grade_id_snapshot)
+  $$ insert into app.assessment_attempts (assessment_id, student_id, status)
      values ('f3000000-0000-4000-8000-000000000002', '53000000-0000-4000-8000-000000000002',
-             'submitted', (select grade_id from app.grade_levels where level = 6)) $$,
+             'submitted') $$,
   '23514', null::text,
   'A submitted attempt must record when it was submitted'
 );
 
 select throws_ok(
-  $$ insert into app.assessment_attempts (assessment_id, student_id, status, submitted_at, assessment_grade_id_snapshot)
+  $$ insert into app.assessment_attempts (assessment_id, student_id, status, submitted_at)
      values ('f3000000-0000-4000-8000-000000000002', '53000000-0000-4000-8000-000000000002',
-             'scored', now(), (select grade_id from app.grade_levels where level = 6)) $$,
+             'scored', now()) $$,
   '23514', null::text,
   'A scored attempt must carry a score'
 );
 
 select throws_ok(
-  $$ insert into app.assessment_attempts (assessment_id, student_id, status, started_at, submitted_at, overall_score,
-                                             assessment_grade_id_snapshot)
+  $$ insert into app.assessment_attempts (assessment_id, student_id, status, started_at, submitted_at, overall_score)
      values ('f3000000-0000-4000-8000-000000000002', '53000000-0000-4000-8000-000000000002',
-             'scored', now(), now() - interval '1 hour', 50,
-             (select grade_id from app.grade_levels where level = 6)) $$,
+             'scored', now(), now() - interval '1 hour', 50) $$,
   '23514', null::text,
   'An attempt cannot be submitted before it was started'
 );
 
 select throws_ok(
-  $$ insert into app.assessment_attempts
-       (assessment_id, student_id, status, submitted_at, overall_score,
-        assessment_grade_id_snapshot)
+  $$ insert into app.assessment_attempts (assessment_id, student_id, status, submitted_at, overall_score)
      values ('f3000000-0000-4000-8000-000000000002', '53000000-0000-4000-8000-000000000002',
-             'scored', now(), 101,
-             (select grade_id from app.grade_levels where level = 6)) $$,
+             'scored', now(), 101) $$,
   '23514', null::text,
   'An attempt score above one hundred percent is rejected'
 );
 
 select throws_ok(
-  $$ insert into app.assessment_attempts
-       (assessment_id, student_id, assessment_grade_id_snapshot)
-     values ('f3000000-0000-4000-8000-000000000001',
-             '00000000-0000-4000-8000-00000000dead',
-             (select grade_id from app.grade_levels where level = 6)) $$,
+  $$ insert into app.assessment_attempts (assessment_id, student_id)
+     values ('f3000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-00000000dead') $$,
   '23503', null::text,
   'An attempt must belong to a real learner'
 );

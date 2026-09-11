@@ -109,18 +109,6 @@ jobs:
       - name: Start Local Supabase Stack
         run: supabase start
 
-      - name: Stage Database Before Legacy Report Backfill
-        run: supabase db reset --no-seed --version 20260911150000
-
-      - name: Load Legacy Assessment Report Fixture
-        run: docker exec -i supabase_db_mathsmart psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/upgrade-tests/assessment_legacy_report_setup.sql
-
-      - name: Apply Legacy Assessment Report Backfill
-        run: supabase migration up --local
-
-      - name: Verify Legacy Assessment Report Upgrade
-        run: docker exec -i supabase_db_mathsmart psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/upgrade-tests/assessment_legacy_report_assertions.sql
-
       - name: Rebuild The Database From Migrations Only
         run: supabase db reset --no-seed
 

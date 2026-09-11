@@ -171,47 +171,6 @@ def test_health_needs_no_token(client):
     assert response.json()["data"]["status"] == "ok"
 
 
-def test_cors_allows_only_configured_origins():
-    configured = settings().model_copy(
-        update={
-            "cors_allowed_origins": [
-                "https://mathsmart.example",
-                "http://localhost:3000",
-            ]
-        }
-    )
-    app = create_app(
-        settings=configured,
-        token_verifier=FakeVerifier(),
-        database=FakeDatabase(),
-        session_gateway=FakeSessionGateway(),
-        elevated_database=FakeDatabase(),
-    )
-
-    with TestClient(app, raise_server_exceptions=False) as cors_client:
-        allowed = cors_client.options(
-            "/api/v1/health",
-            headers={
-                "Origin": "https://mathsmart.example",
-                "Access-Control-Request-Method": "GET",
-                "Access-Control-Request-Headers": "Authorization",
-            },
-        )
-        denied = cors_client.options(
-            "/api/v1/health",
-            headers={
-                "Origin": "https://attacker.example",
-                "Access-Control-Request-Method": "GET",
-            },
-        )
-
-    assert allowed.status_code == 200
-    assert allowed.headers["access-control-allow-origin"] == "https://mathsmart.example"
-    assert "access-control-allow-credentials" not in allowed.headers
-    assert denied.status_code == 400
-    assert "access-control-allow-origin" not in denied.headers
-
-
 def test_a_request_without_a_token_is_unauthorized(client):
     response = client.get("/api/v1/auth/me")
 

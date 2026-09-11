@@ -14,7 +14,6 @@
  * and again by the database, exactly as `getVerifiedSession` documents.
  */
 
-import { API_BASE_URL } from "@/config/api";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
@@ -28,6 +27,11 @@ export const DASHBOARD_STATE = Object.freeze({
   NO_PROFILE: "no_profile",
   ERROR: "error",
 });
+
+function apiBaseUrl() {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+}
 
 async function accessToken() {
   if (!isSupabaseConfigured()) {
@@ -90,7 +94,7 @@ function isMissingProfile(result) {
  * @returns {Promise<{state: string, model?: object, reason?: string}>}
  */
 export async function readDashboard() {
-  const base = API_BASE_URL;
+  const base = apiBaseUrl();
 
   if (!base) {
     return { state: DASHBOARD_STATE.ERROR, reason: "unconfigured" };

@@ -70,7 +70,7 @@ describe("the dominant next action", () => {
 
     assert.equal(model.nextAction.kind, "diagnostic");
     assert.equal(model.nextAction.title, "Take your diagnostic");
-    assert.equal(model.nextAction.href, STUDENT_ROUTE.DIAGNOSTIC_ASSESSMENT);
+    assert.equal(model.nextAction.href, STUDENT_ROUTE.ASSESSMENTS);
   });
 
   it("is finishing the diagnostic while it is in progress", () => {
@@ -83,7 +83,6 @@ describe("the dominant next action", () => {
     assert.equal(model.nextAction.kind, "diagnostic");
     assert.equal(model.nextAction.title, "Finish your diagnostic");
     assert.equal(model.nextAction.cta, "Finish the diagnostic");
-    assert.equal(model.nextAction.href, STUDENT_ROUTE.DIAGNOSTIC_ASSESSMENT);
   });
 
   it("is the module the API recommended once the diagnostic is complete", () => {

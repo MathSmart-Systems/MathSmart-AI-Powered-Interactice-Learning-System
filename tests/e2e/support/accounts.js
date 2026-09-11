@@ -29,7 +29,6 @@ export const STUDENT_ROUTES = [
   "/student/my-learning",
   "/student/activities",
   "/student/assessments",
-  "/student/assessments/diagnostic",
   "/student/progress",
   "/student/profile",
 ];
