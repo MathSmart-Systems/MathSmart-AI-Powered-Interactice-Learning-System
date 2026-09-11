@@ -26,6 +26,14 @@ export function mockAssessmentHistory() {
   };
 }
 
+function optionalFiniteNumber(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export function normalizeAttemptHistory(value) {
   if (!Array.isArray(value)) return [];
 
@@ -38,9 +46,7 @@ export function normalizeAttemptHistory(value) {
       type: attempt.type || null,
       status: String(attempt.status || ""),
       statusLabel: attemptStatusLabel(attempt.status),
-      score: Number.isFinite(Number(attempt.overall_score))
-        ? Number(attempt.overall_score)
-        : null,
+      score: optionalFiniteNumber(attempt.overall_score),
       startedAt: attempt.started_at || null,
       submittedAt: attempt.submitted_at || null,
       reportHref:
@@ -48,6 +54,94 @@ export function normalizeAttemptHistory(value) {
           ? `/student/assessments/diagnostic?attempt=${encodeURIComponent(attempt.attempt_id)}`
           : null,
     }));
+}
+
+export function flattenDiagnosticQuestions(domains) {
+  const flat = [];
+
+  for (const domain of Array.isArray(domains) ? domains : []) {
+    for (const question of Array.isArray(domain?.questions) ? domain.questions : []) {
+      flat.push({
+        id: question.question_id,
+        domain: domain.domain,
+        prompt: question.question_text,
+        type: question.question_type,
+        options: question.options,
+        orderIndex: optionalFiniteNumber(question.order_index),
+        sourceIndex: flat.length,
+      });
+    }
+  }
+
+  return flat
+    .sort((left, right) => {
+      if (left.orderIndex === null && right.orderIndex === null) {
+        return left.sourceIndex - right.sourceIndex;
+      }
+      if (left.orderIndex === null) return 1;
+      if (right.orderIndex === null) return -1;
+      return left.orderIndex - right.orderIndex || left.sourceIndex - right.sourceIndex;
+    })
+    .map(({ sourceIndex: _sourceIndex, ...question }, index) => ({
+      ...question,
+      number: index + 1,
+    }));
+}
+
+export function numericShortcutIndex(event, optionCount, blocked = false) {
+  if (
+    blocked ||
+    event.defaultPrevented ||
+    event.repeat ||
+    event.isComposing ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.shiftKey ||
+    !/^[1-9]$/.test(event.key)
+  ) {
+    return null;
+  }
+
+  const target = event.target;
+  if (
+    typeof Element !== "undefined" &&
+    target instanceof Element &&
+    (target.closest("input, textarea, select, button, a, [contenteditable='true']") ||
+      target.isContentEditable)
+  ) {
+    return null;
+  }
+
+  const index = Number(event.key) - 1;
+  return index < optionCount ? index : null;
+}
+
+export function reconcileDraftAnswers(serverAnswers, draftAnswers, deliveredIds) {
+  const allowed = deliveredIds instanceof Set ? deliveredIds : new Set(deliveredIds ?? []);
+  const merged = {};
+
+  for (const source of [serverAnswers, draftAnswers]) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    for (const [questionId, answer] of Object.entries(source)) {
+      if (allowed.has(questionId)) merged[questionId] = String(answer ?? "");
+    }
+  }
+
+  return merged;
+}
+
+export function clearSavedDraftAnswers(draftAnswers, savedEntries) {
+  const remaining = { ...(draftAnswers ?? {}) };
+  for (const entry of savedEntries ?? []) {
+    if (
+      Object.hasOwn(remaining, entry.question_id) &&
+      remaining[entry.question_id] === String(entry.answer ?? "")
+    ) {
+      delete remaining[entry.question_id];
+    }
+  }
+  return remaining;
 }
 
 export function parseAttemptQuery(value) {

@@ -386,6 +386,48 @@ def test_autosave_sends_the_answers_as_one_json_document():
     assert '"question_id"' in args[1]
 
 
+def test_expired_autosave_maps_to_conflict_without_writing_answers():
+    class Expired(FakeConnection):
+        async def fetchval(self, query, *args):
+            if "app.save_assessment_answers" in query:
+                error = asyncpg.RaiseError("This assessment attempt has expired")
+                error.sqlstate = "P0005"
+                raise error
+            return await super().fetchval(query, *args)
+
+    response = build_client(Expired(results=attempt_connection().results)).patch(
+        f"/api/v1/assessment-attempts/{ATTEMPT}",
+        json={"answers": [{"question_id": str(QUESTION), "answer": "72"}]},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "assessment_attempt_expired"
+    assert response.json()["error"]["message"] == "This assessment attempt has expired"
+
+
+def test_autosave_after_grade_change_is_a_controlled_refusal():
+    class WrongGrade(FakeConnection):
+        async def fetchval(self, query, *args):
+            if "app.save_assessment_answers" in query:
+                raise asyncpg.RaiseError(
+                    "This assessment is not available for your grade"
+                )
+            return await super().fetchval(query, *args)
+
+    response = build_client(WrongGrade(results=attempt_connection().results)).patch(
+        f"/api/v1/assessment-attempts/{ATTEMPT}",
+        json={"answers": []},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "assessment_grade_mismatch"
+    assert response.json()["error"]["message"] == (
+        "This assessment is not available for your grade"
+    )
+
+
 def test_an_autosave_request_cannot_name_a_learner():
     client = build_client(attempt_connection())
 
@@ -622,6 +664,30 @@ def test_reusing_a_submission_key_for_a_different_request_is_a_conflict():
     assert not [c for c in connection.calls if "app.submit_assessment_attempt" in c[0]]
 
 
+def test_submit_after_grade_change_is_a_controlled_refusal():
+    class WrongGrade(FakeConnection):
+        async def fetchrow(self, query, *args):
+            if "app.submit_assessment_attempt" in query:
+                raise asyncpg.RaiseError(
+                    "This assessment is not available for your grade"
+                )
+            return await super().fetchrow(query, *args)
+
+    connection = WrongGrade(results=attempt_connection().results)
+    response = build_client(connection).post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMISSION_HEADERS,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "assessment_grade_mismatch"
+    assert response.json()["error"]["message"] == (
+        "This assessment is not available for your grade"
+    )
+    assert not [c for c in connection.calls if "complete_assessment_submission" in c[0]]
+
+
 def test_a_completed_attempt_with_a_new_key_returns_a_controlled_conflict():
     class FinishedAttempt(FakeConnection):
         async def fetchrow(self, query, *args):
@@ -716,6 +782,30 @@ def test_a_scored_attempt_read_back_returns_its_stored_immutable_report():
 
     assert response.status_code == 200
     assert response.json()["data"] == stored
+
+
+
+def test_a_backfilled_report_is_read_without_mutable_reconstruction_queries():
+    backfilled = {
+        **CANONICAL_REPORT,
+        "recommended_learning_path": [],
+        "next_action": {"type": "dashboard", "label": "Return to Dashboard"},
+    }
+    scored = {**SCORED_ROW, "result_payload": backfilled}
+    connection = attempt_connection(**{ATTEMPT_BY_ID: scored})
+
+    response = build_client(connection).get(
+        f"/api/v1/assessment-attempts/{ATTEMPT}", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == backfilled
+    assert len(connection.calls) == 1
+    query = connection.calls[0][0]
+    assert "from app.competency_results" not in query
+    assert "from app.learning_path_items" not in query
+    assert "from app.assessment_responses" not in query
+    assert "from app.questions" not in query
 
 
 def test_a_malformed_stored_report_is_a_sanitized_recording_failure():

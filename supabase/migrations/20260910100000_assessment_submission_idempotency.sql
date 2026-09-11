@@ -72,6 +72,11 @@ begin
     and idempotency_keys.idempotency_key = p_idempotency_key
   for update;
 
+  if not found then
+    raise exception 'The assessment submission idempotency claim could not be read'
+      using errcode = '40001';
+  end if;
+
   if v_stored_fingerprint <> p_request_fingerprint then
     return query select 'conflict'::text, null::integer, null::jsonb;
   elsif v_response_status is not null then

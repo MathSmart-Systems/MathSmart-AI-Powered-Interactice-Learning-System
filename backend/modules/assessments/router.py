@@ -257,11 +257,26 @@ async def save_answers(
     """Autosave answers into the caller's own attempt while it is in progress."""
     _only_a_learner(actor)
 
-    saved = await repository.save_answers(
-        connection,
-        attempt_id=attempt_id,
-        answers=json.dumps(body.model_dump(mode="json")["answers"]),
-    )
+    try:
+        saved = await repository.save_answers(
+            connection,
+            attempt_id=attempt_id,
+            answers=json.dumps(body.model_dump(mode="json")["answers"]),
+        )
+    except asyncpg.PostgresError as exc:
+        if exc.sqlstate == "P0005":
+            raise ApiError(
+                409,
+                "This assessment attempt has expired",
+                code="assessment_attempt_expired",
+            ) from exc
+        if exc.sqlstate == "P0001":
+            raise ApiError(
+                403,
+                "This assessment is not available for your grade",
+                code="assessment_grade_mismatch",
+            ) from exc
+        raise
     return {"data": {"attempt_id": str(attempt_id), "saved": saved}}
 
 
@@ -339,6 +354,14 @@ async def submit_attempt(
             "This assessment attempt is no longer in progress",
             code="assessment_attempt_not_in_progress",
         ) from exc
+    except asyncpg.PostgresError as exc:
+        if exc.sqlstate == "P0001":
+            raise ApiError(
+                403,
+                "This assessment is not available for your grade",
+                code="assessment_grade_mismatch",
+            ) from exc
+        raise
     if attempt_row is None:
         raise ApiError(
             409,

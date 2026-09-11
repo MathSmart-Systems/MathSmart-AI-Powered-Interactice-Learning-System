@@ -18,6 +18,7 @@ def build(monkeypatch, **overrides):
     for key in (
         *BASE_ENV,
         "SUPABASE_JWT_AUDIENCE",
+        "CORS_ALLOWED_ORIGINS",
         "GROQ_API_KEY",
         "GROQ_MODEL",
         "GROQ_ENABLED",
@@ -47,6 +48,35 @@ def test_secret_key_is_readable_deliberately(monkeypatch):
     settings = build(monkeypatch)
 
     assert settings.supabase_secret_key.get_secret_value() == "sb_secret_do_not_render_me"
+
+
+def test_cors_origins_are_explicit_and_validated(monkeypatch):
+    settings = build(
+        monkeypatch,
+        CORS_ALLOWED_ORIGINS='["https://mathsmart.example","http://localhost:3000","http://[::1]:3000","https://mathsmart.example/"]',
+    )
+
+    assert settings.cors_allowed_origins == [
+        "https://mathsmart.example",
+        "http://localhost:3000",
+        "http://[::1]:3000",
+    ]
+
+
+@pytest.mark.parametrize(
+    "origins",
+    [
+        '[]',
+        '[""]',
+        '["*"]',
+        '["http://mathsmart.example"]',
+        '["https://mathsmart.example/path"]',
+        '["https://user:pass@mathsmart.example"]',
+    ],
+)
+def test_unsafe_cors_origins_are_rejected(monkeypatch, origins):
+    with pytest.raises(ValidationError):
+        build(monkeypatch, CORS_ALLOWED_ORIGINS=origins)
 
 
 def test_groq_is_disabled_by_default_and_needs_no_credential(monkeypatch):

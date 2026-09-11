@@ -9,6 +9,7 @@ begin;
 
 alter table app.assessment_attempts
   add column assessment_type_snapshot app.assessment_type,
+  add column assessment_grade_id_snapshot uuid,
   add column assessment_payload jsonb,
   add column result_payload jsonb,
   add column resumed boolean not null default false,
@@ -25,28 +26,46 @@ alter table app.assessment_attempts
       (question_snapshot_created_at is not null and question_snapshot_count is not null)
     );
 
-create function app.assessment_payload_has_confidential_key(p_value jsonb)
+create function app.assessment_delivery_payload_is_safe(p_value jsonb)
 returns boolean
 language sql
 immutable
 set search_path = ''
 as $$
-  select case jsonb_typeof(p_value)
-    when 'object' then exists (
+  select coalesce(
+    jsonb_typeof(p_value) = 'object'
+    and p_value ?& array[
+      'id', 'competency_id', 'competency_name', 'text', 'type', 'choices',
+      'difficulty', 'visual_aid_description'
+    ]
+    and not exists (
       select 1
-      from jsonb_each(p_value) as item(key, value)
-      where item.key in (
-        'answer_key', 'correct_answer', 'explanation', 'hint', 'is_correct'
-      )
-         or app.assessment_payload_has_confidential_key(item.value)
+      from jsonb_object_keys(p_value) as item(key)
+      where item.key <> all (array[
+        'id', 'competency_id', 'competency_name', 'text', 'type', 'choices',
+        'difficulty', 'visual_aid_description'
+      ])
     )
-    when 'array' then exists (
+    and jsonb_typeof(p_value -> 'id') = 'string'
+    and jsonb_typeof(p_value -> 'competency_id') = 'string'
+    and jsonb_typeof(p_value -> 'competency_name') = 'string'
+    and jsonb_typeof(p_value -> 'text') = 'string'
+    and jsonb_typeof(p_value -> 'type') = 'string'
+    and p_value ->> 'type' in ('multiple_choice', 'number_input', 'fill_blank')
+    and jsonb_typeof(p_value -> 'choices') = 'array'
+    and not exists (
       select 1
-      from jsonb_array_elements(p_value) as item(value)
-      where app.assessment_payload_has_confidential_key(item.value)
+      from jsonb_array_elements(p_value -> 'choices') as choice(value)
+      where jsonb_typeof(choice.value) not in ('string', 'number', 'boolean')
     )
-    else false
-  end;
+    and jsonb_typeof(p_value -> 'difficulty') = 'string'
+    and p_value ->> 'difficulty' in ('easy', 'medium', 'hard')
+    and (
+      jsonb_typeof(p_value -> 'visual_aid_description') = 'null'
+      or jsonb_typeof(p_value -> 'visual_aid_description') = 'string'
+    ),
+    false
+  );
 $$;
 
 -- Remove the table-wide read before adding a confidential column. The safe
@@ -67,10 +86,10 @@ alter table app.assessment_responses
     check (delivered_position is null or delivered_position >= 1),
   add constraint assessment_responses_delivered_payload_object
     check (delivered_payload is null or jsonb_typeof(delivered_payload) = 'object'),
-  add constraint assessment_responses_delivered_payload_no_solution
+  add constraint assessment_responses_delivered_payload_safe
     check (
       delivered_payload is null
-      or not app.assessment_payload_has_confidential_key(delivered_payload)
+      or app.assessment_delivery_payload_is_safe(delivered_payload)
     ),
   add constraint assessment_responses_grading_key_present
     check (grading_answer_key is null or grading_answer_key <> 'null'::jsonb);
@@ -85,6 +104,7 @@ lock table app.assessment_questions, app.questions, app.competencies in share mo
 -- Historical classification is immutable too, including finished attempts.
 update app.assessment_attempts as attempts
 set assessment_type_snapshot = assessments.assessment_type,
+    assessment_grade_id_snapshot = assessments.grade_id,
     assessment_payload = jsonb_build_object(
       'id', assessments.assessment_id,
       'title', assessments.title,
@@ -93,6 +113,9 @@ set assessment_type_snapshot = assessments.assessment_type,
     )
 from app.assessments
 where assessments.assessment_id = attempts.assessment_id;
+
+alter table app.assessment_attempts
+  alter column assessment_grade_id_snapshot set not null;
 
 -- Existing open attempts cross the compatibility boundary at migration time.
 -- Refuse the deployment rather than silently snapshotting only the published
@@ -256,6 +279,8 @@ set search_path = ''
 as $$
 declare
   v_student_id uuid;
+  v_student_grade_id uuid;
+  v_assessment_grade_id uuid;
   v_version integer;
   v_assessment_type app.assessment_type;
   v_authorization_id uuid;
@@ -264,7 +289,8 @@ declare
   v_member_count integer;
   v_row app.assessment_attempts;
 begin
-  select student_profiles.student_id into v_student_id
+  select student_profiles.student_id, student_profiles.grade_id
+  into v_student_id, v_student_grade_id
   from app.student_profiles
   where student_profiles.user_id = (select auth.uid())
     and (select app.is_active_account())
@@ -282,6 +308,11 @@ begin
   for update;
 
   if found then
+    if v_student_grade_id is distinct from v_row.assessment_grade_id_snapshot then
+      raise exception 'This assessment is not available for your grade'
+        using errcode = 'P0001';
+    end if;
+
     if v_row.question_snapshot_created_at is null
        or v_row.question_snapshot_count is null
        or v_row.question_snapshot_count < 1
@@ -302,8 +333,8 @@ begin
     return v_row;
   end if;
 
-  select assessments.version, assessments.assessment_type
-  into v_version, v_assessment_type
+  select assessments.grade_id, assessments.version, assessments.assessment_type
+  into v_assessment_grade_id, v_version, v_assessment_type
   from app.assessments
   where assessments.assessment_id = p_assessment_id
     and assessments.status = 'published'::app.publication_status
@@ -311,6 +342,11 @@ begin
 
   if v_version is null then
     raise exception 'No such published assessment' using errcode = 'P0002';
+  end if;
+
+  if v_student_grade_id is distinct from v_assessment_grade_id then
+    raise exception 'This assessment is not available for your grade'
+      using errcode = 'P0001';
   end if;
 
   if exists (
@@ -370,6 +406,7 @@ begin
     student_id,
     assessment_version,
     assessment_type_snapshot,
+    assessment_grade_id_snapshot,
     assessment_payload
   )
   select
@@ -377,6 +414,7 @@ begin
     v_student_id,
     assessments.version,
     assessments.assessment_type,
+    assessments.grade_id,
     jsonb_build_object(
       'id', assessments.assessment_id,
       'title', assessments.title,
@@ -461,19 +499,25 @@ set search_path = ''
 as $$
 declare
   v_student_id uuid;
+  v_student_grade_id uuid;
+  v_assessment_grade_id uuid;
   v_snapshot_count integer;
   v_saved integer;
 begin
-  select student_profiles.student_id into v_student_id
+  select student_profiles.student_id, student_profiles.grade_id
+  into v_student_id, v_student_grade_id
   from app.student_profiles
   where student_profiles.user_id = (select auth.uid())
-    and (select app.is_active_account());
+    and (select app.is_active_account())
+  for update;
 
   if v_student_id is null then
     raise exception 'Only a learner may answer an assessment' using errcode = '42501';
   end if;
 
-  select assessment_attempts.question_snapshot_count into v_snapshot_count
+  select assessment_attempts.question_snapshot_count,
+         assessment_attempts.assessment_grade_id_snapshot
+  into v_snapshot_count, v_assessment_grade_id
   from app.assessment_attempts
   where assessment_attempts.attempt_id = p_attempt_id
     and assessment_attempts.student_id = v_student_id
@@ -482,6 +526,11 @@ begin
 
   if v_snapshot_count is null then
     raise exception 'No attempt of yours is in progress' using errcode = 'P0002';
+  end if;
+
+  if v_student_grade_id is distinct from v_assessment_grade_id then
+    raise exception 'This assessment is not available for your grade'
+      using errcode = 'P0001';
   end if;
 
   with submitted as (
@@ -533,6 +582,8 @@ set search_path = ''
 as $$
 declare
   v_student_id uuid;
+  v_student_grade_id uuid;
+  v_assessment_grade_id uuid;
   v_assessment_type app.assessment_type;
   v_snapshot_count integer;
   v_raw integer;
@@ -540,10 +591,12 @@ declare
   v_graded integer;
   v_row app.assessment_attempts;
 begin
-  select student_profiles.student_id into v_student_id
+  select student_profiles.student_id, student_profiles.grade_id
+  into v_student_id, v_student_grade_id
   from app.student_profiles
   where student_profiles.user_id = (select auth.uid())
-    and (select app.is_active_account());
+    and (select app.is_active_account())
+  for update;
 
   if v_student_id is null then
     raise exception 'Only a learner may submit an assessment' using errcode = '42501';
@@ -551,8 +604,9 @@ begin
 
   select
     assessment_attempts.assessment_type_snapshot,
+    assessment_attempts.assessment_grade_id_snapshot,
     assessment_attempts.question_snapshot_count
-  into v_assessment_type, v_snapshot_count
+  into v_assessment_type, v_assessment_grade_id, v_snapshot_count
   from app.assessment_attempts
   where assessment_attempts.attempt_id = p_attempt_id
     and assessment_attempts.student_id = v_student_id
@@ -561,6 +615,11 @@ begin
 
   if not found then
     raise exception 'No attempt of yours is in progress' using errcode = 'P0002';
+  end if;
+
+  if v_student_grade_id is distinct from v_assessment_grade_id then
+    raise exception 'This assessment is not available for your grade'
+      using errcode = 'P0001';
   end if;
 
   if v_assessment_type is null or v_snapshot_count is null or v_snapshot_count < 1 then
@@ -787,10 +846,10 @@ comment on column app.assessment_responses.grading_answer_key is
 
 revoke all on function app.may_start_reassessment(uuid, uuid)
   from public, anon;
-revoke all on function app.assessment_payload_has_confidential_key(jsonb)
+revoke all on function app.assessment_delivery_payload_is_safe(jsonb)
   from public, anon, authenticated;
 revoke all on function app.store_assessment_result_payload(uuid, jsonb)
-  from public, anon;
+  from public, anon, authenticated;
 revoke all on function app.prevent_assessment_snapshot_changes()
   from public, anon, authenticated;
 revoke all on function app.start_assessment_attempt(uuid)
@@ -802,8 +861,10 @@ revoke all on function app.submit_assessment_attempt(uuid, jsonb)
 
 grant execute on function app.may_start_reassessment(uuid, uuid)
   to authenticated, service_role;
+grant execute on function app.assessment_delivery_payload_is_safe(jsonb)
+  to service_role;
 grant execute on function app.store_assessment_result_payload(uuid, jsonb)
-  to authenticated, service_role;
+  to service_role;
 grant execute on function app.start_assessment_attempt(uuid)
   to authenticated, service_role;
 grant execute on function app.save_assessment_answers(uuid, jsonb)

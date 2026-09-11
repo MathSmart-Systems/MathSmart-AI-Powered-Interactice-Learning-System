@@ -208,9 +208,11 @@ select is(
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
    where pg_namespace.nspname = 'app'
      and pg_proc.prosecdef),
-  'activity_hint,archive_intervention,authorize_reassessment,'
-  || 'check_activity_answer,claim_assessment_submission_idempotency,'
-  || 'complete_assessment_submission_idempotency,complete_module,is_active_account,'
+  'activity_hint,archive_intervention,assessment_question_grades_match,'
+  || 'authorize_reassessment,check_activity_answer,'
+  || 'claim_assessment_submission_idempotency,complete_assessment_submission_idempotency,'
+  || 'complete_module,enforce_assessment_attempt_question_grade_consistency,'
+  || 'enforce_assessment_question_grade_consistency,is_active_account,'
   || 'may_start_reassessment,module_section_ids,open_intervention,record_audit_event,'
   || 'reset_diagnostic,save_assessment_answers,save_module_progress,set_account_status,'
   || 'setting_integer,start_activity_attempt,start_assessment_attempt,'

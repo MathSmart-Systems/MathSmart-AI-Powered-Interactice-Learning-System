@@ -41,6 +41,50 @@ describe("student assessments", () => {
     await expect(page.getByText("Attempt history could not be loaded")).toHaveCount(0);
   });
 
+  test("loads a historical report without discovering a currently published diagnostic", async ({
+    page,
+  }) => {
+    test.skip(USE_MOCK, "Historical API routing needs a live authenticated session.");
+
+    const attemptId = "123e4567-e89b-42d3-a456-426614174000";
+    let catalogueRequests = 0;
+    await page.route("**/api/v1/assessments?**", async (route) => {
+      catalogueRequests += 1;
+      await route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+    });
+    await page.route(`**/api/v1/assessment-attempts/${attemptId}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            attempt_id: attemptId,
+            assessment_id: "30e7f94d-0daa-4c0d-9a4b-908e47029a51",
+            status: "scored",
+            overall_score: 75,
+            competency_results: [
+              {
+                competency_id: "13ec5f06-746e-45fb-a58a-92f4ce42621c",
+                competency_name: "Fractions",
+                raw_score: 3,
+                max_score: 4,
+                percentage: 75,
+                mastery_band: "Developing",
+              },
+            ],
+            recommended_learning_path: [],
+            next_action: { type: "dashboard", label: "Return to Dashboard" },
+          },
+        }),
+      });
+    });
+
+    await page.goto(`/student/assessments/diagnostic?attempt=${attemptId}`);
+    await expect(page.getByText("Diagnostic gap report")).toBeVisible();
+    await expect(page.getByText("75%", { exact: true }).first()).toBeVisible();
+    expect(catalogueRequests).toBe(0);
+  });
+
   test("shows a controlled state for malformed, empty, and repeated attempt links", async ({
     page,
   }) => {
@@ -53,28 +97,74 @@ describe("student assessments", () => {
     }
   });
 
-  test("moves focus through submission confirmation and back on cancel", async ({ page }) => {
-    test.skip(!USE_MOCK, "Confirmation is deterministic only in configured mock mode.");
+  test("writes a durable local draft before navigation", async ({ page }) => {
+    test.skip(!USE_MOCK, "Draft recovery is deterministic only in configured mock mode.");
 
     await page.goto("/student/assessments/diagnostic");
     const begin = page.getByRole("button", { name: /Begin assessment|Start reassessment/ });
     await expect(begin).toBeVisible();
     await begin.click();
+    await expect(page.getByRole("group", { name: "Choose one answer for question 1" })).toBeVisible();
 
-    await page.getByRole("button", { name: /Question 20, blank/ }).click();
+    const firstChoice = page.locator("fieldset button").first();
+    await expect(firstChoice).toHaveAttribute("aria-pressed", "false");
+    await firstChoice.click();
+    await expect(firstChoice).toHaveAttribute("aria-pressed", "true");
+    const draft = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((entry) =>
+        entry.startsWith("mathsmart:diagnostic-draft:"),
+      );
+      return key ? JSON.parse(localStorage.getItem(key)) : null;
+    });
+    expect(draft).toEqual({ q1: "-10" });
+
+    await page.goto("/student/dashboard");
+  });
+
+  test("traps confirmation focus, blocks shortcuts, and restores focus", async ({ page }) => {
+    test.skip(!USE_MOCK, "Confirmation is deterministic only in configured mock mode.");
+
+    await page.goto("/student/assessments/diagnostic");
+    await page.evaluate(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith("mathsmart:diagnostic-")) localStorage.removeItem(key);
+      }
+    });
+    await page.reload();
+    const begin = page.getByRole("button", { name: /Begin assessment|Start reassessment/ });
+    await expect(begin).toBeVisible();
+    await begin.click();
+    await expect(page.getByRole("group", { name: "Choose one answer for question 1" })).toBeVisible();
+
+    await page.getByRole("button", { name: /Question 40, blank/ }).click();
+    const choices = page.locator("fieldset button");
+    await expect(page.locator("fieldset button[aria-pressed='true']")).toHaveCount(0);
+
     const submitTrigger = page.getByTestId("final-submit-trigger");
     await submitTrigger.click();
 
-    const confirmation = page.getByTestId("submission-confirmation");
+    const confirmation = page.getByRole("alertdialog", {
+      name: "Confirm assessment submission",
+    });
     await expect(confirmation).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Confirm assessment submission", level: 2 }),
-    ).toBeFocused();
-    await expect(confirmation.getByRole("button", { name: "Review Q1" })).toBeVisible();
+    await expect(confirmation).toContainText("blank");
+    await expect(confirmation.getByRole("button", { name: "Review Q1", exact: true })).toBeFocused();
 
-    await confirmation.getByRole("button", { name: "Cancel and review" }).click();
+    await page.keyboard.press("1");
+    await expect(choices.locator("[aria-pressed='true']")).toHaveCount(0);
+
+    for (let step = 0; step < 25; step += 1) await page.keyboard.press("Tab");
+    await expect(confirmation.locator(":focus")).toHaveCount(1);
+
+    await page.keyboard.press("Escape");
     await expect(confirmation).toHaveCount(0);
     await expect(submitTrigger).toBeFocused();
+
+    await submitTrigger.click();
+    await confirmation.getByRole("button", { name: "Review Q1", exact: true }).click();
+    await expect(confirmation).toHaveCount(0);
+    await expect(page.getByText("Question 1", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-slot='card']").filter({ has: page.locator("fieldset") })).toBeFocused();
   });
 });
 

@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/config/api";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
@@ -10,11 +11,6 @@ export const ASSESSMENTS_STATE = Object.freeze({
   NO_PROFILE: "no_profile",
   ERROR: "error",
 });
-
-function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
-}
 
 async function accessToken() {
   if (!isSupabaseConfigured()) return null;
@@ -32,7 +28,7 @@ export async function readOwnAssessmentHistory() {
     return mockAssessmentHistory();
   }
 
-  const base = apiBaseUrl();
+  const base = API_BASE_URL;
   const token = await accessToken();
   if (!base || !token) return { state: ASSESSMENTS_STATE.ERROR };
 

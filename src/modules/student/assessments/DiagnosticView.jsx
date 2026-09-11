@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { AlertDialog } from "radix-ui";
 import {
   AlertCircle,
   ArrowLeft,
@@ -41,10 +42,17 @@ import {
   submitDiagnostic,
 } from "@/services/assessmentService";
 
-import { initialDiagnosticScreen, submissionConfirmation } from "./utils";
+import {
+  clearSavedDraftAnswers,
+  flattenDiagnosticQuestions,
+  numericShortcutIndex,
+  reconcileDraftAnswers,
+  submissionConfirmation,
+} from "./utils";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 const IDEMPOTENCY_KEY_PREFIX = "mathsmart:diagnostic-submit:";
+const DRAFT_KEY_PREFIX = "mathsmart:diagnostic-draft:";
 const COMPLETED_ATTEMPT_STATUSES = new Set(["scored"]);
 const PENDING_ATTEMPT_STATUSES = new Set(["submitted"]);
 
@@ -67,6 +75,42 @@ function idempotencyKeyForAttempt(attemptId) {
 function clearIdempotencyKey(attemptId) {
   if (typeof window !== "undefined" && attemptId) {
     window.localStorage.removeItem(submissionStorageKey(attemptId));
+  }
+}
+
+function draftStorageKey(attemptId) {
+  return `${DRAFT_KEY_PREFIX}${attemptId}`;
+}
+
+function readDraft(attemptId) {
+  if (typeof window === "undefined" || !attemptId) return {};
+  try {
+    const value = JSON.parse(window.localStorage.getItem(draftStorageKey(attemptId)) ?? "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDraft(attemptId, draft) {
+  if (typeof window === "undefined" || !attemptId) return;
+  try {
+    if (Object.keys(draft).length > 0) {
+      window.localStorage.setItem(draftStorageKey(attemptId), JSON.stringify(draft));
+    } else {
+      window.localStorage.removeItem(draftStorageKey(attemptId));
+    }
+  } catch {
+    // In-memory answers and server autosave remain available when storage is blocked.
+  }
+}
+
+function clearDraft(attemptId) {
+  if (typeof window === "undefined" || !attemptId) return;
+  try {
+    window.localStorage.removeItem(draftStorageKey(attemptId));
+  } catch {
+    // Submission already succeeded; unavailable storage needs no recovery action.
   }
 }
 
@@ -101,27 +145,6 @@ function formatClock(totalSeconds) {
   const minutes = Math.floor(safe / 60);
   const seconds = safe % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-/** Domain-grouped questions -> the flat, numbered list the learner walks. */
-function flattenQuestions(domains) {
-  const flat = [];
-
-  for (const domain of domains) {
-    for (const question of domain.questions) {
-      flat.push({
-        id: question.question_id,
-        number: flat.length + 1,
-        domain: domain.domain,
-        prompt: question.question_text,
-        type: question.question_type,
-        options: question.options,
-        orderIndex: question.order_index ?? flat.length + 1,
-      });
-    }
-  }
-
-  return flat.sort((left, right) => left.orderIndex - right.orderIndex);
 }
 
 function attemptDeadline(startedAt, limitSeconds) {
@@ -185,10 +208,13 @@ export function DiagnosticView({
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const scrollAnchor = useRef(null);
-  const confirmationHeading = useRef(null);
   const finalSubmitTrigger = useRef(null);
+  const dialogInitialFocus = useRef(null);
+  const reviewQuestionAfterClose = useRef(false);
+  const questionCard = useRef(null);
   const deadline = useRef(null);
   const answersRef = useRef({});
+  const draftRef = useRef({});
   const pendingSaves = useRef(new Map());
   const saveLoop = useRef(null);
   const submissionStarted = useRef(false);
@@ -200,14 +226,15 @@ export function DiagnosticView({
 
   const hydrateAttempt = useCallback((data) => {
     const limitSeconds = data.time_limit_minutes * 60;
-    const flatQuestions = flattenQuestions(data.domains);
+    const flatQuestions = flattenDiagnosticQuestions(data.domains);
     const deliveredIds = new Set(flatQuestions.map((question) => question.id));
-    const saved = Object.fromEntries(
-      Object.entries(data.saved_answers ?? {})
-        .filter(([questionId]) => deliveredIds.has(questionId))
-        .map(([questionId, answer]) => [questionId, String(answer ?? "")]),
-    );
+    const localDraft = readDraft(data.attempt_id);
+    const saved = reconcileDraftAnswers(data.saved_answers, localDraft, deliveredIds);
+    const filteredDraft = reconcileDraftAnswers({}, localDraft, deliveredIds);
 
+    draftRef.current = filteredDraft;
+    writeDraft(data.attempt_id, filteredDraft);
+    pendingSaves.current = new Map(Object.entries(filteredDraft));
     setQuestions(flatQuestions);
     setDomains(data.domains.map((domain) => domain.domain));
     setTotal(flatQuestions.length);
@@ -227,21 +254,22 @@ export function DiagnosticView({
 
     let cancelled = false;
 
-    loadDiagnostic()
-      .then(async (preview) => {
+    const load = requestedAttemptId
+      ? loadDiagnosticResult(requestedAttemptId).then((requested) => {
+          if (cancelled) return;
+          if (requested?.status !== "scored") {
+            throw new AssessmentError("This diagnostic report is not ready yet.");
+          }
+          setResult(requested);
+          setScreen("report");
+        })
+      : loadDiagnostic().then(async (preview) => {
         if (cancelled) return;
         setAssessment(preview);
         setTotal(preview.total_questions);
         setTimeLimitSeconds(preview.time_limit_minutes * 60);
-        const initial = initialDiagnosticScreen(preview, requestedAttemptId);
 
-        if (initial.screen === "report" && requestedAttemptId) {
-          const requested = await loadDiagnosticResult(initial.attemptId);
-          if (!cancelled) {
-            setResult(requested);
-            setScreen("report");
-          }
-        } else if (preview.diagnostic_status === "in_progress") {
+        if (preview.diagnostic_status === "in_progress") {
           if (!preview.latest_attempt_id || preview.latest_status !== "in_progress") {
             throw new AssessmentError(
               "Your diagnostic is marked in progress, but the active attempt could not be found. Please ask your teacher for help.",
@@ -280,7 +308,9 @@ export function DiagnosticView({
             "Your diagnostic status is unavailable right now. Please try again or ask your teacher for help.",
           );
         }
-      })
+      });
+
+    load
       .catch((error) => {
         if (cancelled) return;
         setLoadError(
@@ -324,6 +354,8 @@ export function DiagnosticView({
 
           try {
             await saveDiagnosticAnswers({ attemptId, answers: batch });
+            draftRef.current = clearSavedDraftAnswers(draftRef.current, batch);
+            writeDraft(attemptId, draftRef.current);
             setSaveError(null);
           } catch (error) {
             for (const entry of batch) {
@@ -348,6 +380,12 @@ export function DiagnosticView({
     return saveLoop.current;
   }, [attemptId]);
 
+  useEffect(() => {
+    if (screen === "test" && attemptId && pendingSaves.current.size > 0) {
+      void flushSaves();
+    }
+  }, [attemptId, flushSaves, screen]);
+
   const recordAnswer = useCallback(
     (questionId, answer) => {
       setAnswers((previous) => {
@@ -355,11 +393,13 @@ export function DiagnosticView({
         answersRef.current = next;
         return next;
       });
+      draftRef.current = { ...draftRef.current, [questionId]: String(answer ?? "") };
+      writeDraft(attemptId, draftRef.current);
       pendingSaves.current.set(questionId, answer);
       setPendingSubmit(false);
       void flushSaves();
     },
-    [flushSaves],
+    [attemptId, flushSaves],
   );
 
   const finish = useCallback(
@@ -369,7 +409,6 @@ export function DiagnosticView({
       submissionStarted.current = true;
       setSubmitting(true);
       setSubmitError(null);
-      setPendingSubmit(false);
       setAutoSubmitted(viaTimer);
 
       try {
@@ -385,6 +424,10 @@ export function DiagnosticView({
         });
 
         clearIdempotencyKey(attemptId);
+        clearDraft(attemptId);
+        draftRef.current = {};
+        pendingSaves.current.clear();
+        setPendingSubmit(false);
         setResult(response);
         setScreen("report");
       } catch (error) {
@@ -402,6 +445,19 @@ export function DiagnosticView({
     },
     [attemptId, questions, flushSaves],
   );
+
+  useEffect(() => {
+    if (screen !== "test") return undefined;
+
+    const onBeforeUnload = (event) => {
+      if (pendingSaves.current.size === 0 && !saveLoop.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [screen]);
 
   useEffect(() => {
     if (screen !== "test") return undefined;
@@ -434,10 +490,6 @@ export function DiagnosticView({
   }, [index, screen]);
 
   useEffect(() => {
-    if (pendingSubmit) confirmationHeading.current?.focus();
-  }, [pendingSubmit]);
-
-  useEffect(() => {
     if (screen !== "test" || current?.type !== QUESTION_TYPE.MULTIPLE_CHOICE) {
       return undefined;
     }
@@ -445,16 +497,23 @@ export function DiagnosticView({
     const onKey = (event) => {
       if (!current) return;
 
-      const numeric = Number(event.key);
-      if (numeric >= 1 && numeric <= current.options.length) {
-        const option = current.options[numeric - 1];
-        if (option) recordAnswer(current.id, option.key);
+      const optionIndex = numericShortcutIndex(
+        event,
+        current.options.length,
+        pendingSubmit || submitting,
+      );
+      if (optionIndex === null) return;
+
+      const option = current.options[optionIndex];
+      if (option) {
+        event.preventDefault();
+        recordAnswer(current.id, option.key);
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen, current, recordAnswer]);
+  }, [screen, current, pendingSubmit, submitting, recordAnswer]);
 
   const beginAssessment = async () => {
     if (!assessment?.assessment_id || starting) return;
@@ -498,7 +557,8 @@ export function DiagnosticView({
     setIndex((value) => Math.max(0, value - 1));
   };
 
-  const jumpTo = (target) => {
+  const jumpTo = (target, { focusQuestion = false } = {}) => {
+    reviewQuestionAfterClose.current = focusQuestion;
     setPendingSubmit(false);
     setIndex(target);
   };
@@ -546,7 +606,7 @@ export function DiagnosticView({
     );
   }
 
-  if (!total) {
+  if (screen !== "report" && !total) {
     return (
       <CenteredNotice icon={AlertCircle} title="No diagnostic items yet">
         <p className="max-w-prose text-sm text-muted-foreground">
@@ -737,7 +797,7 @@ export function DiagnosticView({
             </div>
           </div>
 
-          <Card>
+          <Card ref={questionCard} tabIndex={-1} className="outline-none">
             <CardHeader className="gap-3">
               <CardDescription>{current.domain}</CardDescription>
               <CardTitle className="max-w-prose text-xl leading-snug font-medium">
@@ -858,72 +918,84 @@ export function DiagnosticView({
                 </p>
               )}
 
-              {pendingSubmit && (
-                <div
-                  role="alertdialog"
-                  aria-labelledby="submission-confirmation-heading"
-                  aria-describedby="submission-confirmation-description"
-                  data-testid="submission-confirmation"
-                  className={`flex w-full flex-col gap-3 border-l-[3px] px-4 py-4 ${
-                    confirmation.isComplete
-                      ? "border-primary bg-primary/5"
-                      : "border-destructive bg-destructive/5"
-                  }`}
-                >
-                  <h2
-                    ref={confirmationHeading}
-                    id="submission-confirmation-heading"
-                    tabIndex={-1}
-                    className="flex items-start gap-3 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              <AlertDialog.Root open={pendingSubmit} onOpenChange={(open) => {
+                if (!open && !submitting) setPendingSubmit(false);
+              }}>
+                <AlertDialog.Portal>
+                  <AlertDialog.Overlay className="fixed inset-0 z-40 bg-shell/70" />
+                  <AlertDialog.Content
+                    data-testid="submission-confirmation"
+                    onOpenAutoFocus={(event) => {
+                      event.preventDefault();
+                      dialogInitialFocus.current?.focus();
+                    }}
+                    onCloseAutoFocus={(event) => {
+                      event.preventDefault();
+                      if (reviewQuestionAfterClose.current) {
+                        reviewQuestionAfterClose.current = false;
+                        questionCard.current?.focus();
+                      } else {
+                        finalSubmitTrigger.current?.focus();
+                      }
+                    }}
+                    className={`fixed top-1/2 left-1/2 z-50 flex max-h-[85svh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-xl border-l-[3px] bg-card p-6 text-card-foreground shadow-xl outline-none ${
+                      confirmation.isComplete ? "border-primary" : "border-destructive"
+                    }`}
                   >
-                    {confirmation.isComplete ? (
-                      <CheckCircle2
-                        aria-hidden="true"
-                        className="mt-0.5 size-4 shrink-0 text-primary"
-                      />
-                    ) : (
-                      <AlertCircle
-                        aria-hidden="true"
-                        className="mt-0.5 size-4 shrink-0 text-destructive"
-                      />
+                    <AlertDialog.Title className="flex items-start gap-3 font-display text-xl font-semibold text-foreground">
+                      {confirmation.isComplete ? (
+                        <CheckCircle2 aria-hidden="true" className="mt-1 size-5 shrink-0 text-primary" />
+                      ) : (
+                        <AlertCircle aria-hidden="true" className="mt-1 size-5 shrink-0 text-destructive" />
+                      )}
+                      Confirm assessment submission
+                    </AlertDialog.Title>
+                    <AlertDialog.Description className="text-sm leading-relaxed text-muted-foreground">
+                      {confirmation.message}
+                    </AlertDialog.Description>
+
+                    {unanswered.length > 0 && (
+                      <div className="flex flex-wrap gap-2" aria-label="Unanswered questions">
+                        {unanswered.map((question, unansweredIndex) => (
+                          <AlertDialog.Cancel asChild key={question.id}>
+                            <Button
+                              ref={unansweredIndex === 0 ? dialogInitialFocus : undefined}
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              disabled={submitting}
+                              onClick={() => jumpTo(question.number - 1, { focusQuestion: true })}
+                            >
+                              Review Q{question.number}
+                            </Button>
+                          </AlertDialog.Cancel>
+                        ))}
+                      </div>
                     )}
-                    Confirm assessment submission
-                  </h2>
-                  <p id="submission-confirmation-description" className="text-sm text-foreground">
-                    {confirmation.message}
-                  </p>
 
-                  {unanswered.length > 0 && (
-                    <div className="flex flex-wrap gap-2" aria-label="Unanswered questions">
-                      {unanswered.map((question) => (
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <Button
+                        ref={confirmation.isComplete ? dialogInitialFocus : undefined}
+                        size="sm"
+                        onClick={() => finish(false)}
+                        disabled={submitting}
+                      >
+                        {submitting ? "Submitting…" : "Confirm and finish"}
+                      </Button>
+                      <AlertDialog.Cancel asChild>
                         <Button
-                          key={question.id}
-                          type="button"
+                          size="sm"
                           variant="outline"
-                          size="xs"
-                          onClick={() => jumpTo(question.number - 1)}
+                          onClick={cancelSubmission}
+                          disabled={submitting}
                         >
-                          Review Q{question.number}
+                          Cancel and review
                         </Button>
-                      ))}
+                      </AlertDialog.Cancel>
                     </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-3 pt-1">
-                    <Button size="sm" onClick={() => finish(false)} disabled={submitting}>
-                      {submitting ? "Submitting…" : "Confirm and finish"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={cancelSubmission}
-                      disabled={submitting}
-                    >
-                      Cancel and review
-                    </Button>
-                  </div>
-                </div>
-              )}
+                  </AlertDialog.Content>
+                </AlertDialog.Portal>
+              </AlertDialog.Root>
 
               <div className="flex w-full items-center justify-between gap-4">
                 <Button variant="outline" onClick={goPrevious} disabled={index === 0}>

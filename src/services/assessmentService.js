@@ -92,6 +92,17 @@ async function accessToken() {
 }
 
 async function request(path, { method = "GET", body, idempotencyKey } = {}) {
+  let apiUrl;
+
+  try {
+    apiUrl = getApiUrl(path);
+  } catch {
+    throw new AssessmentError(
+      "MathSmart is not configured for this environment. Please tell your teacher.",
+      { code: "api_not_configured" },
+    );
+  }
+
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${await accessToken()}`,
@@ -104,7 +115,7 @@ async function request(path, { method = "GET", body, idempotencyKey } = {}) {
   let response;
 
   try {
-    response = await fetch(getApiUrl(path), {
+    response = await fetch(apiUrl, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),

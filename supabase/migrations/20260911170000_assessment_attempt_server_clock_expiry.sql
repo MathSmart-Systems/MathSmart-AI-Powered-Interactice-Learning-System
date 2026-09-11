@@ -1,7 +1,54 @@
--- Enforce learner grade eligibility and derive scored reports in the database.
--- This is a forward migration: the snapshot/idempotency migrations remain intact.
+-- Enforce server-clock assessment expiry without adding an expired attempt state.
+-- Autosave refuses late writes; submit scores frozen answers already saved before expiry.
+-- The attempt's immutable assessment_payload and started_at define its duration.
 
 begin;
+
+alter table app.assessment_attempts
+  add column if not exists assessment_grade_id_snapshot uuid;
+
+update app.assessment_attempts as attempts
+set assessment_grade_id_snapshot = assessments.grade_id
+from app.assessments
+where assessments.assessment_id = attempts.assessment_id
+  and attempts.assessment_grade_id_snapshot is null;
+
+do $$
+begin
+  if exists (
+    select 1 from app.assessment_attempts
+    where assessment_grade_id_snapshot is null
+  ) then
+    raise exception 'Assessment attempt grade snapshots could not be backfilled';
+  end if;
+end;
+$$;
+
+alter table app.assessment_attempts
+  alter column assessment_grade_id_snapshot set not null;
+
+create or replace function app.prevent_assessment_attempt_timing_changes()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.started_at is distinct from old.started_at
+     or new.assessment_payload is distinct from old.assessment_payload then
+    raise exception 'Assessment attempt timing is immutable'
+      using errcode = '55000';
+  end if;
+  return new;
+end;
+$$;
+
+alter function app.prevent_assessment_attempt_timing_changes() security invoker;
+
+drop trigger if exists assessment_attempts_timing_immutable on app.assessment_attempts;
+create trigger assessment_attempts_timing_immutable
+  before update of started_at, assessment_payload on app.assessment_attempts
+  for each row
+  execute function app.prevent_assessment_attempt_timing_changes();
 
 create or replace function app.start_assessment_attempt(p_assessment_id uuid)
 returns app.assessment_attempts
@@ -191,6 +238,99 @@ begin
 end;
 $$;
 
+create or replace function app.save_assessment_answers(p_attempt_id uuid, p_answers jsonb)
+returns integer
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_student_id uuid;
+  v_student_grade_id uuid;
+  v_assessment_grade_id uuid;
+  v_snapshot_count integer;
+  v_saved integer;
+  v_started_at timestamptz;
+  v_duration_minutes integer;
+  v_now timestamptz;
+begin
+  select student_profiles.student_id, student_profiles.grade_id
+  into v_student_id, v_student_grade_id
+  from app.student_profiles
+  where student_profiles.user_id = (select auth.uid())
+    and (select app.is_active_account())
+  for update;
+
+  if v_student_id is null then
+    raise exception 'Only a learner may answer an assessment' using errcode = '42501';
+  end if;
+
+  select assessment_attempts.question_snapshot_count,
+         assessment_attempts.assessment_grade_id_snapshot,
+         assessment_attempts.started_at,
+         (assessment_attempts.assessment_payload ->> 'duration_minutes')::integer
+  into v_snapshot_count, v_assessment_grade_id, v_started_at, v_duration_minutes
+  from app.assessment_attempts
+  where assessment_attempts.attempt_id = p_attempt_id
+    and assessment_attempts.student_id = v_student_id
+    and assessment_attempts.status = 'in_progress'::app.attempt_status
+  for update;
+
+  if v_snapshot_count is null then
+    raise exception 'No attempt of yours is in progress' using errcode = 'P0002';
+  end if;
+
+  if v_student_grade_id is distinct from v_assessment_grade_id then
+    raise exception 'This assessment is not available for your grade'
+      using errcode = 'P0001';
+  end if;
+
+  -- Evaluate clock only after the attempt row lock. No client timestamp or grace
+  -- period participates in expiry.
+  v_now := clock_timestamp();
+  if v_now >= v_started_at + make_interval(mins => v_duration_minutes) then
+    raise exception 'This assessment attempt has expired'
+      using errcode = 'P0005';
+  end if;
+
+  with submitted as (
+    select
+      (answer.value ->> 'question_id')::uuid as question_id,
+      answer.value -> 'answer' as answer,
+      answer.answer_position
+    from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb))
+      with ordinality as answer(value, answer_position)
+    where answer.value ? 'question_id'
+  ),
+  belonging as (
+    select distinct on (submitted.question_id)
+      submitted.question_id,
+      submitted.answer,
+      submitted.answer_position
+    from submitted
+    join app.assessment_responses as snapshot
+      on snapshot.attempt_id = p_attempt_id
+     and snapshot.question_id = submitted.question_id
+     and snapshot.delivered_position is not null
+     and snapshot.grading_answer_key is not null
+    order by submitted.question_id, submitted.answer_position desc
+  ),
+  saved as (
+    update app.assessment_responses
+    set answer = belonging.answer,
+        is_correct = null
+    from belonging
+    where assessment_responses.attempt_id = p_attempt_id
+      and assessment_responses.question_id = belonging.question_id
+    returning 1
+  )
+  select count(*) into v_saved from saved;
+
+  return v_saved;
+end;
+$$;
+
 -- Report creation is part of scoring. Serializing submissions for one learner
 -- keeps the mutable current learning path deterministic while each attempt's
 -- report is copied into its immutable result_payload in the same transaction.
@@ -211,6 +351,10 @@ declare
   v_assessment_type app.assessment_type;
   v_snapshot_count integer;
   v_raw integer;
+  v_started_at timestamptz;
+  v_duration_minutes integer;
+  v_now timestamptz;
+  v_expired boolean;
   v_max integer;
   v_graded integer;
   v_payload jsonb;
@@ -229,8 +373,11 @@ begin
 
   select assessment_attempts.assessment_type_snapshot,
          assessment_attempts.assessment_grade_id_snapshot,
-         assessment_attempts.question_snapshot_count
-  into v_assessment_type, v_assessment_grade_id, v_snapshot_count
+         assessment_attempts.question_snapshot_count,
+         assessment_attempts.started_at,
+         (assessment_attempts.assessment_payload ->> 'duration_minutes')::integer
+  into v_assessment_type, v_assessment_grade_id, v_snapshot_count,
+       v_started_at, v_duration_minutes
   from app.assessment_attempts
   where assessment_attempts.attempt_id = p_attempt_id
     and assessment_attempts.student_id = v_student_id
@@ -246,12 +393,17 @@ begin
       using errcode = 'P0001';
   end if;
 
+  -- Lock acquired above. Late submit deliberately skips request payload and
+  -- grades answers already persisted by autosave.
+  v_now := clock_timestamp();
+  v_expired := v_now >= v_started_at + make_interval(mins => v_duration_minutes);
+
   if v_assessment_type is null or v_snapshot_count is null or v_snapshot_count < 1 then
     raise exception 'The assessment attempt has no complete question snapshot'
       using errcode = 'P0004';
   end if;
 
-  if p_answers is not null then
+  if p_answers is not null and not v_expired then
     perform app.save_assessment_answers(p_attempt_id, p_answers);
   end if;
 
@@ -432,12 +584,27 @@ begin
 end;
 $$;
 
--- No report writer remains callable after scoring.
-drop function if exists app.store_assessment_result_payload(uuid, jsonb);
-
+comment on column app.assessment_attempts.assessment_grade_id_snapshot is
+  'Immutable start-time assessment grade used to authorize attempt continuation after profile or content changes.';
+comment on function app.prevent_assessment_attempt_timing_changes() is
+  'Rejects changes to started_at and assessment_payload because server-clock expiry uses their start-time values.';
 comment on function app.start_assessment_attempt(uuid) is
-  'Opens or resumes a complete published assessment only when the learner grade matches, with immutable question snapshots.';
+  'Opens an eligible published assessment or resumes it only while the learner still matches its frozen grade.';
+comment on function app.save_assessment_answers(uuid, jsonb) is
+  'Saves answers only before server-clock expiry, while the calling learner matches the open attempt''s frozen grade.';
 comment on function app.submit_assessment_attempt(uuid, jsonb) is
-  'Atomically grades an attempt, generates its diagnostic path, and freezes the attempt-specific canonical report before returning.';
+  'Atomically grades and freezes a report; late submission ignores request answers and uses frozen saved answers.';
+
+revoke all on function app.prevent_assessment_attempt_timing_changes()
+  from public, anon, authenticated, service_role;
+revoke all on function app.start_assessment_attempt(uuid) from public, anon;
+revoke all on function app.save_assessment_answers(uuid, jsonb) from public, anon;
+revoke all on function app.submit_assessment_attempt(uuid, jsonb) from public, anon;
+grant execute on function app.start_assessment_attempt(uuid)
+  to authenticated, service_role;
+grant execute on function app.save_assessment_answers(uuid, jsonb)
+  to authenticated, service_role;
+grant execute on function app.submit_assessment_attempt(uuid, jsonb)
+  to authenticated, service_role;
 
 commit;
