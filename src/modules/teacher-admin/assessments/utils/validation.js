@@ -20,6 +20,11 @@ export const MIN_QUESTIONS_PER_ASSESSMENT = 1;
 
 const VALID_TYPES = new Set(ASSESSMENT_TYPES.map((type) => type.value));
 
+/** Count Unicode code points rather than UTF-16 code units. */
+export function characterLength(value) {
+  return typeof value === "string" ? Array.from(value).length : 0;
+}
+
 /**
  * Validates assessment draft form values.
  *
@@ -35,11 +40,12 @@ export function validateAssessmentDraft(draft = {}) {
   const errors = {};
 
   const title = typeof draft.title === "string" ? draft.title.trim() : "";
+  const titleLength = characterLength(title);
   if (!title) {
     errors.title = "Give the assessment a title.";
-  } else if (title.length < MIN_TITLE_LENGTH) {
+  } else if (titleLength < MIN_TITLE_LENGTH) {
     errors.title = `Use at least ${MIN_TITLE_LENGTH} characters.`;
-  } else if (title.length > MAX_TITLE_LENGTH) {
+  } else if (titleLength > MAX_TITLE_LENGTH) {
     errors.title = `Use at most ${MAX_TITLE_LENGTH} characters.`;
   }
 
@@ -71,7 +77,7 @@ export function validateAssessmentDraft(draft = {}) {
   }
 
   const description = typeof draft.description === "string" ? draft.description.trim() : "";
-  if (description.length > MAX_DESCRIPTION_LENGTH) {
+  if (characterLength(description) > MAX_DESCRIPTION_LENGTH) {
     errors.description = `Use at most ${MAX_DESCRIPTION_LENGTH} characters.`;
   }
 
