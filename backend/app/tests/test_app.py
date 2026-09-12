@@ -338,3 +338,55 @@ def test_an_enrolment_request_cannot_choose_a_role():
 
     assert response.status_code == 422
     assert "role" in response.json()["error"]["fields"]
+
+
+# ---------------------------------------------------------------------------
+# CORS Preflight and Origin Enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_cors_preflight_options_for_teacher_admin_assessments(client):
+    response = client.options(
+        "/api/v1/teacher-admin/assessments",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization, content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert "GET" in response.headers["access-control-allow-methods"]
+    assert "OPTIONS" in response.headers["access-control-allow-methods"]
+
+
+def test_cors_preflight_refuses_unconfigured_origin(client):
+    response = client.options(
+        "/api/v1/teacher-admin/assessments",
+        headers={
+            "Origin": "http://unauthorized-origin.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_authenticated_get_teacher_admin_assessments_carries_cors_headers(client):
+    response = client.get(
+        "/api/v1/teacher-admin/assessments",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Authorization": "Bearer adviser-token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert "x-request-id" in response.headers["access-control-expose-headers"].lower()
+    assert response.json()["data"] == []
+

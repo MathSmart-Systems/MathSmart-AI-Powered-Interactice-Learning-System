@@ -22,6 +22,7 @@ def build(monkeypatch, **overrides):
         "GROQ_MODEL",
         "GROQ_ENABLED",
         "GROQ_TIMEOUT_SECONDS",
+        "CORS_ORIGINS",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in {**BASE_ENV, **overrides}.items():
@@ -71,3 +72,34 @@ def test_groq_credential_never_renders(monkeypatch):
 
     assert "gsk_example" not in repr(settings)
     assert "gsk_example" not in str(settings)
+
+
+def test_cors_origins_defaults_to_local_nextjs_ports(monkeypatch):
+    settings = build(monkeypatch)
+
+    assert settings.allowed_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def test_cors_origins_parses_comma_separated_env(monkeypatch):
+    settings = build(
+        monkeypatch,
+        CORS_ORIGINS="http://localhost:3000, https://staging.mathsmart.dev",
+    )
+
+    assert settings.allowed_origins == [
+        "http://localhost:3000",
+        "https://staging.mathsmart.dev",
+    ]
+
+
+def test_cors_origins_parses_json_list_env(monkeypatch):
+    settings = build(
+        monkeypatch,
+        CORS_ORIGINS='["http://localhost:3000", "https://app.mathsmart.dev"]',
+    )
+
+    assert settings.allowed_origins == [
+        "http://localhost:3000",
+        "https://app.mathsmart.dev",
+    ]
+
