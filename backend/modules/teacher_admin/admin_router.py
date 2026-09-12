@@ -46,6 +46,7 @@ from modules.teacher_admin.admin_schemas import (
     GradeDraft,
     ModuleChanges,
     ModuleDraft,
+    PublicationStatus,
     QuestionChanges,
     QuestionDraft,
     SectionChanges,
@@ -105,13 +106,18 @@ def _envelope(rows: list[Any], resource: Resource, total: int, page: int, size: 
 
 
 async def _list(
-    connection: Any, resource: Resource, search: str | None, page: int, size: int
+    connection: Any,
+    resource: Resource,
+    search: str | None,
+    page: int,
+    size: int,
+    status: str | None = None,
 ) -> dict[str, Any]:
     offset = (page - 1) * size
     rows = await repository.listing(
-        connection, resource, search=search, limit=size, offset=offset
+        connection, resource, search=search, limit=size, offset=offset, status=status
     )
-    total = await repository.listing_total(connection, resource, search=search)
+    total = await repository.listing_total(connection, resource, search=search, status=status)
     return _envelope(list(rows), resource, total, page, size)
 
 
@@ -350,10 +356,24 @@ async def list_assessment_drafts(
     _actor: TeacherAdmin,
     connection: ActorDb,
     search: Annotated[str | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
+    status: PublicationStatus | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    return await _list(connection, ASSESSMENTS, search, page, page_size)
+    """Assessments, each row carrying how many questions it holds.
+
+    The count decides whether a row can be published at all, so a listing that
+    omitted it would have to disable publication everywhere or guess.
+    """
+    envelope = await _list(
+        connection, ASSESSMENTS, search, page, page_size, status.value if status else None
+    )
+    counts = await repository.assessment_question_counts(
+        connection, [UUID(row["assessment_id"]) for row in envelope["data"]]
+    )
+    for row in envelope["data"]:
+        row["question_count"] = counts.get(UUID(row["assessment_id"]), 0)
+    return envelope
 
 
 @router.post("/teacher-admin/assessments", status_code=201)
@@ -367,7 +387,16 @@ async def create_assessment(
 async def read_assessment_draft(
     _actor: TeacherAdmin, connection: ActorDb, assessment_id: UUID
 ) -> dict[str, Any]:
-    return await _read(connection, ASSESSMENTS, assessment_id)
+    """One assessment, with its membership in delivery order.
+
+    Membership replacement is whole-list, so an editor that could not read the
+    current order would erase it on its first save.
+    """
+    payload = await _read(connection, ASSESSMENTS, assessment_id)
+    question_ids = await repository.assessment_question_ids(connection, assessment_id)
+    payload["data"]["question_ids"] = [str(question_id) for question_id in question_ids]
+    payload["data"]["question_count"] = len(question_ids)
+    return payload
 
 
 @router.patch("/teacher-admin/assessments/{assessment_id}")
@@ -412,6 +441,7 @@ async def replace_assessment_questions(
         "data": {
             **_row(row, ASSESSMENTS),
             "question_ids": [str(question_id) for question_id in body.question_ids],
+            "question_count": len(body.question_ids),
         }
     }
 
@@ -420,16 +450,33 @@ async def replace_assessment_questions(
 async def publish_assessment(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, assessment_id: UUID
 ) -> dict[str, Any]:
-    """Publish an assessment, once it has questions to deliver.
+    """Publish an assessment, once it is safe to deliver.
 
     An empty assessment would hand a learner nothing to answer and then score
-    them zero, so publication is refused until it has membership.
+    them zero. A question that is still a draft, or a grade that is no longer
+    active, would reach the learner just as broken. So publication is refused
+    until all three hold, and the refusal names the one that failed.
     """
-    total = await repository.assessment_question_count(connection, assessment_id)
-    if total < 1:
+    readiness = await repository.assessment_publication_readiness(connection, assessment_id)
+    if readiness is None:
+        raise ApiError(404, "No assessment was found")
+
+    if readiness["question_total"] < 1:
         raise ApiError(
             422,
             "An assessment needs at least one question before it can be published",
+            code="assessment_not_publishable",
+        )
+    if readiness["unpublished_total"] > 0:
+        raise ApiError(
+            422,
+            "Every question in the assessment must be published first",
+            code="assessment_not_publishable",
+        )
+    if not readiness["grade_is_active"]:
+        raise ApiError(
+            422,
+            "The assessment's grade level is not active",
             code="assessment_not_publishable",
         )
 
@@ -438,7 +485,12 @@ async def publish_assessment(
     )
     if row is None:
         raise ApiError(404, "No assessment was found")
-    return {"data": _row(row, ASSESSMENTS)}
+    return {
+        "data": {
+            **_row(row, ASSESSMENTS),
+            "question_count": readiness["question_total"],
+        }
+    }
 
 
 # ---------------------------------------------------------------------------

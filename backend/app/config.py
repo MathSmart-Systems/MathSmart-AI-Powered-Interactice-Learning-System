@@ -38,6 +38,24 @@ class Settings(BaseSettings):
     groq_model: str | None = None
     groq_timeout_seconds: float = 8.0
 
+    # CORS allowed origins. Deliberately explicit: credentials and authorization
+    # headers must not be accepted from arbitrary origins.
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        raw = self.cors_origins.strip()
+        if raw.startswith("[") and raw.endswith("]"):
+            import json
+
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(origin).strip() for origin in parsed if str(origin).strip()]
+            except Exception:
+                pass
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
     @model_validator(mode="after")
     def _groq_is_completely_configured_or_off(self) -> Settings:
         if not self.groq_enabled:

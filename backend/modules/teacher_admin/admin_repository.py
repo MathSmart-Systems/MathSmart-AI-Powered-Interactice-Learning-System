@@ -165,11 +165,22 @@ def _search_clause(resource: Resource) -> str:
     return f" and ($1::text is null or {matches})"
 
 
+def _status_clause(resource: Resource, placeholder: str) -> str:
+    """The optional publication-status filter, where the resource has one.
+
+    A resource without a status column still accepts the parameter, so every
+    listing keeps one signature; the clause is then a no-op.
+    """
+    if "status" not in resource.readable:
+        return f" and ({placeholder}::text is null or true)"
+    return f" and ({placeholder}::text is null or {resource.table}.status::text = {placeholder})"
+
+
 def list_sql(resource: Resource) -> str:
     columns = ", ".join(f"{resource.table}.{column}" for column in resource.readable)
     return (
         f"select {columns}\nfrom app.{resource.table}\n"
-        f"where true{_search_clause(resource)}\n"
+        f"where true{_search_clause(resource)}{_status_clause(resource, '$4')}\n"
         f"order by {resource.table}.{resource.order_by}\nlimit $2 offset $3"
     )
 
@@ -177,7 +188,7 @@ def list_sql(resource: Resource) -> str:
 def count_sql(resource: Resource) -> str:
     return (
         f"select count(*) as total\nfrom app.{resource.table}\n"
-        f"where true{_search_clause(resource)}"
+        f"where true{_search_clause(resource)}{_status_clause(resource, '$2')}"
     )
 
 
@@ -310,10 +321,48 @@ select $1, member.question_id, member.position
 from unnest($2::uuid[]) with ordinality as member(question_id, position)
 """
 
-_MEMBERSHIP_COUNT_SQL = """
-select count(*) as total
+#: The ordered membership of one assessment. The authoring client needs the
+#: existing order before it can replace it, because the replace is whole-list.
+_MEMBERSHIP_IDS_SQL = """
+select assessment_questions.question_id
 from app.assessment_questions
 where assessment_questions.assessment_id = $1
+order by assessment_questions.position
+"""
+
+#: Membership sizes for a page of assessments, in one round trip. A listing
+#: needs the count per row to show whether an assessment can be published.
+_MEMBERSHIP_COUNTS_SQL = """
+select
+  assessment_questions.assessment_id,
+  count(*) as question_total
+from app.assessment_questions
+where assessment_questions.assessment_id = any($1::uuid[])
+group by assessment_questions.assessment_id
+"""
+
+#: Publication preconditions, gathered in one query so the refusal can name the
+#: one that failed. An unpublished question, or an inactive grade, would reach a
+#: learner as a broken assessment. duration_minutes needs no check here: the
+#: table constrains it to 1..480 and forbids null.
+_PUBLICATION_READINESS_SQL = """
+select
+  grade_levels.is_active as grade_is_active,
+  (
+    select count(*)
+    from app.assessment_questions
+    where assessment_questions.assessment_id = assessments.assessment_id
+  ) as question_total,
+  (
+    select count(*)
+    from app.assessment_questions
+    join app.questions using (question_id)
+    where assessment_questions.assessment_id = assessments.assessment_id
+      and questions.status <> 'published'
+  ) as unpublished_total
+from app.assessments
+join app.grade_levels using (grade_id)
+where assessments.assessment_id = $1
 """
 
 _SET_ACCOUNT_STATUS_SQL = "select * from app.set_account_status($1, $2, $3)"
@@ -321,15 +370,25 @@ _RESET_DIAGNOSTIC_SQL = "select * from app.reset_diagnostic($1, $2, $3)"
 
 
 async def listing(
-    connection: ActorConnection, resource: Resource, *, search: str | None, limit: int, offset: int
+    connection: ActorConnection,
+    resource: Resource,
+    *,
+    search: str | None,
+    limit: int,
+    offset: int,
+    status: str | None = None,
 ) -> list[Any]:
-    return await connection.fetch(list_sql(resource), search, limit, offset)
+    return await connection.fetch(list_sql(resource), search, limit, offset, status)
 
 
 async def listing_total(
-    connection: ActorConnection, resource: Resource, *, search: str | None
+    connection: ActorConnection,
+    resource: Resource,
+    *,
+    search: str | None,
+    status: str | None = None,
 ) -> int:
-    return await connection.fetchval(count_sql(resource), search) or 0
+    return await connection.fetchval(count_sql(resource), search, status) or 0
 
 
 async def read(connection: ActorConnection, resource: Resource, key: UUID) -> Any:
@@ -422,8 +481,28 @@ async def replace_assessment_questions(
         await connection.execute(_MEMBERSHIP_INSERT_SQL, assessment_id, question_ids)
 
 
-async def assessment_question_count(connection: ActorConnection, assessment_id: UUID) -> int:
-    return await connection.fetchval(_MEMBERSHIP_COUNT_SQL, assessment_id) or 0
+async def assessment_question_ids(
+    connection: ActorConnection, assessment_id: UUID
+) -> list[UUID]:
+    """The assessment's questions, in delivery order."""
+    rows = await connection.fetch(_MEMBERSHIP_IDS_SQL, assessment_id)
+    return [row["question_id"] for row in rows]
+
+
+async def assessment_question_counts(
+    connection: ActorConnection, assessment_ids: list[UUID]
+) -> dict[UUID, int]:
+    """Membership sizes for a page of assessments. Absent means zero."""
+    if not assessment_ids:
+        return {}
+    rows = await connection.fetch(_MEMBERSHIP_COUNTS_SQL, assessment_ids)
+    return {row["assessment_id"]: row["question_total"] for row in rows}
+
+
+async def assessment_publication_readiness(
+    connection: ActorConnection, assessment_id: UUID
+) -> Any:
+    return await connection.fetchrow(_PUBLICATION_READINESS_SQL, assessment_id)
 
 
 async def reset_diagnostic(
