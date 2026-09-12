@@ -21,10 +21,15 @@ select
   user_profiles.full_name,
   student_profiles.grade_id,
   student_profiles.section_id,
+  grade_levels.name as grade_name,
+  sections.name as section_name,
+  student_profiles.school_name,
   student_profiles.monitoring_status,
   student_profiles.diagnostic_status
 from app.student_profiles
 join app.user_profiles on user_profiles.user_id = student_profiles.user_id
+left join app.sections on sections.section_id = student_profiles.section_id
+left join app.grade_levels on grade_levels.grade_id = student_profiles.grade_id
 where student_profiles.user_id = $1
 """
 
@@ -36,10 +41,15 @@ select
   user_profiles.full_name,
   student_profiles.grade_id,
   student_profiles.section_id,
+  grade_levels.name as grade_name,
+  sections.name as section_name,
+  student_profiles.school_name,
   student_profiles.monitoring_status,
   student_profiles.diagnostic_status
 from app.student_profiles
 join app.user_profiles on user_profiles.user_id = student_profiles.user_id
+left join app.sections on sections.section_id = student_profiles.section_id
+left join app.grade_levels on grade_levels.grade_id = student_profiles.grade_id
 where ($1::uuid is null or student_profiles.grade_id = $1)
   and ($2::uuid is null or student_profiles.section_id = $2)
 order by student_profiles.learner_id
@@ -62,10 +72,15 @@ select
   user_profiles.full_name,
   student_profiles.grade_id,
   student_profiles.section_id,
+  grade_levels.name as grade_name,
+  sections.name as section_name,
+  student_profiles.school_name,
   student_profiles.monitoring_status,
   student_profiles.diagnostic_status
 from app.student_profiles
 join app.user_profiles on user_profiles.user_id = student_profiles.user_id
+left join app.sections on sections.section_id = student_profiles.section_id
+left join app.grade_levels on grade_levels.grade_id = student_profiles.grade_id
 where student_profiles.student_id = $1
 """
 

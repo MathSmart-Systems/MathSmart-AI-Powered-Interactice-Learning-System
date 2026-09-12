@@ -1,10 +1,13 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { STUDENT_WORKSPACE } from "@/modules/student";
+import { Suspense } from "react";
+
+import { ProfileSkeleton, StudentProfile } from "@/modules/student/profile";
 
 export const metadata = { title: "Profile | MathSmart" };
 
 export default function StudentProfilePage() {
   return (
-    <WorkspacePlaceholder title="Profile" workspaceName={STUDENT_WORKSPACE.name} />
+    <Suspense fallback={<ProfileSkeleton />}>
+      <StudentProfile />
+    </Suspense>
   );
 }
