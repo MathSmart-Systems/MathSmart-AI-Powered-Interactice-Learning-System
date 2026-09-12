@@ -52,7 +52,8 @@ class Settings(BaseSettings):
                 parsed = json.loads(raw)
                 if isinstance(parsed, list):
                     return [str(origin).strip() for origin in parsed if str(origin).strip()]
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
+                # Fallback to comma-separated parsing if JSON parsing fails
                 pass
         return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
