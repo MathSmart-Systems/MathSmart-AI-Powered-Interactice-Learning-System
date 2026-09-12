@@ -1,10 +1,15 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { TEACHER_ADMIN_WORKSPACE } from "@/modules/teacher-admin";
+import { Suspense } from "react";
+
+import { QuestionBankSkeleton, QuestionBankView } from "@/modules/teacher-admin/question-bank";
 
 export const metadata = { title: "Question Bank | MathSmart" };
 
-export default function TeacherQuestionBankPage() {
+export default async function TeacherQuestionBankPage({ searchParams }) {
+  const params = await searchParams;
+
   return (
-    <WorkspacePlaceholder title="Question Bank" workspaceName={TEACHER_ADMIN_WORKSPACE.name} />
+    <Suspense fallback={<QuestionBankSkeleton />}>
+      <QuestionBankView search={params?.search} page={params?.page} />
+    </Suspense>
   );
 }
