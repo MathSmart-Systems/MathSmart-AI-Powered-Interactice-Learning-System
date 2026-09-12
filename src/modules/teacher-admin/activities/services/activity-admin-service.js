@@ -59,11 +59,12 @@ function request(path, options) {
 }
 
 /**
- * One page of activities. Search, status, and paging are handled on the server.
+ * One page of activities. Search, status, module, and paging are handled on the server.
  *
  * @param {object} [params]
  * @param {string} [params.search] - Case-insensitive title search
  * @param {string|null} [params.status] - Publication status filter (draft, published, archived)
+ * @param {string|null} [params.moduleId] - Optional learning module ID filter
  * @param {number} [params.page] - 1-based page index
  * @param {number} [params.pageSize] - Number of records per page
  * @param {string|null} [params.token] - Optional explicit auth token override
@@ -72,12 +73,13 @@ function request(path, options) {
 export function listActivities({
   search = "",
   status = null,
+  moduleId = null,
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   token = null,
 } = {}) {
   return request(
-    `/teacher-admin/activities?${pageQuery({ search, status, page, pageSize })}`,
+    `/teacher-admin/activities?${pageQuery({ search, status, moduleId, page, pageSize })}`,
     { token }
   );
 }

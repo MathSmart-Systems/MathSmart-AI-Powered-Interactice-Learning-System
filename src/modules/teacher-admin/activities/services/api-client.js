@@ -93,8 +93,16 @@ export function readMeta(body, fallbackPageSize = DEFAULT_PAGE_SIZE) {
  *
  * An absent status is omitted rather than sent empty: the API types it as an
  * enum, and `status=` would be a 422 rather than "no filter".
+ *
+ * @param {object} [params]
+ * @param {string} [params.search]
+ * @param {number} [params.page]
+ * @param {number} [params.pageSize]
+ * @param {string|null} [params.status]
+ * @param {string|null} [params.moduleId]
+ * @returns {string}
  */
-export function pageQuery({ search, page, pageSize, status = null } = {}) {
+export function pageQuery({ search, page, pageSize, status = null, moduleId = null } = {}) {
   const query = new URLSearchParams();
   const trimmed = typeof search === "string" ? search.trim() : "";
 
@@ -103,6 +111,9 @@ export function pageQuery({ search, page, pageSize, status = null } = {}) {
   }
   if (status) {
     query.set("status", status);
+  }
+  if (moduleId) {
+    query.set("module_id", moduleId);
   }
   if (page) {
     query.set("page", String(page));

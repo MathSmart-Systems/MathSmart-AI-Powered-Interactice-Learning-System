@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Search, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -79,21 +79,33 @@ export function TeacherActivitiesView() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Load modules for lookup and dropdowns
+  // Load modules for lookup and dropdowns across all available pages
   useEffect(() => {
     let active = true;
 
     async function load() {
       setModuleError(null);
-      const result = await listModules({ pageSize: 100 });
-      if (!active) {
-        return;
-      }
-      if (result.ok && Array.isArray(result.data)) {
-        setModules(result.data);
+      let allModules = [];
+      let currentPage = 1;
+      let totalPages = 1;
+
+      do {
+        const result = await listModules({ page: currentPage, pageSize: 100 });
+        if (!active) {
+          return;
+        }
+        if (!result.ok || !Array.isArray(result.data)) {
+          setModuleError(result.error || "Failed to load learning modules.");
+          return;
+        }
+        allModules = allModules.concat(result.data);
+        totalPages = result.meta?.totalPages || 1;
+        currentPage += 1;
+      } while (currentPage <= totalPages);
+
+      if (active) {
+        setModules(allModules);
         setModuleError(null);
-      } else {
-        setModuleError(result.error || "Failed to load learning modules.");
       }
     }
 
@@ -103,7 +115,7 @@ export function TeacherActivitiesView() {
     };
   }, [moduleReloadIndex]);
 
-  // Load activities from server
+  // Load activities from server with search, status, and module filters
   useEffect(() => {
     let active = true;
 
@@ -112,6 +124,7 @@ export function TeacherActivitiesView() {
       const result = await listActivities({
         search: appliedSearch,
         status: status === "all" ? null : status,
+        moduleId: selectedModuleId === "all" ? null : selectedModuleId,
         page,
         pageSize: DEFAULT_PAGE_SIZE,
       });
@@ -134,15 +147,7 @@ export function TeacherActivitiesView() {
     return () => {
       active = false;
     };
-  }, [appliedSearch, status, page, reloadIndex]);
-
-  // Client-side module filtering (in addition to server search/status)
-  const filteredActivities = useMemo(() => {
-    if (selectedModuleId === "all") {
-      return activities;
-    }
-    return activities.filter((act) => act.module_id === selectedModuleId);
-  }, [activities, selectedModuleId]);
+  }, [appliedSearch, status, selectedModuleId, page, reloadIndex]);
 
   const hasSearchOrFilter = Boolean(appliedSearch || status !== "all" || selectedModuleId !== "all");
 
@@ -311,7 +316,7 @@ export function TeacherActivitiesView() {
 
       {/* Main List Grid */}
       <ActivityList
-        activities={filteredActivities}
+        activities={activities}
         modules={modules}
         isLoading={isLoading}
         hasSearchOrFilter={hasSearchOrFilter}

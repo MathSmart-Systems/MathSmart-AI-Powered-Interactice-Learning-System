@@ -176,20 +176,32 @@ def _status_clause(resource: Resource, placeholder: str) -> str:
     return f" and ({placeholder}::text is null or {resource.table}.status::text = {placeholder})"
 
 
+def _module_clause(resource: Resource, placeholder: str) -> str:
+    """The optional learning module filter, where the resource has a module_id column."""
+    if "module_id" not in resource.readable:
+        return f" and ({placeholder}::uuid is null or true)"
+    return f" and ({placeholder}::uuid is null or {resource.table}.module_id = {placeholder})"
+
+
 def list_sql(resource: Resource) -> str:
     columns = ", ".join(f"{resource.table}.{column}" for column in resource.readable)
+    where = (
+        f"where true{_search_clause(resource)}"
+        f"{_status_clause(resource, '$4')}{_module_clause(resource, '$5')}\n"
+    )
     return (
         f"select {columns}\nfrom app.{resource.table}\n"
-        f"where true{_search_clause(resource)}{_status_clause(resource, '$4')}\n"
+        f"{where}"
         f"order by {resource.table}.{resource.order_by}\nlimit $2 offset $3"
     )
 
 
 def count_sql(resource: Resource) -> str:
-    return (
-        f"select count(*) as total\nfrom app.{resource.table}\n"
-        f"where true{_search_clause(resource)}{_status_clause(resource, '$2')}"
+    where = (
+        f"where true{_search_clause(resource)}"
+        f"{_status_clause(resource, '$2')}{_module_clause(resource, '$3')}"
     )
+    return f"select count(*) as total\nfrom app.{resource.table}\n{where}"
 
 
 def read_sql(resource: Resource) -> str:
@@ -377,8 +389,9 @@ async def listing(
     limit: int,
     offset: int,
     status: str | None = None,
+    module_id: UUID | None = None,
 ) -> list[Any]:
-    return await connection.fetch(list_sql(resource), search, limit, offset, status)
+    return await connection.fetch(list_sql(resource), search, limit, offset, status, module_id)
 
 
 async def listing_total(
@@ -387,8 +400,9 @@ async def listing_total(
     *,
     search: str | None,
     status: str | None = None,
+    module_id: UUID | None = None,
 ) -> int:
-    return await connection.fetchval(count_sql(resource), search, status) or 0
+    return await connection.fetchval(count_sql(resource), search, status, module_id) or 0
 
 
 async def read(connection: ActorConnection, resource: Resource, key: UUID) -> Any:

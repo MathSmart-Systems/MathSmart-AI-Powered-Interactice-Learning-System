@@ -188,6 +188,15 @@ describe("pageQuery", () => {
     const query = pageQuery({ search: "  integers  ", status: "draft", page: 1, pageSize: 10 });
     assert.equal(query, "search=integers&status=draft&page=1&page_size=10");
   });
+
+  it("includes module_id when provided", () => {
+    const query = pageQuery({
+      moduleId: "4a39d286-e93e-4e75-9644-b873fcac185c",
+      page: 1,
+      pageSize: 20,
+    });
+    assert.equal(query, "module_id=4a39d286-e93e-4e75-9644-b873fcac185c&page=1&page_size=20");
+  });
 });
 
 describe("readMeta", () => {

@@ -274,6 +274,22 @@ def test_a_teacher_admin_filters_activities_by_status():
     assert any("status::text" in call[0] and "draft" in call[1] for call in connection.calls)
 
 
+def test_a_teacher_admin_filters_activities_by_module():
+    """Verify that activities can be filtered by their parent learning module ID."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/teacher-admin/activities?module_id={MODULE}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert any(
+        "activities.module_id =" in call[0] and MODULE in call[1]
+        for call in connection.calls
+    )
+
+
 def test_an_activity_draft_can_be_created():
     """Verify that a new activity draft can be created with required attributes."""
     connection = admin_connection(**{"returning": ACTIVITY_ROW})

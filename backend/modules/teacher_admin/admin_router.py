@@ -112,12 +112,21 @@ async def _list(
     page: int,
     size: int,
     status: str | None = None,
+    module_id: UUID | None = None,
 ) -> dict[str, Any]:
     offset = (page - 1) * size
     rows = await repository.listing(
-        connection, resource, search=search, limit=size, offset=offset, status=status
+        connection,
+        resource,
+        search=search,
+        limit=size,
+        offset=offset,
+        status=status,
+        module_id=module_id,
     )
-    total = await repository.listing_total(connection, resource, search=search, status=status)
+    total = await repository.listing_total(
+        connection, resource, search=search, status=status, module_id=module_id
+    )
     return _envelope(list(rows), resource, total, page, size)
 
 
@@ -259,12 +268,19 @@ async def list_activities(
     connection: ActorDb,
     search: Annotated[str | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
     status: PublicationStatus | None = None,
+    module_id: UUID | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    """List activity definitions with optional search, status filtering, and pagination."""
+    """List activity definitions with search, status, and module filters."""
     return await _list(
-        connection, ACTIVITIES, search, page, page_size, status.value if status else None
+        connection,
+        ACTIVITIES,
+        search,
+        page,
+        page_size,
+        status.value if status else None,
+        module_id,
     )
 
 
