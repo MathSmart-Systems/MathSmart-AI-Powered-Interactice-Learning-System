@@ -163,9 +163,12 @@ function QuestionManager({ assessment, onClose, onSaved }) {
 
   function add(questionId) {
     setSaveError(null);
-    setQuestionIds((previous) =>
-      previous.includes(questionId) ? previous : [...previous, questionId]
-    );
+    setQuestionIds((previous) => {
+      if (previous.length >= MAX_QUESTIONS_PER_ASSESSMENT) {
+        return previous;
+      }
+      return previous.includes(questionId) ? previous : [...previous, questionId];
+    });
   }
 
   function remove(questionId) {
@@ -315,7 +318,7 @@ function QuestionManager({ assessment, onClose, onSaved }) {
                       variant={chosen ? "ghost" : "outline"}
                       size="sm"
                       className="shrink-0"
-                      disabled={chosen}
+                      disabled={chosen || questionIds.length >= MAX_QUESTIONS_PER_ASSESSMENT}
                       onClick={() => add(question.question_id)}
                     >
                       {chosen ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}

@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 /** A `fetch` that answers with one canned reply, and records the call. */
-function stubFetch({ status = 200, body = null, throws = null, noJson = false } = {}) {
+function stubFetch({ status = 200, body = null, throws = null, noJson = false, jsonThrows = null } = {}) {
   const calls = [];
 
   globalThis.fetch = async (url, options) => {
@@ -40,6 +40,9 @@ function stubFetch({ status = 200, body = null, throws = null, noJson = false } 
       status,
       ok: status >= 200 && status < 300,
       json: async () => {
+        if (jsonThrows) {
+          throw jsonThrows;
+        }
         if (noJson) {
           throw new SyntaxError("Unexpected token < in JSON");
         }
@@ -206,6 +209,17 @@ describe("createApiClient", () => {
 
   it("reports a timeout as a timeout, not as an unreachable server", async () => {
     stubFetch({ throws: Object.assign(new Error("timed out"), { name: "TimeoutError" }) });
+    const client = createApiClient({ baseUrl: BASE, getAccessToken: async () => "token" });
+
+    const result = await client.request("/teacher-admin/assessments");
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, CLIENT_FAILURE.TIMEOUT);
+    assert.match(result.error, /took too long/);
+  });
+
+  it("reports a response json timeout as a timeout", async () => {
+    stubFetch({ jsonThrows: Object.assign(new Error("timed out reading json"), { name: "TimeoutError" }) });
     const client = createApiClient({ baseUrl: BASE, getAccessToken: async () => "token" });
 
     const result = await client.request("/teacher-admin/assessments");
