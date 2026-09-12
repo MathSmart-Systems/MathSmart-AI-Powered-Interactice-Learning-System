@@ -1,10 +1,15 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { TEACHER_ADMIN_WORKSPACE } from "@/modules/teacher-admin";
+import { Suspense } from "react";
+
+import { LearningModulesSkeleton, LearningModulesView } from "@/modules/teacher-admin/learning-modules";
 
 export const metadata = { title: "Learning Modules | MathSmart" };
 
-export default function TeacherLearningModulesPage() {
+export default async function TeacherLearningModulesPage({ searchParams }) {
+  const params = await searchParams;
+
   return (
-    <WorkspacePlaceholder title="Learning Modules" workspaceName={TEACHER_ADMIN_WORKSPACE.name} />
+    <Suspense fallback={<LearningModulesSkeleton />}>
+      <LearningModulesView search={params?.search} page={params?.page} />
+    </Suspense>
   );
 }
