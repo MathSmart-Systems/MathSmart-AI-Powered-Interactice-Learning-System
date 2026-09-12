@@ -178,10 +178,12 @@ export function createApiClient({
 
     let parsed = null;
     let parseFailed = false;
+    let parseError = null;
     try {
       parsed = await response.json();
-    } catch {
+    } catch (caught) {
       parseFailed = true;
+      parseError = caught;
     }
 
     if (!response.ok) {
@@ -195,10 +197,13 @@ export function createApiClient({
     }
 
     if (parseFailed || parsed?.data === undefined) {
+      const timedOut = parseError?.name === "TimeoutError" || parseError?.name === "AbortError";
       return failure({
         status: response.status,
-        code: CLIENT_FAILURE.MALFORMED,
-        error: "The server's reply could not be read.",
+        code: timedOut ? CLIENT_FAILURE.TIMEOUT : CLIENT_FAILURE.MALFORMED,
+        error: timedOut
+          ? "The request took too long. Check your connection and try again."
+          : "The server's reply could not be read.",
       });
     }
 

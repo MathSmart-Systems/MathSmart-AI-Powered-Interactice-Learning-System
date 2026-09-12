@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   MAX_QUESTIONS_PER_ASSESSMENT,
   canPublishAssessment,
+  characterLength,
   validateAssessmentDraft,
   validateQuestionMembership,
 } from "../utils/validation.js";
@@ -26,6 +27,35 @@ describe("validateAssessmentDraft", () => {
   it("refuses a missing or too-short title", () => {
     assert.ok(validateAssessmentDraft({ ...VALID_DRAFT, title: "" }).errors.title);
     assert.ok(validateAssessmentDraft({ ...VALID_DRAFT, title: "A" }).errors.title);
+  });
+
+  it("handles supplementary Unicode code points correctly for title and description", () => {
+    // 📐 is a supplementary character: UTF-16 .length is 2, but code point length is 1.
+    assert.equal(characterLength("📐"), 1);
+    assert.equal(characterLength("A📐B"), 3);
+
+    // 1 supplementary character is 1 code point, so it should fail min length (2).
+    const tooShortUni = validateAssessmentDraft({ ...VALID_DRAFT, title: "📐" });
+    assert.ok(tooShortUni.errors.title);
+
+    // 2 supplementary characters is 2 code points, so it should pass min length (2).
+    const validShortUni = validateAssessmentDraft({ ...VALID_DRAFT, title: "📐📐" });
+    assert.equal(validShortUni.isValid, true);
+
+    // 300 supplementary characters (600 code units) is 300 code points, passing max length.
+    const maxUni = validateAssessmentDraft({ ...VALID_DRAFT, title: "📐".repeat(300) });
+    assert.equal(maxUni.isValid, true);
+
+    // 301 supplementary characters is 301 code points, failing max length.
+    const tooLongUni = validateAssessmentDraft({ ...VALID_DRAFT, title: "📐".repeat(301) });
+    assert.ok(tooLongUni.errors.title);
+
+    // Description with 4001 supplementary characters fails max description length.
+    const tooLongDesc = validateAssessmentDraft({
+      ...VALID_DRAFT,
+      description: "📐".repeat(4001),
+    });
+    assert.ok(tooLongDesc.errors.description);
   });
 
   it("refuses a title of only whitespace", () => {
