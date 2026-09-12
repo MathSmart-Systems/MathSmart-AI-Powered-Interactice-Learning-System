@@ -74,10 +74,19 @@ export async function readGradesSections() {
   ]);
 
   const advisers = {};
-  if (usersRes.ok) {
+  if (usersRes.ok && Array.isArray(usersRes.data)) {
     for (const user of usersRes.data) {
-      if (user.role === "teacher_admin" && user.account_status === "active" && user.full_name) {
-        advisers[user.user_id] = user.full_name;
+      // Only include users who have all required fields and are valid teacher_admin accounts
+      if (
+        user &&
+        user.user_id &&
+        user.role === "teacher_admin" &&
+        user.account_status === "active" &&
+        user.full_name &&
+        typeof user.full_name === 'string' &&
+        user.full_name.trim()
+      ) {
+        advisers[String(user.user_id)] = user.full_name.trim();
       }
     }
   }

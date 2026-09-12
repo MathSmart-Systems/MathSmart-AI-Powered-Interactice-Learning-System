@@ -42,12 +42,23 @@ function SectionFormFields({
 
   function handleSubmit(event) {
     event.preventDefault();
+    
+    // Validate adviser_id if one was selected
+    if (adviserId && adviserId.trim()) {
+      const adviserExists = adviserOptions.some(([id]) => id === adviserId);
+      if (!adviserExists) {
+        // This shouldn't happen normally, but protects against stale data
+        alert("The selected adviser is no longer available. Please choose another or leave unassigned.");
+        return;
+      }
+    }
+    
     const payload = {
       name: name.trim(),
       grade_id: gradeId,
       is_active: isActive,
     };
-    if (adviserId) {
+    if (adviserId && adviserId.trim()) {
       payload.adviser_id = adviserId;
     }
     onSubmit(payload);
@@ -114,6 +125,11 @@ function SectionFormFields({
               </option>
             ))}
           </select>
+          {adviserOptions.length === 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              No active teacher/admin accounts available. You can assign an adviser later.
+            </p>
+          )}
         </div>
 
         <label className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -162,19 +178,41 @@ export function SectionFormDialog({
   busy,
   error,
 }) {
+  // Validate that grades exist before allowing section creation
+  const hasGrades = grades && grades.length > 0;
+  const noGradesError = !hasGrades && open ? "Please create at least one grade level before adding sections." : null;
+  
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:rounded-xl">
-        <SectionFormFields
-          key={section?.section_id ?? `new-${open}`}
-          record={section}
-          grades={grades}
-          advisers={advisers}
-          onCancel={() => onOpenChange(false)}
-          onSubmit={onSubmit}
-          busy={busy}
-          error={error}
-        />
+        {noGradesError ? (
+          <div className="py-6">
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg font-semibold">
+                {section ? "Edit Section" : "Add Section"}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {noGradesError}
+            </p>
+            <DialogFooter className="mt-4">
+              <Button type="button" onClick={() => onOpenChange(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <SectionFormFields
+            key={section?.section_id ?? `new-${open}`}
+            record={section}
+            grades={grades}
+            advisers={advisers}
+            onCancel={() => onOpenChange(false)}
+            onSubmit={onSubmit}
+            busy={busy}
+            error={error}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

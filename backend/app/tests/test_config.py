@@ -71,3 +71,15 @@ def test_groq_credential_never_renders(monkeypatch):
 
     assert "gsk_example" not in repr(settings)
     assert "gsk_example" not in str(settings)
+
+
+def test_cors_defaults_to_both_local_development_origins(monkeypatch):
+    settings = build(monkeypatch)
+
+    assert settings.cors_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def test_cors_origins_can_be_set_from_the_environment(monkeypatch):
+    settings = build(monkeypatch, CORS_ORIGINS='["https://mathsmart.example.com"]')
+
+    assert settings.cors_origins == ["https://mathsmart.example.com"]

@@ -10,7 +10,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 30_000; // Increased from 10 seconds to 30 seconds
 
 function apiBaseUrl() {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -58,8 +58,9 @@ async function apiRequest(method, path, body) {
       cache: "no-store",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
-    return { ok: false, status: null, error: "Service unavailable" };
+  } catch (cause) {
+    const detail = cause?.cause?.message || cause?.message || cause?.name || "Network request failed";
+    return { ok: false, status: null, error: `Service unavailable (${detail})` };
   }
 
   const status = response.status;
@@ -70,11 +71,11 @@ async function apiRequest(method, path, body) {
   try {
     json = await response.json();
   } catch {
-    return { ok: false, status, error: "Invalid response" };
+    return { ok: false, status, error: `Server error (${status})` };
   }
 
   if (!response.ok) {
-    const message = json?.error?.message || "Request failed";
+    const message = json?.error?.message || json?.detail || `Request failed with status ${status}`;
     return { ok: false, status, error: message };
   }
 
@@ -116,11 +117,41 @@ export async function listSections() {
 }
 
 export async function createSection({ grade_id, name, adviser_id, is_active }) {
-  return apiRequest("POST", "/teacher-admin/sections", { grade_id, name, adviser_id, is_active });
+  // Clean up adviser_id: convert empty string to undefined so it's omitted from JSON
+  const payload = {
+    grade_id,
+    name,
+    is_active,
+  };
+  // Only include adviser_id if it's a non-empty string (UUID)
+  if (adviser_id && adviser_id.trim()) {
+    payload.adviser_id = adviser_id;
+  }
+  
+  const result = await apiRequest("POST", "/teacher-admin/sections", payload);
+  
+  // Provide better error messages for common issues
+  if (!result.ok && result.error) {
+    // Check for common database constraint errors
+    if (result.error.includes('foreign key') || result.error.includes('violates')) {
+      if (result.error.includes('adviser')) {
+        result.error = "The selected adviser is invalid or has been removed. Please choose another or leave unassigned.";
+      } else if (result.error.includes('grade')) {
+        result.error = "The selected grade level is invalid. Please refresh the page and try again.";
+      }
+    }
+  }
+  
+  return result;
 }
 
 export async function updateSection(sectionId, patch) {
-  return apiRequest("PATCH", `/teacher-admin/sections/${sectionId}`, patch);
+  // Clean up adviser_id in patch: convert empty string to undefined
+  const cleanPatch = { ...patch };
+  if ('adviser_id' in cleanPatch && (!cleanPatch.adviser_id || !cleanPatch.adviser_id.trim())) {
+    cleanPatch.adviser_id = null; // Explicitly set to null to clear adviser
+  }
+  return apiRequest("PATCH", `/teacher-admin/sections/${sectionId}`, cleanPatch);
 }
 
 export async function deleteSection(sectionId) {

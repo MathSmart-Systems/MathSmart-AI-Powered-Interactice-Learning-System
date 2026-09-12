@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings, get_settings
 from middleware.errors import install_error_handlers
@@ -104,6 +105,13 @@ def create_app(
     application.state.groq = groq or _default_groq(resolved)
 
     application.add_middleware(RequestIdMiddleware)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=resolved.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     install_error_handlers(application)
 
     @application.get(f"{API_PREFIX}/health", tags=["health"])

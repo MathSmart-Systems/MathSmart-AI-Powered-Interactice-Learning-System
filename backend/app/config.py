@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     supabase_jwt_issuer: str
     supabase_jwt_audience: str = "authenticated"
 
+    # Browser origins allowed to call the API. A JSON list; the default matches
+    # local development on either localhost spelling, and production sets the
+    # deployed frontend origin.
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
     # Groq is advisory. Grading, mastery, progression and intervention triggers
     # are deterministic and must work with this disabled, so the credential and
     # the model are optional until it is switched on.
