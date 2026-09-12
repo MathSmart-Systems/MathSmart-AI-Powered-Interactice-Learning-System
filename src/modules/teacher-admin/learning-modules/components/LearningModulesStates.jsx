@@ -50,7 +50,7 @@ export function LearningModulesServiceError({ message = "The Learning Modules co
  * whether a teacher is looking at an empty library or searching for a module
  * that does not match.
  */
-export function LearningModulesEmpty({ hasSearch, onClearSearch }) {
+export function LearningModulesEmpty({ hasSearch }) {
   return hasSearch ? (
     <section
       aria-labelledby="learning-modules-empty-heading"
@@ -69,14 +69,8 @@ export function LearningModulesEmpty({ hasSearch, onClearSearch }) {
       </p>
 
       <div className="pt-1">
-        <Button
-          asChild
-          variant="outline"
-          className="h-11 px-5"
-        >
-          <Link href="/teacher/learning-modules" onClick={onClearSearch}>
-            Clear search
-          </Link>
+        <Button asChild variant="outline" className="h-11 px-5">
+          <Link href="/teacher/learning-modules">Clear search</Link>
         </Button>
       </div>
     </section>

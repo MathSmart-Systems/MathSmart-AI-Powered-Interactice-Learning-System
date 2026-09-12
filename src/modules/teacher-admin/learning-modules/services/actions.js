@@ -92,11 +92,10 @@ export async function archiveModuleAction(_previousState, formData) {
 /**
  * Returns an archived module to draft so it can be reused.
  *
- * Unlike the dialog actions this is bound straight to a `<form action>` as a
- * plain server action, so it receives only the submitted FormData — not the
- * `(previousState, formData)` pair `useActionState` supplies.
+ * The row's restore control runs this through `useActionState`, so a failure
+ * reaches the row as a `formError` instead of vanishing silently.
  */
-export async function restoreModuleAction(formData) {
+export async function restoreModuleAction(_previousState, formData) {
   const id = String(formData.get("id") ?? "").trim();
 
   if (!id) {

@@ -2,21 +2,20 @@
 
 import { useId, useState } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, Pencil, Plus, Search } from "lucide-react";
+import { Archive, Pencil, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { MODULE_DIALOG_MODES } from "../action-state";
 import { rangeLabel } from "../utils/format.js";
-import { restoreModuleAction } from "../services/actions";
 
 import { ArchiveModuleDialog } from "./ArchiveModuleDialog";
 import { ModuleDialog } from "./ModuleDialog";
 import { ModuleRow } from "./ModuleRow";
 import { LearningModulesEmpty } from "./LearningModulesStates";
 import { Pagination } from "./Pagination";
-import { SubmitButton } from "./SubmitButton";
+import { RestoreModuleForm } from "./RestoreModuleForm";
 
 /**
  * The interactive shell the library list lives in. Every button, every dialog
@@ -159,7 +158,7 @@ export function LearningModulesClient({
         className="flex flex-col gap-4 outline-none"
       >
         {items.length === 0 ? (
-          <LearningModulesEmpty hasSearch={Boolean(search)} onClearSearch={close} />
+          <LearningModulesEmpty hasSearch={Boolean(search)} />
         ) : currentModules.length === 0 ? (
           <p className="border-l-[3px] border-border bg-card px-5 py-4 text-sm leading-relaxed text-muted-foreground">
             {tab === "archived"
@@ -179,22 +178,7 @@ export function LearningModulesClient({
                 <ModuleRow
                   key={module.id}
                   module={module}
-                  actions={
-                    <form action={restoreModuleAction}>
-                      <input type="hidden" name="id" value={module.id} />
-                      <SubmitButton
-                        variant="ghost"
-                        size="icon-sm"
-                        label={
-                          <>
-                            <ArchiveRestore aria-hidden="true" className="size-4" />
-                            <span className="sr-only">Restore module</span>
-                          </>
-                        }
-                        pendingLabel="Restoring…"
-                      />
-                    </form>
-                  }
+                  actions={<RestoreModuleForm module={module} />}
                 />
               ) : (
                 <ModuleRow

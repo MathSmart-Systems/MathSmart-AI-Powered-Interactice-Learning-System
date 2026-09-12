@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId } from "react";
+import { useActionState, useEffect } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import {
@@ -25,7 +25,6 @@ import { SubmitButton } from "./SubmitButton";
  */
 export function ArchiveModuleDialog({ module, onOpenChange }) {
   const [state, formAction] = useActionState(archiveModuleAction, CONFIRM_ACTION_INITIAL_STATE);
-  const formId = useId();
 
   useEffect(() => {
     if (state.success) {
@@ -54,20 +53,20 @@ export function ArchiveModuleDialog({ module, onOpenChange }) {
           </p>
         ) : null}
 
-        <form id={formId} action={formAction}>
+        <form action={formAction} className="flex flex-col gap-5">
           <input type="hidden" name="id" value={module.id} />
 
           <p className="max-w-prose text-sm leading-relaxed text-foreground">
             Archive <span className="font-semibold text-foreground">{module.title}</span>?
           </p>
-        </form>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Keep module
-          </Button>
-          <SubmitButton form={formId} label="Archive module" pendingLabel="Archiving…" variant="destructive" />
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Keep module
+            </Button>
+            <SubmitButton label="Archive module" pendingLabel="Archiving…" variant="destructive" />
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
