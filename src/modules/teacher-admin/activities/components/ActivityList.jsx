@@ -23,7 +23,11 @@ import {
 } from "../utils/format.js";
 import { ActivityStatusBadge } from "./ActivityStatusBadge.jsx";
 
-/** Loading skeleton cards shown while fetching activities. */
+/**
+ * Loading skeleton cards shown while fetching activities.
+ *
+ * @returns {JSX.Element}
+ */
 function ActivityListSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -50,7 +54,14 @@ function ActivityListSkeleton() {
   );
 }
 
-/** Empty state shown when no activities match. */
+/**
+ * Empty state shown when no activities match current filters or when none exist.
+ *
+ * @param {object} props
+ * @param {boolean} props.hasSearchOrFilter - Whether search or filter criteria are currently active
+ * @param {() => void} [props.onCreate] - Callback to trigger the creation of a new activity
+ * @returns {JSX.Element}
+ */
 function ActivityListEmpty({ hasSearchOrFilter, onCreate }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/50 p-12 text-center">
@@ -81,6 +92,16 @@ function ActivityListEmpty({ hasSearchOrFilter, onCreate }) {
 
 /**
  * Responsive card grid for practice activities.
+ *
+ * @param {object} props
+ * @param {Array<object>} [props.activities] - Activity records to display
+ * @param {Array<object>} [props.modules] - Associated learning modules for name resolution
+ * @param {boolean} [props.isLoading] - Loading state flag
+ * @param {boolean} [props.hasSearchOrFilter] - Whether query filters are active
+ * @param {(activity: object) => void} [props.onEdit] - Edit callback
+ * @param {(activity: object) => void} [props.onArchive] - Archive callback
+ * @param {() => void} [props.onCreate] - Create callback
+ * @returns {JSX.Element}
  */
 export function ActivityList({
   activities = [],

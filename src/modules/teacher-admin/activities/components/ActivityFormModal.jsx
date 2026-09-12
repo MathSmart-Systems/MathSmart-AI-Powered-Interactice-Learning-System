@@ -44,7 +44,14 @@ const FIELD_IDS = {
   description: "activity-description",
 };
 
-/** A field's error, wired to the control by aria-describedby. */
+/**
+ * Renders a localized validation error message associated with a form field.
+ *
+ * @param {object} props
+ * @param {string} props.id - HTML ID referenced by aria-describedby
+ * @param {string} [props.message] - Validation error message to display
+ * @returns {JSX.Element | null}
+ */
 function FieldError({ id, message }) {
   if (!message) {
     return null;
@@ -57,11 +64,16 @@ function FieldError({ id, message }) {
 }
 
 /**
- * The authoring form.
+ * Activity authoring and editing form.
  *
- * It is a separate component from the dialog so that opening the dialog mounts
- * it fresh: the form is seeded from activity once, and a stale draft from a
- * previous row can never be submitted against a different activity.
+ * Seeded from the selected activity prop and handles live validation and submission.
+ *
+ * @param {object} props
+ * @param {object} [props.activity] - Existing activity object when editing, or null when creating
+ * @param {Array<object>} props.modules - Available learning modules for the dropdown selector
+ * @param {() => void} props.onClose - Dismiss callback
+ * @param {(saved: object) => void} props.onSaved - Success callback receiving the saved record
+ * @returns {JSX.Element}
  */
 function ActivityForm({ activity, modules, onClose, onSaved }) {
   const isEditing = Boolean(activity?.activity_id);
@@ -241,7 +253,7 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
                 value={values.mastery_threshold}
                 aria-invalid={Boolean(errors.mastery_threshold)}
                 aria-describedby={
-                  errors.threshold ? `${FIELD_IDS.threshold}-error` : undefined
+                  errors.mastery_threshold ? `${FIELD_IDS.threshold}-error` : undefined
                 }
                 onChange={(e) => change("mastery_threshold", e.target.value)}
               />
@@ -320,7 +332,15 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
 }
 
 /**
- * Dialog shell for authoring and updating activities.
+ * Dialog wrapper for creating or updating practice activities.
+ *
+ * @param {object} props
+ * @param {boolean} props.open - Whether the modal dialog is open
+ * @param {(open: boolean) => void} props.onOpenChange - Callback invoked when the modal visibility toggles
+ * @param {(saved: object) => void} [props.onSaved] - Callback invoked when an activity is saved
+ * @param {object} [props.activity] - Target activity to edit, or null when creating
+ * @param {Array<object>} props.modules - List of learning modules available for selection
+ * @returns {JSX.Element}
  */
 export function ActivityFormModal({ open, onOpenChange, onSaved, activity, modules = [] }) {
   const isEditing = Boolean(activity?.activity_id);

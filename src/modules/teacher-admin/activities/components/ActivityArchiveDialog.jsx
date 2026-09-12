@@ -21,6 +21,12 @@ import { archiveActivity } from "../services/activity-admin-service.js";
  *
  * Separated from the dialog shell so that opening the dialog or switching rows
  * mounts it fresh: errors and archiving flags never leak across reopenings.
+ *
+ * @param {object} props
+ * @param {object} props.activity - Activity record to be archived
+ * @param {() => void} props.onClose - Dismiss callback
+ * @param {(archived: object) => void} props.onArchived - Success callback
+ * @returns {JSX.Element}
  */
 function ArchiveDialogContent({ activity, onClose, onArchived }) {
   const [isArchiving, setIsArchiving] = useState(false);
@@ -88,7 +94,14 @@ function ArchiveDialogContent({ activity, onClose, onArchived }) {
 }
 
 /**
- * Confirming that an activity is withdrawn.
+ * Confirmation dialog for withdrawing an activity from active learner practice.
+ *
+ * @param {object} props
+ * @param {boolean} props.open - Whether dialog is visible
+ * @param {(open: boolean) => void} props.onOpenChange - Visibility change callback
+ * @param {(activity: object) => void} [props.onArchived] - Callback invoked when activity is archived
+ * @param {object|null} [props.activity] - Target activity record to archive
+ * @returns {JSX.Element}
  */
 export function ActivityArchiveDialog({ open, onOpenChange, onArchived, activity }) {
   return (

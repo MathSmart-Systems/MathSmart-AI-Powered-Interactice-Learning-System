@@ -26,6 +26,16 @@ export const CLIENT_FAILURE = Object.freeze({
   MALFORMED: "malformed_response",
 });
 
+/**
+ * Normalizes a client-side or HTTP failure into the standard result envelope.
+ *
+ * @param {object} params
+ * @param {number|null} [params.status] - HTTP status code
+ * @param {string} params.code - Normalized machine-readable failure code
+ * @param {string} params.error - Human-readable error message
+ * @param {Record<string, string>} [params.fields] - Field-level error dictionary
+ * @returns {object}
+ */
 function failure({ status = null, code, error, fields = {} }) {
   return {
     ok: false,
@@ -180,10 +190,12 @@ export function createApiClient({
 
     let parsed = null;
     let parseFailed = false;
+    let parseError = null;
     try {
       parsed = await response.json();
-    } catch {
+    } catch (caught) {
       parseFailed = true;
+      parseError = caught;
     }
 
     if (!response.ok) {
@@ -197,10 +209,13 @@ export function createApiClient({
     }
 
     if (parseFailed || parsed?.data === undefined) {
+      const timedOut = parseError?.name === "TimeoutError" || parseError?.name === "AbortError";
       return failure({
         status: response.status,
-        code: CLIENT_FAILURE.MALFORMED,
-        error: "The server's reply could not be read.",
+        code: timedOut ? CLIENT_FAILURE.TIMEOUT : CLIENT_FAILURE.MALFORMED,
+        error: timedOut
+          ? "The request took too long. Check your connection and try again."
+          : "The server's reply could not be read.",
       });
     }
 

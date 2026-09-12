@@ -11,6 +11,11 @@ import { DEFAULT_PAGE_SIZE, createApiClient, pageQuery } from "./api-client.js";
 
 export { DEFAULT_PAGE_SIZE } from "./api-client.js";
 
+/**
+ * Resolves the configured API base URL without trailing slashes.
+ *
+ * @returns {string | null}
+ */
 function apiBaseUrl() {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
@@ -20,6 +25,8 @@ function apiBaseUrl() {
  * The signed-in teacher's own access token.
  *
  * Read per request rather than captured once, so a refreshed token is sent.
+ *
+ * @returns {Promise<string | null>}
  */
 async function accessToken() {
   try {
@@ -31,16 +38,36 @@ async function accessToken() {
   }
 }
 
+/**
+ * Instantiates an authentic API client configured for activity administration.
+ *
+ * @returns {object}
+ */
 function client() {
   return createApiClient({ baseUrl: apiBaseUrl(), getAccessToken: accessToken });
 }
 
+/**
+ * Dispatches an authenticated request through the activity client.
+ *
+ * @param {string} path - Request path
+ * @param {object} [options] - Fetch options
+ * @returns {Promise<object>}
+ */
 function request(path, options) {
   return client().request(path, options);
 }
 
 /**
  * One page of activities. Search, status, and paging are handled on the server.
+ *
+ * @param {object} [params]
+ * @param {string} [params.search] - Case-insensitive title search
+ * @param {string|null} [params.status] - Publication status filter (draft, published, archived)
+ * @param {number} [params.page] - 1-based page index
+ * @param {number} [params.pageSize] - Number of records per page
+ * @param {string|null} [params.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
  */
 export function listActivities({
   search = "",
@@ -55,17 +82,39 @@ export function listActivities({
   );
 }
 
-/** One activity draft by ID. */
+/**
+ * Retrieves one activity draft by ID.
+ *
+ * @param {string} activityId - UUID of the target activity
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
 export function getActivity(activityId, { token = null } = {}) {
   return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}`, { token });
 }
 
-/** Create a new activity draft. */
+/**
+ * Creates a new activity draft.
+ *
+ * @param {object} draft - Activity attributes
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
 export function createActivity(draft, { token = null } = {}) {
   return request("/teacher-admin/activities", { method: "POST", body: draft, token });
 }
 
-/** Update an existing activity draft. */
+/**
+ * Updates an existing activity draft.
+ *
+ * @param {string} activityId - UUID of the activity to update
+ * @param {object} changes - Attributes to patch
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
 export function updateActivity(activityId, changes, { token = null } = {}) {
   return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}`, {
     method: "PATCH",
@@ -74,7 +123,14 @@ export function updateActivity(activityId, changes, { token = null } = {}) {
   });
 }
 
-/** Archive an activity (DELETE sets status = 'archived'). */
+/**
+ * Archives an activity (DELETE sets status = 'archived').
+ *
+ * @param {string} activityId - UUID of the activity to archive
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
 export function archiveActivity(activityId, { token = null } = {}) {
   return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}`, {
     method: "DELETE",
@@ -83,7 +139,14 @@ export function archiveActivity(activityId, { token = null } = {}) {
 }
 
 /**
- * List learning modules to populate the module dropdown when authoring activities.
+ * Lists learning modules to populate the module dropdown when authoring activities.
+ *
+ * @param {object} [params]
+ * @param {string} [params.search] - Search filter
+ * @param {number} [params.page] - 1-based page index
+ * @param {number} [params.pageSize] - Number of records per page
+ * @param {string|null} [params.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
  */
 export function listModules({
   search = "",

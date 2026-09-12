@@ -11,6 +11,7 @@ import {
   MAX_TITLE_LENGTH,
   MIN_DURATION_MINUTES,
   MIN_TITLE_LENGTH,
+  characterLength,
   validateActivityDraft,
 } from "../utils/validation.js";
 
@@ -49,6 +50,40 @@ describe("validateActivityDraft", () => {
     assert.ok(errors.title);
   });
 
+  it("handles supplementary Unicode code points correctly for title and description", () => {
+    assert.equal(characterLength("🧮"), 1);
+    assert.equal(characterLength("A🧮B"), 3);
+    assert.equal(characterLength(null), 0);
+    assert.equal(characterLength(undefined), 0);
+    assert.equal(characterLength(123), 0);
+
+    // 1 supplementary character is 1 code point, failing min length (2)
+    const tooShortUni = validateActivityDraft({ ...VALID_DRAFT, title: "🧮" });
+    assert.equal(tooShortUni.isValid, false);
+    assert.ok(tooShortUni.errors.title);
+
+    // 2 supplementary characters is 2 code points, passing min length (2)
+    const validShortUni = validateActivityDraft({ ...VALID_DRAFT, title: "🧮🧮" });
+    assert.equal(validShortUni.isValid, true);
+
+    // 300 supplementary characters (600 UTF-16 code units) is 300 code points, passing max length
+    const maxUni = validateActivityDraft({ ...VALID_DRAFT, title: "🧮".repeat(300) });
+    assert.equal(maxUni.isValid, true);
+
+    // 301 supplementary characters fails max length
+    const tooLongUni = validateActivityDraft({ ...VALID_DRAFT, title: "🧮".repeat(301) });
+    assert.equal(tooLongUni.isValid, false);
+    assert.ok(tooLongUni.errors.title);
+
+    // Description with 4001 supplementary characters fails max description length
+    const tooLongDesc = validateActivityDraft({
+      ...VALID_DRAFT,
+      description: "🧮".repeat(4001),
+    });
+    assert.equal(tooLongDesc.isValid, false);
+    assert.ok(tooLongDesc.errors.description);
+  });
+
   it("refuses a draft with no learning module", () => {
     const { isValid, errors } = validateActivityDraft({ ...VALID_DRAFT, module_id: "" });
     assert.equal(isValid, false);
@@ -75,6 +110,29 @@ describe("validateActivityDraft", () => {
     const { isValid, errors } = validateActivityDraft({ ...VALID_DRAFT, points: -10 });
     assert.equal(isValid, false);
     assert.ok(errors.points);
+  });
+
+  it("refuses an empty, whitespace, or invalid mastery threshold", () => {
+    assert.equal(
+      validateActivityDraft({ ...VALID_DRAFT, mastery_threshold: "" }).isValid,
+      false
+    );
+    assert.equal(
+      validateActivityDraft({ ...VALID_DRAFT, mastery_threshold: "   " }).isValid,
+      false
+    );
+    assert.equal(
+      validateActivityDraft({ ...VALID_DRAFT, mastery_threshold: null }).isValid,
+      false
+    );
+    assert.equal(
+      validateActivityDraft({ ...VALID_DRAFT, mastery_threshold: undefined }).isValid,
+      false
+    );
+    assert.equal(
+      validateActivityDraft({ ...VALID_DRAFT, mastery_threshold: 75.5 }).isValid,
+      false
+    );
   });
 
   it("refuses a mastery threshold outside 1-100", () => {

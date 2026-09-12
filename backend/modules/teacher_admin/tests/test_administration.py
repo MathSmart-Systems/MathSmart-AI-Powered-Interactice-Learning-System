@@ -252,6 +252,7 @@ def test_archiving_a_competency_does_not_delete_it():
 
 
 def test_a_teacher_admin_lists_activity_drafts():
+    """Verify that a teacher administrator can retrieve a paginated list of activities."""
     client = build_client(admin_connection())
 
     response = client.get("/api/v1/teacher-admin/activities", headers=ADVISER_HEADERS)
@@ -261,6 +262,7 @@ def test_a_teacher_admin_lists_activity_drafts():
 
 
 def test_a_teacher_admin_filters_activities_by_status():
+    """Verify that activities can be filtered by their publication status."""
     connection = admin_connection()
     client = build_client(connection)
 
@@ -273,6 +275,7 @@ def test_a_teacher_admin_filters_activities_by_status():
 
 
 def test_an_activity_draft_can_be_created():
+    """Verify that a new activity draft can be created with required attributes."""
     connection = admin_connection(**{"returning": ACTIVITY_ROW})
     client = build_client(connection)
 
@@ -294,6 +297,7 @@ def test_an_activity_draft_can_be_created():
 
 
 def test_creating_an_activity_needs_a_live_session():
+    """Verify that creating an activity without a live session is refused with 401."""
     client = build_client(admin_connection(), live_session=False)
 
     response = client.post(
@@ -310,6 +314,7 @@ def test_creating_an_activity_needs_a_live_session():
 
 
 def test_an_activity_can_be_updated():
+    """Verify that an existing activity draft can be partially updated."""
     updated = {**ACTIVITY_ROW, "points": 120}
     connection = admin_connection(**{"returning": updated})
     client = build_client(connection)
@@ -325,6 +330,7 @@ def test_an_activity_can_be_updated():
 
 
 def test_archiving_an_activity_does_not_delete_it():
+    """Verify that archiving an activity sets status to archived without deleting the row."""
     connection = admin_connection()
     client = build_client(connection)
 

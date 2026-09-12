@@ -18,6 +18,16 @@ export const MAX_DESCRIPTION_LENGTH = 4000;
 export const VALID_STATUSES = new Set(["draft", "published", "archived"]);
 
 /**
+ * Counts Unicode code points rather than UTF-16 code units.
+ *
+ * @param {unknown} value
+ * @returns {number}
+ */
+export function characterLength(value) {
+  return typeof value === "string" ? Array.from(value).length : 0;
+}
+
+/**
  * Validates activity draft form values.
  *
  * @param {object} draft
@@ -34,11 +44,12 @@ export function validateActivityDraft(draft = {}) {
   const errors = {};
 
   const title = typeof draft.title === "string" ? draft.title.trim() : "";
+  const titleLength = characterLength(title);
   if (!title) {
     errors.title = "Give the activity a title.";
-  } else if (title.length < MIN_TITLE_LENGTH) {
+  } else if (titleLength < MIN_TITLE_LENGTH) {
     errors.title = `Use at least ${MIN_TITLE_LENGTH} characters.`;
-  } else if (title.length > MAX_TITLE_LENGTH) {
+  } else if (titleLength > MAX_TITLE_LENGTH) {
     errors.title = `Use at most ${MAX_TITLE_LENGTH} characters.`;
   }
 
@@ -69,19 +80,24 @@ export function validateActivityDraft(draft = {}) {
     errors.points = `Points must be a positive number or zero.`;
   }
 
-  const threshold = Number(draft.mastery_threshold);
+  const rawThreshold =
+    typeof draft.mastery_threshold === "string"
+      ? draft.mastery_threshold.trim()
+      : draft.mastery_threshold;
+  const threshold = Number(rawThreshold);
   if (
-    draft.mastery_threshold !== undefined &&
-    draft.mastery_threshold !== null &&
-    draft.mastery_threshold !== "" &&
-    (!Number.isInteger(threshold) ||
-      threshold < MIN_MASTERY_THRESHOLD ||
-      threshold > MAX_MASTERY_THRESHOLD)
+    rawThreshold === "" ||
+    rawThreshold === null ||
+    rawThreshold === undefined ||
+    !Number.isInteger(threshold) ||
+    threshold < MIN_MASTERY_THRESHOLD ||
+    threshold > MAX_MASTERY_THRESHOLD
   ) {
     errors.mastery_threshold = `Mastery threshold must be a percentage between ${MIN_MASTERY_THRESHOLD}% and ${MAX_MASTERY_THRESHOLD}%.`;
   }
 
-  if (typeof draft.description === "string" && draft.description.length > MAX_DESCRIPTION_LENGTH) {
+  const description = typeof draft.description === "string" ? draft.description.trim() : "";
+  if (characterLength(description) > MAX_DESCRIPTION_LENGTH) {
     errors.description = `Keep the description under ${MAX_DESCRIPTION_LENGTH} characters.`;
   }
 

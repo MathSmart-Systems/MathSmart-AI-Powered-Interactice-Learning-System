@@ -30,8 +30,14 @@ const SEARCH_INPUT_ID = "activity-search-input";
 const STATUS_FILTER_ID = "activity-status-filter";
 const MODULE_FILTER_ID = "activity-module-filter";
 
-const NO_DIALOG = { kind: null, activity: null };
-
+/**
+ * Main Teacher Activities administration workspace component.
+ *
+ * Provides a responsive dashboard for teachers to browse, filter, create, edit,
+ * and archive learner practice activities.
+ *
+ * @returns {JSX.Element}
+ */
 export function TeacherActivitiesView() {
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -42,6 +48,8 @@ export function TeacherActivitiesView() {
 
   const [activities, setActivities] = useState([]);
   const [modules, setModules] = useState([]);
+  const [moduleError, setModuleError] = useState(null);
+  const [moduleReloadIndex, setModuleReloadIndex] = useState(0);
   const [meta, setMeta] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -60,6 +68,7 @@ export function TeacherActivitiesView() {
   useEffect(() => () => clearTimeout(confirmationTimer.current), []);
 
   const reload = useCallback(() => setReloadIndex((index) => index + 1), []);
+  const retryModules = useCallback(() => setModuleReloadIndex((index) => index + 1), []);
 
   // Search debounce
   useEffect(() => {
@@ -75,9 +84,16 @@ export function TeacherActivitiesView() {
     let active = true;
 
     async function load() {
+      setModuleError(null);
       const result = await listModules({ pageSize: 100 });
-      if (active && result.ok && Array.isArray(result.data)) {
+      if (!active) {
+        return;
+      }
+      if (result.ok && Array.isArray(result.data)) {
         setModules(result.data);
+        setModuleError(null);
+      } else {
+        setModuleError(result.error || "Failed to load learning modules.");
       }
     }
 
@@ -85,7 +101,7 @@ export function TeacherActivitiesView() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [moduleReloadIndex]);
 
   // Load activities from server
   useEffect(() => {
@@ -200,6 +216,31 @@ export function TeacherActivitiesView() {
         </div>
       ) : null}
 
+      {/* Module Loading Error Alert */}
+      {moduleError ? (
+        <div
+          role="alert"
+          className="flex items-start justify-between rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-300"
+        >
+          <div className="flex items-start gap-3">
+            <TriangleAlert className="size-5 shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="space-y-1">
+              <p className="font-semibold">Could not load learning modules</p>
+              <p className="text-muted-foreground">{moduleError}</p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={retryModules}
+            className="shrink-0 border-amber-500/30 text-amber-800 hover:bg-amber-500/10 dark:text-amber-300"
+          >
+            Retry Modules
+          </Button>
+        </div>
+      ) : null}
+
       {/* Filter and Search Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-border/80 bg-card p-3 shadow-2xs">
         <div className="relative flex-1 max-w-md">
@@ -249,6 +290,7 @@ export function TeacherActivitiesView() {
               value={selectedModuleId}
               onValueChange={(val) => {
                 setSelectedModuleId(val);
+                setPage(1);
               }}
             >
               <SelectTrigger id={MODULE_FILTER_ID} className="h-10 text-xs bg-background/60 truncate">

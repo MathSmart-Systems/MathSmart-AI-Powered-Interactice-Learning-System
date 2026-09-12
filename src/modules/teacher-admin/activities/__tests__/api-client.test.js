@@ -22,7 +22,24 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-function stubFetch({ status = 200, body = null, throws = null, noJson = false } = {}) {
+/**
+ * Creates a mock fetch function for transport tests.
+ *
+ * @param {object} options
+ * @param {number} [options.status]
+ * @param {any} [options.body]
+ * @param {Error|null} [options.throws]
+ * @param {boolean} [options.noJson]
+ * @param {Error|null} [options.jsonThrows]
+ * @returns {Array<{ url: string, options: any }>}
+ */
+function stubFetch({
+  status = 200,
+  body = null,
+  throws = null,
+  noJson = false,
+  jsonThrows = null,
+} = {}) {
   const calls = [];
 
   globalThis.fetch = async (url, options) => {
@@ -34,6 +51,9 @@ function stubFetch({ status = 200, body = null, throws = null, noJson = false } 
       status,
       ok: status >= 200 && status < 300,
       json: async () => {
+        if (jsonThrows) {
+          throw jsonThrows;
+        }
         if (noJson) {
           throw new SyntaxError("Unexpected token < in JSON");
         }
@@ -127,6 +147,18 @@ describe("createApiClient", () => {
     const timeout = new Error("The operation was aborted due to timeout");
     timeout.name = "TimeoutError";
     stubFetch({ throws: timeout });
+    const client = createApiClient({ baseUrl: BASE, getAccessToken: async () => "token" });
+
+    const result = await client.request("/teacher-admin/activities");
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, CLIENT_FAILURE.TIMEOUT);
+  });
+
+  it("reports a response json timeout as a timeout", async () => {
+    const jsonTimeout = new Error("The operation was aborted due to timeout");
+    jsonTimeout.name = "TimeoutError";
+    stubFetch({ jsonThrows: jsonTimeout });
     const client = createApiClient({ baseUrl: BASE, getAccessToken: async () => "token" });
 
     const result = await client.request("/teacher-admin/activities");

@@ -262,6 +262,7 @@ async def list_activities(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
+    """List activity definitions with optional search, status filtering, and pagination."""
     return await _list(
         connection, ACTIVITIES, search, page, page_size, status.value if status else None
     )
@@ -271,6 +272,7 @@ async def list_activities(
 async def create_activity(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: ActivityDraft
 ) -> dict[str, Any]:
+    """Author and create a new activity draft associated with a learning module."""
     return await _create(connection, ACTIVITIES, body)
 
 
@@ -278,6 +280,7 @@ async def create_activity(
 async def read_activity_draft(
     _actor: TeacherAdmin, connection: ActorDb, activity_id: UUID
 ) -> dict[str, Any]:
+    """Retrieve an activity draft or published activity record by ID."""
     return await _read(connection, ACTIVITIES, activity_id)
 
 
@@ -289,6 +292,7 @@ async def update_activity(
     activity_id: UUID,
     body: ActivityChanges,
 ) -> dict[str, Any]:
+    """Partially update an activity's metadata, threshold, or publication status."""
     return await _update(connection, ACTIVITIES, activity_id, body)
 
 
@@ -296,6 +300,7 @@ async def update_activity(
 async def archive_activity(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, activity_id: UUID
 ) -> Response:
+    """Soft-archive an activity, preserving student attempt history and references."""
     return await _archive(connection, ACTIVITIES, activity_id)
 
 
