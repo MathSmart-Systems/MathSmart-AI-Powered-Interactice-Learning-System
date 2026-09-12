@@ -258,10 +258,13 @@ async def list_activities(
     _actor: TeacherAdmin,
     connection: ActorDb,
     search: Annotated[str | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
+    status: PublicationStatus | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    return await _list(connection, ACTIVITIES, search, page, page_size)
+    return await _list(
+        connection, ACTIVITIES, search, page, page_size, status.value if status else None
+    )
 
 
 @router.post("/teacher-admin/activities", status_code=201)
