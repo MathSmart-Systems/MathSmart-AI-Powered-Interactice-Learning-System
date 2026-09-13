@@ -30,6 +30,9 @@ const SEARCH_INPUT_ID = "activity-search-input";
 const STATUS_FILTER_ID = "activity-status-filter";
 const MODULE_FILTER_ID = "activity-module-filter";
 
+/** Which dialog is open, and the activity row it was opened for. */
+const NO_DIALOG = { kind: null, activity: null };
+
 /**
  * Main Teacher Activities administration workspace component.
  *
