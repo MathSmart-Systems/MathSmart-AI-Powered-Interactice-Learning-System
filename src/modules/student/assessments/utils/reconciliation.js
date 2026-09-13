@@ -16,17 +16,25 @@ export function idempotencyKeyForAttempt(attemptId) {
   if (typeof window === "undefined" || !attemptId) return newIdempotencyKey();
 
   const storageKey = submissionStorageKey(attemptId);
-  const saved = window.localStorage.getItem(storageKey);
-  if (saved) return saved;
+  try {
+    const saved = window.localStorage.getItem(storageKey);
+    if (saved) return saved;
 
-  const created = newIdempotencyKey();
-  window.localStorage.setItem(storageKey, created);
-  return created;
+    const created = newIdempotencyKey();
+    window.localStorage.setItem(storageKey, created);
+    return created;
+  } catch {
+    return newIdempotencyKey();
+  }
 }
 
 export function clearIdempotencyKey(attemptId) {
   if (typeof window !== "undefined" && attemptId) {
-    window.localStorage.removeItem(submissionStorageKey(attemptId));
+    try {
+      window.localStorage.removeItem(submissionStorageKey(attemptId));
+    } catch {
+      // Storage failure should not block submission completion
+    }
   }
 }
 

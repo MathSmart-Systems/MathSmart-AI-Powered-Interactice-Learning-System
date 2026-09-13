@@ -64,7 +64,7 @@ export function DiagnosticIntro({
               {
                 icon: Timer,
                 term: `~${Math.round(timeLimitSeconds / 60)} minutes`,
-                detail: "Timed, single sitting",
+                detail: "Timed, progress can be resumed.",
               },
               {
                 icon: BarChart3,

@@ -42,6 +42,7 @@ export class AssessmentError extends Error {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 10_000;
 const delay = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fallbackMessage(status) {
@@ -111,6 +112,7 @@ async function request(path, { method = "GET", body, idempotencyKey } = {}) {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch {
     throw new AssessmentError(
