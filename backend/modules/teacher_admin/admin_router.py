@@ -112,12 +112,21 @@ async def _list(
     page: int,
     size: int,
     status: str | None = None,
+    module_id: UUID | None = None,
 ) -> dict[str, Any]:
     offset = (page - 1) * size
     rows = await repository.listing(
-        connection, resource, search=search, limit=size, offset=offset, status=status
+        connection,
+        resource,
+        search=search,
+        limit=size,
+        offset=offset,
+        status=status,
+        module_id=module_id,
     )
-    total = await repository.listing_total(connection, resource, search=search, status=status)
+    total = await repository.listing_total(
+        connection, resource, search=search, status=status, module_id=module_id
+    )
     return _envelope(list(rows), resource, total, page, size)
 
 
@@ -258,16 +267,28 @@ async def list_activities(
     _actor: TeacherAdmin,
     connection: ActorDb,
     search: Annotated[str | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
+    status: PublicationStatus | None = None,
+    module_id: UUID | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    return await _list(connection, ACTIVITIES, search, page, page_size)
+    """List activity definitions with search, status, and module filters."""
+    return await _list(
+        connection,
+        ACTIVITIES,
+        search,
+        page,
+        page_size,
+        status.value if status else None,
+        module_id,
+    )
 
 
 @router.post("/teacher-admin/activities", status_code=201)
 async def create_activity(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: ActivityDraft
 ) -> dict[str, Any]:
+    """Author and create a new activity draft associated with a learning module."""
     return await _create(connection, ACTIVITIES, body)
 
 
@@ -275,6 +296,7 @@ async def create_activity(
 async def read_activity_draft(
     _actor: TeacherAdmin, connection: ActorDb, activity_id: UUID
 ) -> dict[str, Any]:
+    """Retrieve an activity draft or published activity record by ID."""
     return await _read(connection, ACTIVITIES, activity_id)
 
 
@@ -286,6 +308,7 @@ async def update_activity(
     activity_id: UUID,
     body: ActivityChanges,
 ) -> dict[str, Any]:
+    """Partially update an activity's metadata, threshold, or publication status."""
     return await _update(connection, ACTIVITIES, activity_id, body)
 
 
@@ -293,6 +316,7 @@ async def update_activity(
 async def archive_activity(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, activity_id: UUID
 ) -> Response:
+    """Soft-archive an activity, preserving student attempt history and references."""
     return await _archive(connection, ACTIVITIES, activity_id)
 
 

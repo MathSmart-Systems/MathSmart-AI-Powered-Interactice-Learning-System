@@ -27,6 +27,7 @@ GRADE = UUID("3f0f0000-0000-4000-8000-000000000006")
 SECTION = UUID("cc7ef387-7435-4af0-8c50-0a7ce6aa5f5c")
 USER = UUID("b0000000-0000-4000-8000-00000000000e")
 STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
+ACTIVITY = UUID("7b2b0000-0000-4000-8000-000000000008")
 
 TOTAL = "count(*) as total"
 
@@ -45,6 +46,20 @@ COMPETENCY_ROW = {
     "description": "Apply sign rules.",
     "status": "draft",
     "prerequisite_ids": [],
+    "created_at": None,
+    "updated_at": None,
+}
+
+ACTIVITY_ROW = {
+    "activity_id": ACTIVITY,
+    "module_id": MODULE,
+    "title": "Integers Multiplication Practice",
+    "description": "Apply sign rules.",
+    "estimated_minutes": 15,
+    "points": 100,
+    "mastery_threshold": 75,
+    "status": "draft",
+    "version": 1,
     "created_at": None,
     "updated_at": None,
 }
@@ -129,6 +144,7 @@ def admin_connection(**overrides):
     results = {
         TOTAL: 1,
         "from app.competencies": [COMPETENCY_ROW],
+        "from app.activities": [ACTIVITY_ROW],
         "from app.questions": [QUESTION_ROW],
         # Ahead of the assessments listing, because the readiness statement
         # selects from app.assessments too and this fragment is the specific one.
@@ -233,6 +249,115 @@ def test_archiving_a_competency_does_not_delete_it():
     archiving = [call for call in connection.calls if "set status = 'archived'" in call[0]]
     assert archiving
     assert not [call for call in connection.calls if "delete from app.competencies" in call[0]]
+
+
+def test_a_teacher_admin_lists_activity_drafts():
+    """Verify that a teacher administrator can retrieve a paginated list of activities."""
+    client = build_client(admin_connection())
+
+    response = client.get("/api/v1/teacher-admin/activities", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["title"] == "Integers Multiplication Practice"
+
+
+def test_a_teacher_admin_filters_activities_by_status():
+    """Verify that activities can be filtered by their publication status."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/activities?status=draft", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert any("status::text" in call[0] and "draft" in call[1] for call in connection.calls)
+
+
+def test_a_teacher_admin_filters_activities_by_module():
+    """Verify that activities can be filtered by their parent learning module ID."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/teacher-admin/activities?module_id={MODULE}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert any(
+        "activities.module_id =" in call[0] and MODULE in call[1]
+        for call in connection.calls
+    )
+
+
+def test_an_activity_draft_can_be_created():
+    """Verify that a new activity draft can be created with required attributes."""
+    connection = admin_connection(**{"returning": ACTIVITY_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/activities",
+        json={
+            "module_id": str(MODULE),
+            "title": "Integers Multiplication Practice",
+            "description": "Apply sign rules.",
+            "estimated_minutes": 15,
+            "points": 100,
+            "mastery_threshold": 75,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["title"] == "Integers Multiplication Practice"
+
+
+def test_creating_an_activity_needs_a_live_session():
+    """Verify that creating an activity without a live session is refused with 401."""
+    client = build_client(admin_connection(), live_session=False)
+
+    response = client.post(
+        "/api/v1/teacher-admin/activities",
+        json={
+            "module_id": str(MODULE),
+            "title": "Integers Multiplication Practice",
+            "estimated_minutes": 15,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 401
+
+
+def test_an_activity_can_be_updated():
+    """Verify that an existing activity draft can be partially updated."""
+    updated = {**ACTIVITY_ROW, "points": 120}
+    connection = admin_connection(**{"returning": updated})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}",
+        json={"points": 120},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["points"] == 120
+
+
+def test_archiving_an_activity_does_not_delete_it():
+    """Verify that archiving an activity sets status to archived without deleting the row."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 204
+    archiving = [call for call in connection.calls if "set status = 'archived'" in call[0]]
+    assert archiving
+    assert not [call for call in connection.calls if "delete from app.activities" in call[0]]
 
 
 # ---------------------------------------------------------------------------
