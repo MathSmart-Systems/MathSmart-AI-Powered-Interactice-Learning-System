@@ -1,0 +1,317 @@
+{
+  "assessment_version": "v1.0",
+  "total_questions": 40,
+  "time_limit_minutes": 60,
+  "domains": [
+    {
+      "domain": "Number Sense",
+      "competency_id": "comp-num-1",
+      "questions": [
+        {
+          "question_id": "q1",
+          "question_text": "What is the value of -15 + (-7) - (-12)?",
+          "question_type": "mcq",
+          "options": ["-10", "-34", "-14", "4"],
+          "order_index": 1
+        },
+        {
+          "question_id": "q2",
+          "question_text": "What is the sum of 3/4 and 5/6?",
+          "question_type": "mcq",
+          "options": ["8/10", "19/12", "8/12", "19/24"],
+          "order_index": 2
+        },
+        {
+          "question_id": "q3",
+          "question_text": "What is the product of 0.25 and 0.8?",
+          "question_type": "mcq",
+          "options": ["0.2", "0.02", "2.0", "0.4"],
+          "order_index": 3
+        },
+        {
+          "question_id": "q4",
+          "question_text": "What is the value of 2^3 × 2^4?",
+          "question_type": "mcq",
+          "options": ["2^12", "2^7", "4^7", "2^1"],
+          "order_index": 4
+        },
+        {
+          "question_id": "q5",
+          "question_text": "What is the value of |-9| - |-3|?",
+          "question_type": "mcq",
+          "options": ["12", "-12", "6", "-6"],
+          "order_index": 5
+        },
+        {
+          "question_id": "q6",
+          "question_text": "What is the value of 5/8 - 1/4?",
+          "question_type": "mcq",
+          "options": ["3/8", "4/8", "1/2", "1/8"],
+          "order_index": 6
+        },
+        {
+          "question_id": "q7",
+          "question_text": "What is the result of -4 × (-6)?",
+          "question_type": "mcq",
+          "options": ["24", "-24", "10", "-10"],
+          "order_index": 7
+        },
+        {
+          "question_id": "q8",
+          "question_text": "What is the decimal equivalent of 3/8?",
+          "question_type": "mcq",
+          "options": ["0.375", "0.3", "0.38", "0.325"],
+          "order_index": 8
+        }
+      ]
+    },
+    {
+      "domain": "Algebra",
+      "competency_id": "comp-alg-1",
+      "questions": [
+        {
+          "question_id": "q9",
+          "question_text": "Which expression represents 'five more than twice a number x'?",
+          "question_type": "mcq",
+          "options": ["2x + 5", "5x + 2", "2(x + 5)", "2x - 5"],
+          "order_index": 1
+        },
+        {
+          "question_id": "q10",
+          "question_text": "What is the value of 3x - 4 when x = 5?",
+          "question_type": "mcq",
+          "options": ["11", "15", "19", "7"],
+          "order_index": 2
+        },
+        {
+          "question_id": "q11",
+          "question_text": "Simplify: 4x + 3y - 2x + y",
+          "question_type": "mcq",
+          "options": ["2x + 4y", "6x + 4y", "2x + 2y", "6x + 2y"],
+          "order_index": 3
+        },
+        {
+          "question_id": "q12",
+          "question_text": "Solve: 2x + 3 = 11",
+          "question_type": "mcq",
+          "options": ["x = 4", "x = 7", "x = 8", "x = 14"],
+          "order_index": 4
+        },
+        {
+          "question_id": "q13",
+          "question_text": "A number increased by 9 equals 21. What is the number?",
+          "question_type": "mcq",
+          "options": ["12", "30", "9", "21"],
+          "order_index": 5
+        },
+        {
+          "question_id": "q14",
+          "question_text": "Evaluate 2(x + 3) when x = 4",
+          "question_type": "mcq",
+          "options": ["14", "11", "8", "20"],
+          "order_index": 6
+        },
+        {
+          "question_id": "q15",
+          "question_text": "What is the solution to 3x - 5 = 16?",
+          "question_type": "mcq",
+          "options": ["x = 7", "x = 11", "x = 21", "x = 5"],
+          "order_index": 7
+        },
+        {
+          "question_id": "q16",
+          "question_text": "Write 'twice the sum of x and 3' as an expression",
+          "question_type": "mcq",
+          "options": ["2(x + 3)", "2x + 3", "2x - 6", "x + 6"],
+          "order_index": 8
+        }
+      ]
+    },
+    {
+      "domain": "Geometry",
+      "competency_id": "comp-geo-1",
+      "questions": [
+        {
+          "question_id": "q17",
+          "question_text": "Two angles are complementary. If one angle measures 35°, what is the measure of the other?",
+          "question_type": "mcq",
+          "options": ["55°", "145°", "45°", "65°"],
+          "order_index": 1
+        },
+        {
+          "question_id": "q18",
+          "question_text": "Two parallel lines are cut by a transversal. If one angle measures 110°, what is the measure of its corresponding angle?",
+          "question_type": "mcq",
+          "options": ["70°", "110°", "90°", "180°"],
+          "order_index": 2
+        },
+        {
+          "question_id": "q19",
+          "question_text": "What is the sum of the interior angles of a quadrilateral?",
+          "question_type": "mcq",
+          "options": ["180°", "360°", "540°", "720°"],
+          "order_index": 3
+        },
+        {
+          "question_id": "q20",
+          "question_text": "A triangle has angle measures 60°, 60°, and 60°. What kind of triangle is it?",
+          "question_type": "mcq",
+          "options": ["Right triangle", "Equilateral triangle", "Obtuse triangle", "Scalene triangle"],
+          "order_index": 4
+        },
+        {
+          "question_id": "q21",
+          "question_text": "Two supplementary angles have measures x and 2x. What is the value of x?",
+          "question_type": "mcq",
+          "options": ["30°", "45°", "60°", "90°"],
+          "order_index": 5
+        },
+        {
+          "question_id": "q22",
+          "question_text": "What is the measure of a right angle?",
+          "question_type": "mcq",
+          "options": ["45°", "90°", "180°", "360°"],
+          "order_index": 6
+        },
+        {
+          "question_id": "q23",
+          "question_text": "What is the sum of the interior angles of a pentagon?",
+          "question_type": "mcq",
+          "options": ["360°", "540°", "720°", "900°"],
+          "order_index": 7
+        },
+        {
+          "question_id": "q24",
+          "question_text": "A triangle has angles 40° and 70°. What is the measure of the third angle?",
+          "question_type": "mcq",
+          "options": ["70°", "80°", "60°", "50°"],
+          "order_index": 8
+        }
+      ]
+    },
+    {
+      "domain": "Measurement",
+      "competency_id": "comp-meas-1",
+      "questions": [
+        {
+          "question_id": "q25",
+          "question_text": "Convert 5 meters to centimeters",
+          "question_type": "mcq",
+          "options": ["50 cm", "500 cm", "5000 cm", "5 cm"],
+          "order_index": 1
+        },
+        {
+          "question_id": "q26",
+          "question_text": "What is the area of a rectangle with length 8 cm and width 3 cm?",
+          "question_type": "mcq",
+          "options": ["24 cm²", "22 cm²", "11 cm²", "48 cm²"],
+          "order_index": 2
+        },
+        {
+          "question_id": "q27",
+          "question_text": "What is the perimeter of a square with side 6 cm?",
+          "question_type": "mcq",
+          "options": ["24 cm", "12 cm", "36 cm", "18 cm"],
+          "order_index": 3
+        },
+        {
+          "question_id": "q28",
+          "question_text": "Convert 2.5 kilograms to grams",
+          "question_type": "mcq",
+          "options": ["250 g", "2500 g", "25 g", "25000 g"],
+          "order_index": 4
+        },
+        {
+          "question_id": "q29",
+          "question_text": "What is the volume of a cube with side 3 cm?",
+          "question_type": "mcq",
+          "options": ["9 cm³", "27 cm³", "81 cm³", "18 cm³"],
+          "order_index": 5
+        },
+        {
+          "question_id": "q30",
+          "question_text": "How many minutes are in 2.5 hours?",
+          "question_type": "mcq",
+          "options": ["120", "150", "180", "100"],
+          "order_index": 6
+        },
+        {
+          "question_id": "q31",
+          "question_text": "What is the circumference of a circle with diameter 7 cm? (Use π ≈ 22/7)",
+          "question_type": "mcq",
+          "options": ["22 cm", "44 cm", "14 cm", "7 cm"],
+          "order_index": 7
+        },
+        {
+          "question_id": "q32",
+          "question_text": "Convert 300 milliliters to liters",
+          "question_type": "mcq",
+          "options": ["0.3 L", "3 L", "0.03 L", "30 L"],
+          "order_index": 8
+        }
+      ]
+    },
+    {
+      "domain": "Statistics",
+      "competency_id": "comp-stat-1",
+      "questions": [
+        {
+          "question_id": "q33",
+          "question_text": "What is the mean of the data set 4, 8, 6, 10, 12?",
+          "question_type": "mcq",
+          "options": ["6", "8", "10", "40"],
+          "order_index": 1
+        },
+        {
+          "question_id": "q34",
+          "question_text": "What is the median of the data set 3, 7, 9, 12, 15?",
+          "question_type": "mcq",
+          "options": ["7", "9", "12", "10"],
+          "order_index": 2
+        },
+        {
+          "question_id": "q35",
+          "question_text": "What is the mode of the data set 5, 3, 8, 3, 7, 5, 3?",
+          "question_type": "mcq",
+          "options": ["5", "7", "3", "8"],
+          "order_index": 3
+        },
+        {
+          "question_id": "q36",
+          "question_text": "A bag contains 3 red, 2 blue, and 5 green marbles. What is the probability of drawing a blue marble?",
+          "question_type": "mcq",
+          "options": ["2/10", "1/2", "2/8", "5/10"],
+          "order_index": 4
+        },
+        {
+          "question_id": "q37",
+          "question_text": "The mean of four numbers is 15. If three of the numbers are 12, 14, and 18, what is the fourth number?",
+          "question_type": "mcq",
+          "options": ["16", "14", "20", "10"],
+          "order_index": 5
+        },
+        {
+          "question_id": "q38",
+          "question_text": "What is the range of the data set 2, 5, 9, 12?",
+          "question_type": "mcq",
+          "options": ["10", "7", "3", "5"],
+          "order_index": 6
+        },
+        {
+          "question_id": "q39",
+          "question_text": "What is the median of the data set 4, 7, 9, 10?",
+          "question_type": "mcq",
+          "options": ["7.5", "8", "9", "7"],
+          "order_index": 7
+        },
+        {
+          "question_id": "q40",
+          "question_text": "A coin is tossed twice. What is the probability of getting two heads?",
+          "question_type": "mcq",
+          "options": ["1/4", "1/2", "3/4", "1"],
+          "order_index": 8
+        }
+      ]
+    }
+  ]
+}
