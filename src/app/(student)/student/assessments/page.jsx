@@ -1,16 +1,10 @@
-import { Suspense } from "react";
-
-import {
-  AssessmentHistorySkeleton,
-  StudentAssessments,
-} from "@/modules/student/assessments";
+import { WorkspacePlaceholder } from "@/modules/shared";
+import { STUDENT_WORKSPACE } from "@/modules/student";
 
 export const metadata = { title: "Assessments | MathSmart" };
 
 export default function StudentAssessmentsPage() {
   return (
-    <Suspense fallback={<AssessmentHistorySkeleton />}>
-      <StudentAssessments />
-    </Suspense>
+    <WorkspacePlaceholder title="Assessments" workspaceName={STUDENT_WORKSPACE.name} />
   );
 }
