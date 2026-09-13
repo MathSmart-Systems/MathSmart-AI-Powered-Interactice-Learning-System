@@ -469,3 +469,58 @@ async def reset_diagnostic(
     connection: ActorConnection, *, student_id: UUID, reason: str, request_id: str | None
 ) -> Any:
     return await connection.fetchrow(_RESET_DIAGNOSTIC_SQL, student_id, reason, request_id)
+
+
+def _activity_status_clause(placeholder: str) -> str:
+    return f" and ({placeholder}::text is null or activities.status::text = {placeholder})"
+
+
+def _activity_module_clause(placeholder: str) -> str:
+    return f" and ({placeholder}::uuid is null or activities.module_id = {placeholder})"
+
+
+def list_activities_sql() -> str:
+    columns = ", ".join(f"activities.{column}" for column in ACTIVITIES.readable)
+    where = (
+        f"where true{_search_clause(ACTIVITIES)}"
+        f"{_activity_status_clause('$4')}{_activity_module_clause('$5')}\n"
+    )
+    return (
+        f"select {columns}\nfrom app.activities\n"
+        f"{where}"
+        f"order by activities.{ACTIVITIES.order_by}\nlimit $2 offset $3"
+    )
+
+
+def count_activities_sql() -> str:
+    where = (
+        f"where true{_search_clause(ACTIVITIES)}"
+        f"{_activity_status_clause('$2')}{_activity_module_clause('$3')}"
+    )
+    return f"select count(*) as total\nfrom app.activities\n{where}"
+
+
+async def list_activities(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    limit: int,
+    offset: int,
+    status: str | None = None,
+    module_id: UUID | None = None,
+) -> list[Any]:
+    return await connection.fetch(
+        list_activities_sql(), search, limit, offset, status, module_id
+    )
+
+
+async def count_activities(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    status: str | None = None,
+    module_id: UUID | None = None,
+) -> int:
+    return await connection.fetchval(
+        count_activities_sql(), search, status, module_id
+    ) or 0

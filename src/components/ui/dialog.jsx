@@ -1,45 +1,44 @@
 "use client"
 
 import * as React from "react"
-import { X } from "lucide-react"
 import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
+import { X } from "lucide-react"
 
-/** Provides the root state container for a modal dialog. */
-function Dialog(props) {
+function Dialog({ ...props }) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
-/** Renders the control that opens its associated dialog. */
-function DialogTrigger(props) {
+function DialogTrigger({ ...props }) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
-/** Portals dialog content outside the surrounding document flow. */
-function DialogPortal(props) {
+function DialogPortal({ ...props }) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
-/** Renders a control that closes its associated dialog. */
-function DialogClose(props) {
+function DialogClose({ ...props }) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
-/** Covers the page behind an open dialog and applies its transition styles. */
 function DialogOverlay({ className, ...props }) {
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
-      className={cn(
-        "fixed inset-0 z-50 bg-foreground/60 transition-opacity duration-200 data-[state=closed]:opacity-0 data-[state=open]:opacity-100",
-        className
-      )}
+      className={cn("fixed inset-0 z-50 bg-shell/60", className)}
       {...props}
     />
   )
 }
 
-/** Renders the modal panel, overlay, and optional close control. */
+/**
+ * The dialog surface.
+ *
+ * Radix supplies the parts a hand-rolled overlay keeps missing: the focus trap,
+ * Escape to dismiss, the scroll lock, and focus returning to whatever opened
+ * the dialog. The surface is a column so a long body scrolls while the header
+ * and footer stay put.
+ */
 function DialogContent({ className, children, showCloseButton = true, ...props }) {
   return (
     <DialogPortal>
@@ -47,7 +46,7 @@ function DialogContent({ className, children, showCloseButton = true, ...props }
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg transition duration-200 data-[state=closed]:scale-95 data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100 sm:max-w-lg",
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100svh-2rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none",
           className
         )}
         {...props}
@@ -55,11 +54,11 @@ function DialogContent({ className, children, showCloseButton = true, ...props }
         {children}
         {showCloseButton ? (
           <DialogPrimitive.Close
-            data-slot="dialog-close-button"
-            className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+            data-slot="dialog-close"
+            className="absolute top-4 right-4 rounded-md p-1 text-muted-foreground transition-colors outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none"
           >
             <X className="size-4" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">Close dialog</span>
           </DialogPrimitive.Close>
         ) : null}
       </DialogPrimitive.Content>
@@ -67,45 +66,60 @@ function DialogContent({ className, children, showCloseButton = true, ...props }
   )
 }
 
-/** Groups a dialog's heading and supporting description. */
 function DialogHeader({ className, ...props }) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-1.5 text-left", className)}
+      className={cn(
+        "flex shrink-0 flex-col gap-1 border-b border-border px-6 py-5 pr-14",
+        className
+      )}
       {...props}
     />
   )
 }
 
-/** Lays out the action controls at the bottom of a dialog. */
+function DialogBody({ className, ...props }) {
+  return (
+    <div
+      data-slot="dialog-body"
+      className={cn("min-h-0 flex-1 overflow-y-auto px-6 py-5", className)}
+      {...props}
+    />
+  )
+}
+
 function DialogFooter({ className, ...props }) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn("flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end", className)}
+      className={cn(
+        "flex shrink-0 flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-end",
+        className
+      )}
       {...props}
     />
   )
 }
 
-/** Provides the accessible title for a dialog. */
 function DialogTitle({ className, ...props }) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-none font-semibold", className)}
+      className={cn(
+        "font-display text-lg font-semibold tracking-tight text-foreground",
+        className
+      )}
       {...props}
     />
   )
 }
 
-/** Provides supporting accessible text for a dialog. */
 function DialogDescription({ className, ...props }) {
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm leading-relaxed text-muted-foreground", className)}
+      className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
   )
@@ -113,13 +127,14 @@ function DialogDescription({ className, ...props }) {
 
 export {
   Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
   DialogTrigger,
+  DialogPortal,
+  DialogClose,
+  DialogOverlay,
+  DialogContent,
+  DialogHeader,
+  DialogBody,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
 }
