@@ -223,7 +223,7 @@ select throws_ok(
   $$ select app.reset_diagnostic(
        '5d000000-0000-4000-8000-000000000001', 'Nothing left to reset.') $$,
   'P0002',
-  'That learner has no diagnostic attempt to reset',
+  'No diagnostic attempt was found',
   'A learner with no live attempt cannot be reset again'
 );
 
