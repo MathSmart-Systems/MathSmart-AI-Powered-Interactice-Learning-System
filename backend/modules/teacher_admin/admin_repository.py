@@ -165,19 +165,54 @@ def _search_clause(resource: Resource) -> str:
     return f" and ($1::text is null or {matches})"
 
 
+def _status_clause(resource: Resource, placeholder: str) -> str:
+    """The optional publication-status filter, where the resource has one.
+
+    A resource without a status column still accepts the parameter, so every
+    listing keeps one signature; the clause is then a no-op.
+    """
+    if "status" not in resource.readable:
+        return f" and ({placeholder}::text is null or true)"
+    return f" and ({placeholder}::text is null or {resource.table}.status::text = {placeholder})"
+
+
 def list_sql(resource: Resource) -> str:
+    """Generate SQL query for paginated resource listing with search and status filters."""
     columns = ", ".join(f"{resource.table}.{column}" for column in resource.readable)
     return (
         f"select {columns}\nfrom app.{resource.table}\n"
-        f"where true{_search_clause(resource)}\n"
+        f"where true{_search_clause(resource)}{_status_clause(resource, '$4')}\n"
         f"order by {resource.table}.{resource.order_by}\nlimit $2 offset $3"
     )
 
 
 def count_sql(resource: Resource) -> str:
+    """Generate SQL query for counting total matching resource rows."""
     return (
         f"select count(*) as total\nfrom app.{resource.table}\n"
-        f"where true{_search_clause(resource)}"
+        f"where true{_search_clause(resource)}{_status_clause(resource, '$2')}"
+    )
+
+
+def module_list_sql() -> str:
+    """The module list, filtered before its page is selected."""
+    columns = ", ".join(
+        f"{LEARNING_MODULES.table}.{column}" for column in LEARNING_MODULES.readable
+    )
+    return (
+        f"select {columns}\nfrom app.{LEARNING_MODULES.table}\n"
+        f"where true{_search_clause(LEARNING_MODULES)}\n"
+        f" and ($2::app.publication_status is null or {LEARNING_MODULES.table}.status = $2)\n"
+        f"order by {LEARNING_MODULES.table}.{LEARNING_MODULES.order_by}\nlimit $3 offset $4"
+    )
+
+
+def module_count_sql() -> str:
+    """The count for the same status-scoped module result set."""
+    return (
+        f"select count(*) as total\nfrom app.{LEARNING_MODULES.table}\n"
+        f"where true{_search_clause(LEARNING_MODULES)}\n"
+        f" and ($2::app.publication_status is null or {LEARNING_MODULES.table}.status = $2)"
     )
 
 
@@ -310,10 +345,49 @@ select $1, member.question_id, member.position
 from unnest($2::uuid[]) with ordinality as member(question_id, position)
 """
 
-_MEMBERSHIP_COUNT_SQL = """
-select count(*) as total
+#: The ordered membership of one assessment. The authoring client needs the
+#: existing order before it can replace it, because the replace is whole-list.
+_MEMBERSHIP_IDS_SQL = """
+select assessment_questions.question_id
 from app.assessment_questions
 where assessment_questions.assessment_id = $1
+order by assessment_questions.position
+"""
+
+#: Membership sizes for a page of assessments, in one round trip. A listing
+#: needs the count per row to show whether an assessment can be published.
+_MEMBERSHIP_COUNTS_SQL = """
+select
+  assessment_questions.assessment_id,
+  count(*) as question_total
+from app.assessment_questions
+where assessment_questions.assessment_id = any($1::uuid[])
+group by assessment_questions.assessment_id
+"""
+
+#: Publication preconditions, gathered in one query so the refusal can name the
+#: one that failed. An unpublished question, or an inactive grade, would reach a
+#: learner as a broken assessment. duration_minutes needs no check here: the
+#: table constrains it to 1..480 and forbids null.
+_PUBLICATION_READINESS_SQL = """
+select
+  assessments.status as assessment_status,
+  grade_levels.is_active as grade_is_active,
+  (
+    select count(*)
+    from app.assessment_questions
+    where assessment_questions.assessment_id = assessments.assessment_id
+  ) as question_total,
+  (
+    select count(*)
+    from app.assessment_questions
+    join app.questions using (question_id)
+    where assessment_questions.assessment_id = assessments.assessment_id
+      and questions.status <> 'published'
+  ) as unpublished_total
+from app.assessments
+join app.grade_levels using (grade_id)
+where assessments.assessment_id = $1
 """
 
 _SET_ACCOUNT_STATUS_SQL = "select * from app.set_account_status($1, $2, $3)"
@@ -321,15 +395,44 @@ _RESET_DIAGNOSTIC_SQL = "select * from app.reset_diagnostic($1, $2, $3)"
 
 
 async def listing(
-    connection: ActorConnection, resource: Resource, *, search: str | None, limit: int, offset: int
+    connection: ActorConnection,
+    resource: Resource,
+    *,
+    search: str | None,
+    limit: int,
+    offset: int,
+    status: str | None = None,
 ) -> list[Any]:
-    return await connection.fetch(list_sql(resource), search, limit, offset)
+    """Retrieve a paginated slice of resource rows filtered by search and status."""
+    return await connection.fetch(list_sql(resource), search, limit, offset, status)
 
 
 async def listing_total(
-    connection: ActorConnection, resource: Resource, *, search: str | None
+    connection: ActorConnection,
+    resource: Resource,
+    *,
+    search: str | None,
+    status: str | None = None,
 ) -> int:
-    return await connection.fetchval(count_sql(resource), search) or 0
+    """Count the total number of resource rows matching search and status filters."""
+    return await connection.fetchval(count_sql(resource), search, status) or 0
+
+
+async def module_listing(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    status: str | None,
+    limit: int,
+    offset: int,
+) -> list[Any]:
+    return await connection.fetch(module_list_sql(), search, status, limit, offset)
+
+
+async def module_listing_total(
+    connection: ActorConnection, *, search: str | None, status: str | None
+) -> int:
+    return await connection.fetchval(module_count_sql(), search, status) or 0
 
 
 async def read(connection: ActorConnection, resource: Resource, key: UUID) -> Any:
@@ -417,16 +520,99 @@ async def audit_events(
 async def replace_assessment_questions(
     connection: ActorConnection, *, assessment_id: UUID, question_ids: list[UUID]
 ) -> None:
+    """Atomically replace the ordered set of questions belonging to an assessment."""
     await connection.execute(_MEMBERSHIP_DELETE_SQL, assessment_id)
     if question_ids:
         await connection.execute(_MEMBERSHIP_INSERT_SQL, assessment_id, question_ids)
 
 
-async def assessment_question_count(connection: ActorConnection, assessment_id: UUID) -> int:
-    return await connection.fetchval(_MEMBERSHIP_COUNT_SQL, assessment_id) or 0
+async def assessment_question_ids(
+    connection: ActorConnection, assessment_id: UUID
+) -> list[UUID]:
+    """The assessment's questions, in delivery order."""
+    rows = await connection.fetch(_MEMBERSHIP_IDS_SQL, assessment_id)
+    return [row["question_id"] for row in rows]
+
+
+async def assessment_question_counts(
+    connection: ActorConnection, assessment_ids: list[UUID]
+) -> dict[UUID, int]:
+    """Membership sizes for a page of assessments. Absent means zero."""
+    if not assessment_ids:
+        return {}
+    rows = await connection.fetch(_MEMBERSHIP_COUNTS_SQL, assessment_ids)
+    return {row["assessment_id"]: row["question_total"] for row in rows}
+
+
+async def assessment_publication_readiness(
+    connection: ActorConnection, assessment_id: UUID
+) -> Any:
+    """Check whether an assessment meets criteria for publication readiness."""
+    return await connection.fetchrow(_PUBLICATION_READINESS_SQL, assessment_id)
 
 
 async def reset_diagnostic(
     connection: ActorConnection, *, student_id: UUID, reason: str, request_id: str | None
 ) -> Any:
     return await connection.fetchrow(_RESET_DIAGNOSTIC_SQL, student_id, reason, request_id)
+
+
+def _activity_status_clause(placeholder: str) -> str:
+    """Build a SQL clause filtering activities by publication status."""
+    return f" and ({placeholder}::text is null or activities.status::text = {placeholder})"
+
+
+def _activity_module_clause(placeholder: str) -> str:
+    """Build a SQL clause filtering activities by parent learning module ID."""
+    return f" and ({placeholder}::uuid is null or activities.module_id = {placeholder})"
+
+
+def list_activities_sql() -> str:
+    """Construct a SQL statement to retrieve paginated activity records."""
+    columns = ", ".join(f"activities.{column}" for column in ACTIVITIES.readable)
+    where = (
+        f"where true{_search_clause(ACTIVITIES)}"
+        f"{_activity_status_clause('$4')}{_activity_module_clause('$5')}\n"
+    )
+    return (
+        f"select {columns}\nfrom app.activities\n"
+        f"{where}"
+        f"order by activities.{ACTIVITIES.order_by}\nlimit $2 offset $3"
+    )
+
+
+def count_activities_sql() -> str:
+    """Construct a SQL statement to count total matching activity records."""
+    where = (
+        f"where true{_search_clause(ACTIVITIES)}"
+        f"{_activity_status_clause('$2')}{_activity_module_clause('$3')}"
+    )
+    return f"select count(*) as total\nfrom app.activities\n{where}"
+
+
+async def list_activities(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    limit: int,
+    offset: int,
+    status: str | None = None,
+    module_id: UUID | None = None,
+) -> list[Any]:
+    """Fetch paginated activity rows filtered by search, status, and module."""
+    return await connection.fetch(
+        list_activities_sql(), search, limit, offset, status, module_id
+    )
+
+
+async def count_activities(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    status: str | None = None,
+    module_id: UUID | None = None,
+) -> int:
+    """Count total matching activity records matching search, status, and module."""
+    return await connection.fetchval(
+        count_activities_sql(), search, status, module_id
+    ) or 0

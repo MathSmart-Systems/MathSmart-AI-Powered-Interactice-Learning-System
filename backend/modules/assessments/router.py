@@ -214,6 +214,90 @@ async def start_attempt(
     return {"data": delivery.model_dump(mode="json")}
 
 
+@router.get("/assessment-attempts/me")
+async def list_own_attempts(
+    actor: CurrentActor,
+    connection: ActorDb,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+) -> dict[str, Any]:
+    """The authenticated learner's own attempt history.
+
+    This route is declared before ``/assessment-attempts/{attempt_id}`` so that
+    FastAPI routes the literal segment ``"me"`` here rather than attempting to
+    parse it as a UUID (which would return 422).
+
+    Naming a learner is a Teacher/Administrator action; a learner always reads
+    their own history through this route.
+    """
+    _only_a_learner(actor)
+
+    student_id = await repository.own_student_id(connection, actor.user_id)
+    if student_id is None:
+        raise ApiError(403, "No learner profile was found for your account")
+
+    student_id = UUID(str(student_id))
+    offset = (page - 1) * page_size
+    rows = await repository.attempt_history(
+        connection, student_id=student_id, limit=page_size, offset=offset
+    )
+    total = await repository.attempt_history_total(connection, student_id=student_id)
+
+    return {
+        "data": [
+            AttemptSummary(
+                attempt_id=row["attempt_id"],
+                assessment_id=row["assessment_id"],
+                title=row["title"],
+                type=str(row["assessment_type"]) if row["assessment_type"] else None,
+                status=str(row["status"]),
+                overall_score=row["overall_score"],
+                started_at=row["started_at"],
+                submitted_at=row["submitted_at"],
+            ).model_dump(mode="json")
+            for row in rows
+        ],
+        "meta": {
+            "page": page,
+            "page_size": page_size,
+            "total_items": total,
+            "total_pages": (total + page_size - 1) // page_size if page_size else 0,
+        },
+    }
+
+
+@router.get("/diagnostic-status/me")
+async def read_own_diagnostic_status(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
+    """Where the authenticated learner stands on the diagnostic.
+
+    Naming a learner is a Teacher/Administrator action; a learner always reads
+    their own status through this route. Returns ``reassessment_eligible: true``
+    when a teacher has granted an unexpired, unconsumed authorization.
+    """
+    _only_a_learner(actor)
+
+    student_id = await repository.own_student_id(connection, actor.user_id)
+    if student_id is None:
+        raise ApiError(403, "No learner profile was found for your account")
+
+    student_id = UUID(str(student_id))
+    row = await repository.diagnostic_status(connection, student_id)
+    if row is None:
+        raise ApiError(404, "No learner was found")
+
+    authorised = row["authorization_id"] is not None
+    status = DiagnosticStatus(
+        status=str(row["diagnostic_status"]),
+        latest_attempt_id=row["latest_attempt_id"],
+        latest_score=row["latest_score"],
+        reassessment_eligible=authorised,
+        reassessment_reason=(
+            "A Teacher/Administrator has authorised a reassessment." if authorised else None
+        ),
+    )
+    return {"data": status.model_dump(mode="json")}
+
+
 @router.patch("/assessment-attempts/{attempt_id}")
 async def save_answers(
     actor: CurrentActor, connection: ActorDb, attempt_id: UUID, body: SaveAnswersRequest
@@ -229,9 +313,104 @@ async def save_answers(
     return {"data": {"attempt_id": str(attempt_id), "saved": saved}}
 
 
+def _extract_valid_payload(attempt_row: Any) -> dict[str, Any] | None:
+    """Safely extract and validate result_payload if it contains valid competency results."""
+    try:
+        payload = attempt_row["result_payload"]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return None
+
+    if (
+        isinstance(payload, dict)
+        and isinstance(payload.get("competency_results"), list)
+        and len(payload["competency_results"]) > 0
+    ):
+        return payload
+    return None
+
+
+def _report_from_attempt(
+    attempt_row: Any,
+    results: list[Any],
+    path_rows: list[Any],
+    valid_payload: dict[str, Any] | None = None,
+) -> AttemptReport:
+    payload = valid_payload if valid_payload is not None else _extract_valid_payload(attempt_row)
+
+    competency_results: list[CompetencyResult] = []
+    path: list[PathItem] = []
+    next_action: str | None = None
+
+    if payload:
+        try:
+            competency_results = [
+                CompetencyResult(
+                    competency_id=r["competency_id"],
+                    competency_name=r.get("competency_name"),
+                    raw_score=r["raw_score"],
+                    max_score=r["max_score"],
+                    percentage=r["percentage"],
+                    mastery_band=str(r["mastery_band"]),
+                )
+                for r in payload.get("competency_results", [])
+            ]
+            path = [
+                PathItem(
+                    id=p["id"],
+                    priority=p["priority"],
+                    reason=p.get("reason"),
+                    status=str(p["status"]),
+                    competency=p["competency"],
+                    module=p["module"],
+                )
+                for p in payload.get("recommended_learning_path", [])
+            ]
+            next_action = payload.get("next_action") or _next_action(path)
+        except (KeyError, TypeError, ValueError):
+            competency_results = []
+            path = []
+            next_action = None
+
+    if not competency_results:
+        competency_results = [
+            CompetencyResult(
+                competency_id=row["competency_id"],
+                competency_name=row["competency_name"],
+                raw_score=row["raw_score"],
+                max_score=row["max_score"],
+                percentage=row["percentage"],
+                mastery_band=str(row["mastery_band"]),
+            )
+            for row in results
+        ]
+        path = [_path_item(row) for row in path_rows]
+        next_action = _next_action(path)
+
+    return AttemptReport(
+        attempt_id=attempt_row["attempt_id"],
+        assessment_id=attempt_row["assessment_id"],
+        status=str(attempt_row["status"]),
+        overall_score=attempt_row["overall_score"],
+        started_at=attempt_row["started_at"],
+        submitted_at=attempt_row["submitted_at"],
+        competency_results=competency_results,
+        recommended_learning_path=path,
+        next_action=next_action,
+    )
+
+
 @router.post("/assessment-attempts/{attempt_id}/submit")
 async def submit_attempt(
-    actor: CurrentActor, connection: ActorDb, attempt_id: UUID, body: SaveAnswersRequest
+    actor: CurrentActor,
+    connection: ActorDb,
+    attempt_id: UUID,
+    body: SaveAnswersRequest,
 ) -> dict[str, Any]:
     """Finalise and grade an attempt.
 
@@ -248,31 +427,15 @@ async def submit_attempt(
     if attempt_row is None:
         raise ApiError(404, "No attempt of yours is in progress")
 
-    results = await repository.results_for(connection, attempt_id)
-    path_rows = await repository.path_for(connection, attempt_row["student_id"])
-    path = [_path_item(row) for row in path_rows]
+    valid_payload = _extract_valid_payload(attempt_row)
+    if valid_payload is not None:
+        results = []
+        path_rows = []
+    else:
+        results = await repository.results_for(connection, attempt_id)
+        path_rows = await repository.path_for(connection, attempt_row["student_id"])
 
-    report = AttemptReport(
-        attempt_id=attempt_row["attempt_id"],
-        assessment_id=attempt_row["assessment_id"],
-        status=str(attempt_row["status"]),
-        overall_score=attempt_row["overall_score"],
-        started_at=attempt_row["started_at"],
-        submitted_at=attempt_row["submitted_at"],
-        competency_results=[
-            CompetencyResult(
-                competency_id=row["competency_id"],
-                competency_name=row["competency_name"],
-                raw_score=row["raw_score"],
-                max_score=row["max_score"],
-                percentage=row["percentage"],
-                mastery_band=str(row["mastery_band"]),
-            )
-            for row in results
-        ],
-        recommended_learning_path=path,
-        next_action=_next_action(path),
-    )
+    report = _report_from_attempt(attempt_row, results, path_rows, valid_payload=valid_payload)
     return {"data": report.model_dump(mode="json")}
 
 
@@ -290,26 +453,19 @@ async def read_attempt(
     if attempt_row is None:
         raise ApiError(404, "No attempt was found")
 
-    results = await repository.results_for(connection, attempt_id)
-    report = AttemptReport(
-        attempt_id=attempt_row["attempt_id"],
-        assessment_id=attempt_row["assessment_id"],
-        status=str(attempt_row["status"]),
-        overall_score=attempt_row["overall_score"],
-        started_at=attempt_row["started_at"],
-        submitted_at=attempt_row["submitted_at"],
-        competency_results=[
-            CompetencyResult(
-                competency_id=row["competency_id"],
-                competency_name=row["competency_name"],
-                raw_score=row["raw_score"],
-                max_score=row["max_score"],
-                percentage=row["percentage"],
-                mastery_band=str(row["mastery_band"]),
-            )
-            for row in results
-        ],
-    )
+    valid_payload = _extract_valid_payload(attempt_row)
+    if valid_payload is not None:
+        results = []
+        path_rows = []
+    else:
+        results = await repository.results_for(connection, attempt_id)
+        path_rows = (
+            await repository.path_for(connection, attempt_row["student_id"])
+            if attempt_row.get("student_id")
+            else []
+        )
+
+    report = _report_from_attempt(attempt_row, results, path_rows, valid_payload=valid_payload)
     return {"data": report.model_dump(mode="json")}
 
 

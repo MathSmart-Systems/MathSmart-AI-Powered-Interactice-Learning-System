@@ -107,10 +107,11 @@ def create_app(
     application.add_middleware(RequestIdMiddleware)
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=resolved.cors_origins,
+        allow_origins=resolved.allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=["X-Request-Id"],
     )
     install_error_handlers(application)
 
