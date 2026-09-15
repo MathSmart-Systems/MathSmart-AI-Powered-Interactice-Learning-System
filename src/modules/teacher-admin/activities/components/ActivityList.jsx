@@ -32,11 +32,11 @@ function ActivityListSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 6 }).map((_, i) => (
-        <Card key={i} className="animate-pulse border-border/70 shadow-xs">
+        <Card key={i} className="animate-pulse overflow-hidden border-border/70 shadow-xs">
           <CardHeader className="space-y-2 pb-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 min-w-0 w-full">
               <div className="h-4 w-28 rounded-md bg-muted" />
-              <div className="h-5 w-16 rounded-md bg-muted" />
+              <div className="h-5 w-16 shrink-0 rounded-md bg-muted" />
             </div>
             <div className="h-6 w-3/4 rounded-md bg-muted" />
           </CardHeader>
@@ -142,13 +142,13 @@ export function ActivityList({
         return (
           <Card
             key={activity.activity_id}
-            className="group flex flex-col justify-between border-border/80 bg-card hover:border-primary/40 hover:shadow-md transition-all duration-200"
+            className="group flex flex-col justify-between overflow-hidden border-border/80 bg-card hover:border-primary/40 hover:shadow-md transition-all duration-200"
           >
             <CardHeader className="space-y-3 pb-3">
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 min-w-0 w-full">
                 <span
                   title={moduleTitle}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-0.5 text-xs font-semibold text-secondary-foreground truncate max-w-[200px]"
+                  className="inline-flex min-w-0 shrink items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-0.5 text-xs font-semibold text-secondary-foreground"
                 >
                   <BookOpen className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="truncate">{moduleTitle}</span>
