@@ -10,12 +10,9 @@
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-const REQUEST_TIMEOUT_MS = 30_000;
+import { apiBaseUrl } from "./api-base.js";
 
-function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
-}
+const REQUEST_TIMEOUT_MS = 30_000;
 
 async function getAccessToken() {
   if (!isSupabaseConfigured()) {

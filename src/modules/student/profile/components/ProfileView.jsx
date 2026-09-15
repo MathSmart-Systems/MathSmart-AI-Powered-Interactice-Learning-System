@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { EditNameDialog } from "./EditNameDialog";
+import { initials } from "../utils/profile-model.js";
 
 function Monogram({ initials }) {
   return (
@@ -76,7 +77,7 @@ export function ProfileView({ model }) {
       >
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <Monogram initials={model.initials} />
+            <Monogram initials={initials(fullName)} />
             <div className="flex min-w-0 flex-col gap-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2

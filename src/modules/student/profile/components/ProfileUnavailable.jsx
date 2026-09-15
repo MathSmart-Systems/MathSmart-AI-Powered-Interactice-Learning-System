@@ -36,6 +36,7 @@ export function ProfileServiceError() {
     <Frame>
       <section
         aria-labelledby="profile-error-heading"
+        aria-live="polite"
         className="flex max-w-2xl flex-col gap-4 border-l-[3px] border-destructive bg-destructive/5 px-6 py-6"
       >
         <div className="flex items-center gap-2.5 text-destructive">
@@ -67,6 +68,7 @@ export function ProfileNoProfile() {
     <Frame>
       <section
         aria-labelledby="profile-no-profile-heading"
+        aria-live="polite"
         className="flex max-w-2xl flex-col gap-4 border-l-[3px] border-primary bg-card px-6 py-6"
       >
         <div className="flex items-center gap-2.5 text-primary">

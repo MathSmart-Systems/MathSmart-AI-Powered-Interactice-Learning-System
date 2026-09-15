@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { buildProfileModel } from "../utils/profile-model.js";
+import { apiBaseUrl } from "./api-base.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -26,11 +27,6 @@ export const PROFILE_STATE = Object.freeze({
   NO_PROFILE: "no_profile",
   ERROR: "error",
 });
-
-function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
-}
 
 async function accessToken() {
   if (!isSupabaseConfigured()) {
@@ -78,7 +74,7 @@ async function readFromApi(path, token, base) {
 
 /** A learner whose account exists but whose learner record does not. */
 function isMissingProfile(result) {
-  return result.status === 404 || result.status === 403;
+  return result.status === 404;
 }
 
 /**
