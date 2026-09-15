@@ -111,18 +111,14 @@ def test_cors_origins_parses_json_list_env(monkeypatch):
 
 def test_cors_origins_rejects_wildcard_in_comma_separated(monkeypatch):
     """Verify that a bare wildcard in comma-separated CORS_ORIGINS is rejected."""
-    import pytest
-
     with pytest.raises(ValueError, match="wildcard"):
-        build(monkeypatch, CORS_ORIGINS="*").allowed_origins
+        _ = build(monkeypatch, CORS_ORIGINS="*").allowed_origins
 
 
 def test_cors_origins_rejects_wildcard_in_json_array(monkeypatch):
     """Verify that a bare wildcard inside a JSON-array CORS_ORIGINS is rejected."""
-    import pytest
-
     with pytest.raises(ValueError, match="wildcard"):
-        build(monkeypatch, CORS_ORIGINS='["*"]').allowed_origins
+        _ = build(monkeypatch, CORS_ORIGINS='["*"]').allowed_origins
 
 
 def test_cors_origins_filters_wildcard_mixed_with_explicit_origins(monkeypatch):

@@ -110,6 +110,7 @@ ASSESSMENT_ROW = {
 #: An assessment that is ready to publish: it has questions, all of them are
 #: published, and its grade level is still active.
 READINESS_ROW = {
+    "assessment_status": "draft",
     "grade_is_active": True,
     "question_total": 1,
     "unpublished_total": 0,
@@ -570,6 +571,26 @@ def test_publishing_an_assessment_for_an_inactive_grade_is_refused():
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert not any("set status" in query for query in connection.queries())
+
+
+def test_publishing_a_non_draft_assessment_is_refused():
+    """Only draft assessments can be published; archived or published ones cannot."""
+    connection = admin_connection(
+        **{
+            READINESS: {**READINESS_ROW, "assessment_status": "archived"},
+            "returning": ASSESSMENT_ROW,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert "draft" in response.json()["error"]["message"]
     assert not any("set status" in query for query in connection.queries())
 
 

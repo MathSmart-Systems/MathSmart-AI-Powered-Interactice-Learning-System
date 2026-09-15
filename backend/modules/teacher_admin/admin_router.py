@@ -498,6 +498,13 @@ async def publish_assessment(
     if readiness is None:
         raise ApiError(404, "No assessment was found")
 
+    if readiness["assessment_status"] != "draft":
+        raise ApiError(
+            422,
+            "Only a draft assessment can be published",
+            code="assessment_not_publishable",
+        )
+
     if readiness["question_total"] < 1:
         raise ApiError(
             422,

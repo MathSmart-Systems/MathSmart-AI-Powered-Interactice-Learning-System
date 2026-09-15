@@ -61,7 +61,11 @@ class Settings(BaseSettings):
                 pass
             else:
                 if isinstance(parsed, list):
-                    origins = [str(o).strip() for o in parsed if str(o).strip() and str(o).strip() != "*"]
+                    origins = [
+                        item
+                        for o in parsed
+                        if (item := str(o).strip()) and item != "*"
+                    ]
                     if not origins:
                         raise ValueError("CORS_ORIGINS must not be empty or contain only wildcards")
                     return origins

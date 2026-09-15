@@ -371,6 +371,7 @@ group by assessment_questions.assessment_id
 #: table constrains it to 1..480 and forbids null.
 _PUBLICATION_READINESS_SQL = """
 select
+  assessments.status as assessment_status,
   grade_levels.is_active as grade_is_active,
   (
     select count(*)
