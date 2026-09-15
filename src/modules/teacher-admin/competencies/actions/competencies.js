@@ -29,6 +29,7 @@ function requiredText(value, label) {
   return text ? text : { missing: label };
 }
 
+/** Returns the label of the first required value that is blank. */
 function raiseFirstMissing(values) {
   for (const [label, value] of values) {
     const checked = requiredText(value, label);
@@ -39,6 +40,7 @@ function raiseFirstMissing(values) {
   return null;
 }
 
+/** Converts submitted fields into the competency payload expected by the API. */
 function draftFromForm(formData) {
   return {
     code: String(formData.get("code") ?? "").trim(),

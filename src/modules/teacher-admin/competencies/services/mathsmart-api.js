@@ -17,11 +17,13 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/** Returns the configured API origin without trailing slashes. */
 export function apiBaseUrl() {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
 }
 
+/** Reads the current session's access token for forwarding to the API. */
 export async function accessToken() {
   if (!isSupabaseConfigured()) {
     return null;
@@ -91,6 +93,7 @@ export async function apiRequest(path, { method = "GET", body } = {}) {
   return { ok: true, status: response.status, data: envelope?.data ?? null, payload: envelope, error: null };
 }
 
+/** Parses a response body when present, returning `null` for empty or invalid JSON. */
 async function safelyReadBody(response) {
   if (response.status === 204) {
     return null;
