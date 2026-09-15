@@ -43,6 +43,22 @@ COMPETENCY_ROW = {
     "updated_at": None,
 }
 
+MODULE_ROW = {
+    "module_id": MODULE,
+    "competency_id": COMPETENCY,
+    "title": "Multiplication and Division of Integers",
+    "estimated_minutes": 15,
+    "learning_objective": "Apply sign rules.",
+    "short_explanation": "Equal signs give a positive result.",
+    "rules": [],
+    "worked_examples": [],
+    "status": "draft",
+    "version": 1,
+    "order_index": 1,
+    "created_at": None,
+    "updated_at": None,
+}
+
 QUESTION_ROW = {
     "question_id": QUESTION,
     "competency_id": COMPETENCY,
@@ -115,6 +131,7 @@ def admin_connection(**overrides):
     results = {
         TOTAL: 1,
         "from app.competencies": [COMPETENCY_ROW],
+        "from app.learning_modules": [MODULE_ROW],
         "from app.questions": [QUESTION_ROW],
         "from app.assessments": [ASSESSMENT_ROW],
         "from app.user_profiles": [USER_ROW],
@@ -140,6 +157,24 @@ def test_a_teacher_admin_lists_competency_drafts():
 
     assert response.status_code == 200
     assert response.json()["data"][0]["code"] == "MATH6-INT-02"
+
+
+def test_module_status_filters_the_page_and_its_count():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/modules",
+        params={"search": "integers", "status": "draft", "page": 2, "page_size": 10},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    module_calls = [call for call in connection.calls if "from app.learning_modules" in call[0]]
+    assert len(module_calls) == 2
+    assert module_calls[0][1] == ("integers", "draft", 10, 10)
+    assert module_calls[1][1] == ("integers", "draft")
+    assert all("learning_modules.status = $2" in query for query, _args in module_calls)
 
 
 def test_a_learner_cannot_reach_administration():

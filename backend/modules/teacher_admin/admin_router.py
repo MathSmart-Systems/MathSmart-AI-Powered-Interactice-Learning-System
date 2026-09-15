@@ -46,6 +46,7 @@ from modules.teacher_admin.admin_schemas import (
     GradeDraft,
     ModuleChanges,
     ModuleDraft,
+    PublicationStatus,
     QuestionChanges,
     QuestionDraft,
     SectionChanges,
@@ -204,10 +205,23 @@ async def list_modules(
     _actor: TeacherAdmin,
     connection: ActorDb,
     search: Annotated[str | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
+    status: Annotated[PublicationStatus | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    return await _list(connection, LEARNING_MODULES, search, page, page_size)
+    offset = (page - 1) * page_size
+    status_value = status.value if status else None
+    rows = await repository.module_listing(
+        connection,
+        search=search,
+        status=status_value,
+        limit=page_size,
+        offset=offset,
+    )
+    total = await repository.module_listing_total(
+        connection, search=search, status=status_value
+    )
+    return _envelope(list(rows), LEARNING_MODULES, total, page, page_size)
 
 
 @router.post("/teacher-admin/modules", status_code=201)
