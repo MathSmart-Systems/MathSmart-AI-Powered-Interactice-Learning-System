@@ -215,25 +215,48 @@ function bandFor(value) {
   return null;
 }
 
+/**
+ * Safely parses an integer count, returning ``null`` when the value is absent.
+ *
+ * Using ``|| 0`` would swallow a genuine zero; ``Number(null)`` is 0 but
+ * should be treated as unknown. The DB schema enforces ``max_score >= 1``, so
+ * a 0 here always means the field was not populated.
+ */
+function toInt(value) {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
 /** Canonical scored-attempt shape -> the report shape the UI renders. */
 function toReportView(result) {
   const competencies = Array.isArray(result?.competency_results)
     ? result.competency_results
     : [];
 
-  const totalScore = competencies.reduce(
-    (sum, entry) => sum + (Number(entry?.raw_score) || 0),
-    0,
-  );
-  const maxScore = competencies.reduce(
-    (sum, entry) => sum + (Number(entry?.max_score) || 0),
-    0,
-  );
+  // Sum integer counts from each competency. If competency_results is empty
+  // (e.g. the attempt was read back before the grading function populated the
+  // table, or RLS is blocking the join), fall through to null so the UI can
+  // display "—" rather than a misleading 0/0.
+  let totalScore = null;
+  let maxScore = null;
+  if (competencies.length > 0) {
+    totalScore = competencies.reduce((sum, entry) => sum + (toInt(entry?.raw_score) ?? 0), 0);
+    maxScore = competencies.reduce((sum, entry) => sum + (toInt(entry?.max_score) ?? 0), 0);
+    // If the sums are still 0 (DB returned zeros for all rows), treat as unknown.
+    if (maxScore === 0) {
+      totalScore = null;
+      maxScore = null;
+    }
+  }
 
+  // overall_score is a 0–100 percentage stored as numeric(5,2) by the DB.
+  // Prefer it as the canonical percentage; fall back to computing from the
+  // integer counts only when overall_score is absent.
   const percentage =
     typeof result?.overall_score === "number"
       ? result.overall_score
-      : maxScore > 0
+      : maxScore != null && maxScore > 0
         ? Math.round((totalScore / maxScore) * 1000) / 10
         : 0;
 
@@ -245,14 +268,17 @@ function toReportView(result) {
     percentage,
     domain_scores: competencies.map((entry) => {
       const band = bandFor(entry?.mastery_band);
+      const entryRaw = toInt(entry?.raw_score);
+      const entryMax = toInt(entry?.max_score);
 
       return {
         domain: entry?.competency_name ?? "Competency",
         competency_id: entry?.competency_id ?? null,
-        score: Number(entry?.raw_score) || 0,
-        max_score: Number(entry?.max_score) || 0,
+        score: entryRaw,
+        max_score: entryMax,
         percentage: Number(entry?.percentage) || 0,
         mastery_band: band,
+        // Null band (unknown mastery) is also treated as a gap.
         gap_identified: band !== MASTERY_BAND.MASTERED,
       };
     }),

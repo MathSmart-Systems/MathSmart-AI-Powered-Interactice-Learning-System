@@ -65,9 +65,9 @@ export function DiagnosticResultsView({
           <CardContent className="flex h-full flex-col justify-center gap-1 py-8 text-center">
             <p className="text-sm text-muted-foreground">Raw score</p>
             <p className="font-mono text-5xl font-semibold tabular-nums text-foreground">
-              {result.total_score}
+              {result.total_score ?? "\u2014"}
               <span className="text-2xl text-muted-foreground">
-                /{result.max_score}
+                /{result.max_score ?? "\u2014"}
               </span>
             </p>
             <p className="text-lg font-semibold text-primary">
@@ -114,7 +114,9 @@ export function DiagnosticResultsView({
                   {entry.domain}
                 </span>
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                  {entry.score}/{entry.max_score} · {entry.percentage}%
+                  {entry.score != null && entry.max_score != null
+                    ? `${entry.score}/${entry.max_score} · ${entry.percentage}%`
+                    : `${entry.percentage}%`}
                 </span>
               </div>
 
@@ -180,7 +182,9 @@ export function DiagnosticResultsView({
                     </p>
                   </div>
                   <Badge variant="outline" className={styleForBand(gap.mastery_band).badge}>
-                    {gap.score}/{gap.max_score}
+                    {gap.score != null && gap.max_score != null
+                      ? `${gap.score}/${gap.max_score}`
+                      : "\u2014"}
                   </Badge>
                 </li>
               ))}
