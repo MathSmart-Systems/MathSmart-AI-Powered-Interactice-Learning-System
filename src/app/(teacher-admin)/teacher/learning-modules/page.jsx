@@ -9,7 +9,7 @@ export default async function TeacherLearningModulesPage({ searchParams }) {
 
   return (
     <Suspense fallback={<LearningModulesSkeleton />}>
-      <LearningModulesView search={params?.search} page={params?.page} />
+      <LearningModulesView search={params?.search} status={params?.status} page={params?.page} />
     </Suspense>
   );
 }

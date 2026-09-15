@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { DEFAULT_PAGE_SIZE, STATUS_LABELS } from "../constants";
 
 import { listCompetencies, listModules } from "../services/learning-modules-api";
@@ -5,12 +7,17 @@ import { listCompetencies, listModules } from "../services/learning-modules-api"
 import { LearningModulesClient } from "./LearningModulesClient";
 import { LearningModulesServiceError } from "./LearningModulesStates";
 import { formatUpdated } from "../utils/format.js";
+import { learningModulesUrl } from "../utils/urls.js";
 
 const MAX_SEARCH_LENGTH = 120;
 
 function parsePage(value) {
   const page = Number.parseInt(value ?? "1", 10);
   return Number.isNaN(page) ? 1 : Math.max(page, 1);
+}
+
+function parseStatus(value) {
+  return typeof value === "string" && STATUS_LABELS[value] ? value : "published";
 }
 
 function toCompetency(row) {
@@ -45,12 +52,17 @@ function competencyLabel(competencyByCode, competencyId) {
  * decides how the list looks; nothing in this file decides how content is
  * authored or graded.
  */
-export async function LearningModulesView({ search: searchParam, page: pageParam }) {
+export async function LearningModulesView({
+  search: searchParam,
+  status: statusParam,
+  page: pageParam,
+}) {
   const search = typeof searchParam === "string" ? searchParam.slice(0, MAX_SEARCH_LENGTH).trim() : "";
+  const status = parseStatus(statusParam);
   const requestedPage = parsePage(pageParam);
 
   const [modulesResult, competenciesResult] = await Promise.all([
-    listModules({ search, page: requestedPage }),
+    listModules({ search, status, page: requestedPage }),
     listCompetencies(),
   ]);
 
@@ -61,6 +73,10 @@ export async function LearningModulesView({ search: searchParam, page: pageParam
   const totalItems = typeof modulesResult.meta?.total_items === "number" ? modulesResult.meta.total_items : 0;
   const totalPages = typeof modulesResult.meta?.total_pages === "number" ? modulesResult.meta.total_pages : 1;
   const page = Math.min(requestedPage, Math.max(totalPages, 1));
+
+  if (page !== requestedPage) {
+    redirect(learningModulesUrl({ search, status, page }));
+  }
 
   // A degraded competency read never sinks the list: rows fall back to a
   // missing badge and the author dialog reports that no competency is
@@ -92,6 +108,7 @@ export async function LearningModulesView({ search: searchParam, page: pageParam
       page={page}
       pageSize={DEFAULT_PAGE_SIZE}
       search={search}
+      status={status}
       competencies={competencyOptions}
     />
   );

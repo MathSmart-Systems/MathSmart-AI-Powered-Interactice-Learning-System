@@ -8,6 +8,7 @@ const DATE_FORMATTER = new Intl.DateTimeFormat("en-PH", {
   day: "numeric",
   month: "short",
   year: "numeric",
+  timeZone: "Asia/Manila",
 });
 
 /** "2026-09-13T…" → "13 Sep 2026". Anything unparsable stays as-is. */

@@ -50,7 +50,7 @@ export function LearningModulesServiceError({ message = "The Learning Modules co
  * whether a teacher is looking at an empty library or searching for a module
  * that does not match.
  */
-export function LearningModulesEmpty({ hasSearch }) {
+export function LearningModulesEmpty({ hasSearch, status }) {
   return hasSearch ? (
     <section
       aria-labelledby="learning-modules-empty-heading"
@@ -70,7 +70,7 @@ export function LearningModulesEmpty({ hasSearch }) {
 
       <div className="pt-1">
         <Button asChild variant="outline" className="h-11 px-5">
-          <Link href="/teacher/learning-modules">Clear search</Link>
+          <Link href={`/teacher/learning-modules?status=${status}&page=1`}>Clear search</Link>
         </Button>
       </div>
     </section>
@@ -80,12 +80,15 @@ export function LearningModulesEmpty({ hasSearch }) {
       className="flex flex-col gap-4 border-l-[3px] border-primary bg-card px-6 py-6"
     >
       <h2 id="learning-modules-empty-heading" className="text-base font-semibold text-primary">
-        No modules yet
+        No {status} modules yet
       </h2>
 
       <p className="max-w-prose text-sm leading-relaxed text-foreground">
-        This library is where the learning path is authored. Add the first module to build
-        from.
+        {status === "archived"
+          ? "Archive a module and it appears here, kept with its records and ready to restore."
+          : status === "draft"
+            ? "Use “+ New module” to start writing a draft."
+            : "Publish a draft and it appears here for learners."}
       </p>
     </section>
   );

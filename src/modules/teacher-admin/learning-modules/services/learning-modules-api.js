@@ -14,11 +14,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
+import { secureApiBaseUrl } from "../utils/api-url.js";
+
 const REQUEST_TIMEOUT_MS = 10_000;
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
 async function accessToken() {
@@ -121,12 +122,19 @@ async function apiRequest(path, { method = "GET", body = null } = {}) {
 }
 
 /** The module rows, normalised alongside the pagination envelope. */
-export async function listModules({ search = "", page = 1, pageSize = 10 } = {}) {
+export async function listModules({
+  search = "",
+  status = "published",
+  page = 1,
+  pageSize = 10,
+} = {}) {
   const query = new URLSearchParams();
 
   if (search) {
     query.set("search", search);
   }
+
+  query.set("status", status);
 
   query.set("page", String(page));
   query.set("page_size", String(pageSize));

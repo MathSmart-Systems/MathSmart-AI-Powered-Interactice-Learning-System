@@ -181,6 +181,28 @@ def count_sql(resource: Resource) -> str:
     )
 
 
+def module_list_sql() -> str:
+    """The module list, filtered before its page is selected."""
+    columns = ", ".join(
+        f"{LEARNING_MODULES.table}.{column}" for column in LEARNING_MODULES.readable
+    )
+    return (
+        f"select {columns}\nfrom app.{LEARNING_MODULES.table}\n"
+        f"where true{_search_clause(LEARNING_MODULES)}\n"
+        f" and ($2::app.publication_status is null or {LEARNING_MODULES.table}.status = $2)\n"
+        f"order by {LEARNING_MODULES.table}.{LEARNING_MODULES.order_by}\nlimit $3 offset $4"
+    )
+
+
+def module_count_sql() -> str:
+    """The count for the same status-scoped module result set."""
+    return (
+        f"select count(*) as total\nfrom app.{LEARNING_MODULES.table}\n"
+        f"where true{_search_clause(LEARNING_MODULES)}\n"
+        f" and ($2::app.publication_status is null or {LEARNING_MODULES.table}.status = $2)"
+    )
+
+
 def read_sql(resource: Resource) -> str:
     columns = ", ".join(f"{resource.table}.{column}" for column in resource.readable)
     return (
@@ -330,6 +352,23 @@ async def listing_total(
     connection: ActorConnection, resource: Resource, *, search: str | None
 ) -> int:
     return await connection.fetchval(count_sql(resource), search) or 0
+
+
+async def module_listing(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    status: str | None,
+    limit: int,
+    offset: int,
+) -> list[Any]:
+    return await connection.fetch(module_list_sql(), search, status, limit, offset)
+
+
+async def module_listing_total(
+    connection: ActorConnection, *, search: str | None, status: str | None
+) -> int:
+    return await connection.fetchval(module_count_sql(), search, status) or 0
 
 
 async def read(connection: ActorConnection, resource: Resource, key: UUID) -> Any:

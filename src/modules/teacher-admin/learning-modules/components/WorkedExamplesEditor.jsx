@@ -7,6 +7,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function clientIdentifier() {
+  return globalThis.crypto.randomUUID();
+}
+
+/** Adds editor-only identities that are never submitted to the API. */
+export function editableWorkedExample(raw) {
+  const example = raw ?? { problem: "", steps: [], solution: "", tip: "" };
+  const steps = Array.isArray(example.steps) ? example.steps : [];
+
+  return {
+    ...example,
+    steps,
+    clientId: clientIdentifier(),
+    stepIds: steps.map(() => clientIdentifier()),
+  };
+}
+
 /**
  * The repeatable worked-example editor. Each example is a { problem, steps,
  * solution, tip } block. Steps carry the example index in their field name
@@ -24,7 +41,10 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
 
   function addStep(exampleIndex) {
     const example = examples[exampleIndex];
-    updateExample(exampleIndex, { steps: [...example.steps, ""] });
+    updateExample(exampleIndex, {
+      steps: [...example.steps, ""],
+      stepIds: [...example.stepIds, clientIdentifier()],
+    });
   }
 
   function updateStep(exampleIndex, stepIndex, value) {
@@ -38,6 +58,7 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
     const example = examples[exampleIndex];
     updateExample(exampleIndex, {
       steps: example.steps.filter((_, i) => i !== stepIndex),
+      stepIds: example.stepIds.filter((_, i) => i !== stepIndex),
     });
   }
 
@@ -56,7 +77,7 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
       <div className="flex flex-col gap-4">
         {examples.map((example, exampleIndex) => (
           <div
-            key={exampleIndex}
+            key={example.clientId}
             className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
           >
             <div className="flex items-center justify-between gap-2">
@@ -95,7 +116,7 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
                 </legend>
                 <div className="flex flex-col gap-2">
                   {example.steps.map((step, stepIndex) => (
-                    <div key={stepIndex} className="flex items-center gap-2">
+                    <div key={example.stepIds[stepIndex]} className="flex items-center gap-2">
                       <Input
                         name={`example_step_${exampleIndex}`}
                         value={step}
@@ -161,9 +182,7 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
         variant="outline"
         size="sm"
         className="self-start"
-        onClick={() =>
-          onChange([...examples, { problem: "", steps: [], solution: "", tip: "" }])
-        }
+        onClick={() => onChange([...examples, editableWorkedExample()])}
       >
         <Plus aria-hidden="true" className="size-4" />
         Add another example

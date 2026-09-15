@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 
 import { MODULE_DIALOG_MODES } from "../action-state";
 import { rangeLabel } from "../utils/format.js";
+import { learningModulesUrl } from "../utils/urls.js";
 
 import { ArchiveModuleDialog } from "./ArchiveModuleDialog";
 import { ModuleDialog } from "./ModuleDialog";
@@ -29,10 +30,10 @@ export function LearningModulesClient({
   totalPages,
   pageSize,
   search,
+  status,
   competencies,
 }) {
   const [dialog, setDialog] = useState(null);
-  const [tab, setTab] = useState("published");
   const tabsId = useId();
 
   const TABS = [
@@ -40,13 +41,6 @@ export function LearningModulesClient({
     { id: "draft", label: "Draft" },
     { id: "archived", label: "Archived" },
   ];
-
-  const publishedModules = items.filter((module) => module.status === "published");
-  const draftModules = items.filter((module) => module.status === "draft");
-  const archivedModules = items.filter((module) => module.status === "archived");
-
-  const currentModules =
-    tab === "archived" ? archivedModules : tab === "draft" ? draftModules : publishedModules;
 
   function openCreate() {
     setDialog({ key: "create", mode: MODULE_DIALOG_MODES.CREATE, module: null });
@@ -83,6 +77,7 @@ export function LearningModulesClient({
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <form method="get" role="search" className="flex-1 sm:max-w-80">
+            <input type="hidden" name="status" value={status} />
             <div className="flex items-center gap-2">
               <Input
                 name="search"
@@ -101,7 +96,7 @@ export function LearningModulesClient({
           <div className="flex items-center gap-3">
             {search ? (
               <Button asChild variant="outline" className="h-9 px-4">
-                <Link href="/teacher/learning-modules">Clear search</Link>
+                <Link href={learningModulesUrl({ status })}>Clear search</Link>
               </Button>
             ) : null}
 
@@ -119,22 +114,15 @@ export function LearningModulesClient({
         className="flex items-center gap-5 border-b border-border"
       >
         {TABS.map((item) => {
-          const count =
-            item.id === "published"
-              ? publishedModules.length
-              : item.id === "draft"
-                ? draftModules.length
-                : archivedModules.length;
-          const selected = tab === item.id;
+          const selected = status === item.id;
           return (
-            <button
+            <Link
               key={item.id}
-              type="button"
               role="tab"
               id={`${tabsId}-${item.id}-tab`}
               aria-selected={selected}
               aria-controls={`${tabsId}-${item.id}-panel`}
-              onClick={() => setTab(item.id)}
+              href={learningModulesUrl({ search, status: item.id })}
               className={
                 selected
                   ? "-mb-px inline-flex items-center gap-1.5 rounded-t-sm border-b-2 border-primary px-1 pb-2.5 text-sm font-semibold text-primary outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -142,39 +130,29 @@ export function LearningModulesClient({
               }
             >
               {item.label}
-              <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                {count}
-              </span>
-            </button>
+              {selected ? (
+                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                  {totalItems}
+                </span>
+              ) : null}
+            </Link>
           );
         })}
       </div>
 
       <div
         role="tabpanel"
-        id={`${tabsId}-${tab}-panel`}
-        aria-labelledby={`${tabsId}-${tab}-tab`}
+        id={`${tabsId}-${status}-panel`}
+        aria-labelledby={`${tabsId}-${status}-tab`}
         tabIndex={0}
         className="flex flex-col gap-4 outline-none"
       >
         {items.length === 0 ? (
-          <LearningModulesEmpty hasSearch={Boolean(search)} />
-        ) : currentModules.length === 0 ? (
-          <p className="border-l-[3px] border-border bg-card px-5 py-4 text-sm leading-relaxed text-muted-foreground">
-            {tab === "archived"
-              ? "No archived modules yet. Archive a module and it appears here, kept with its records and ready to restore."
-              : tab === "draft"
-                ? search
-                  ? "No drafts match your search. Try clearing the search, or start writing a new module."
-                  : "No drafts yet. Use “+ New module” to start writing one."
-                : search
-                  ? "No published modules match your search. Clearing the search shows your drafts too."
-                  : "No published modules yet. Publish a draft and it appears here for learners."}
-          </p>
+          <LearningModulesEmpty hasSearch={Boolean(search)} status={status} />
         ) : (
           <ul className="flex flex-col gap-3">
-            {currentModules.map((module) =>
-              tab === "archived" ? (
+            {items.map((module) =>
+              status === "archived" ? (
                 <ModuleRow
                   key={module.id}
                   module={module}
@@ -218,7 +196,7 @@ export function LearningModulesClient({
           </p>
         ) : null}
 
-        <Pagination search={search} page={page} totalPages={totalPages} />
+        <Pagination search={search} status={status} page={page} totalPages={totalPages} />
       </footer>
 
       {dialog?.mode === "archive" ? (

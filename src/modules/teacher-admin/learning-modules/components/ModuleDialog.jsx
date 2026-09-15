@@ -28,7 +28,7 @@ import {
 
 import { RulesEditor } from "./RulesEditor";
 import { SubmitButton } from "./SubmitButton";
-import { WorkedExamplesEditor } from "./WorkedExamplesEditor";
+import { editableWorkedExample, WorkedExamplesEditor } from "./WorkedExamplesEditor";
 
 /**
  * The one decorative gradient token a native <select> shares with the Input
@@ -74,8 +74,8 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
   );
   const [workedExamples, setWorkedExamples] = useState(() =>
     isEdit && Array.isArray(module?.workedExamples) && module.workedExamples.length > 0
-      ? module.workedExamples.map(normalizeExample)
-      : [blankExample()],
+      ? module.workedExamples.map((example) => editableWorkedExample(normalizeExample(example)))
+      : [editableWorkedExample(blankExample())],
   );
   const [status, setStatus] = useState(() =>
     module?.status === "published" ? "published" : "draft",
