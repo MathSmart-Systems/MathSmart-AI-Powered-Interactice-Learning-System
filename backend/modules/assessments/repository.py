@@ -137,7 +137,8 @@ select
   assessment_attempts.status,
   assessment_attempts.overall_score,
   assessment_attempts.started_at,
-  assessment_attempts.submitted_at
+  assessment_attempts.submitted_at,
+  assessment_attempts.result_payload
 from app.assessment_attempts
 where assessment_attempts.attempt_id = $1
 """
@@ -168,13 +169,13 @@ where assessment_attempts.student_id = $1
 _RESULTS_SQL = """
 select
   competency_results.competency_id,
-  competencies.name as competency_name,
+  coalesce(competencies.name, 'Competency') as competency_name,
   competency_results.raw_score,
   competency_results.max_score,
   competency_results.percentage,
   competency_results.mastery_band
 from app.competency_results
-join app.competencies on competencies.competency_id = competency_results.competency_id
+left join app.competencies on competencies.competency_id = competency_results.competency_id
 where competency_results.attempt_id = $1
 order by competency_results.percentage
 """
@@ -186,15 +187,15 @@ select
   learning_path_items.reason,
   learning_path_items.status,
   learning_path_items.competency_id,
-  competencies.code as competency_code,
-  competencies.name as competency_name,
+  coalesce(competencies.code, '') as competency_code,
+  coalesce(competencies.name, 'Competency') as competency_name,
   learning_path_items.module_id,
-  learning_modules.title as module_title,
-  learning_modules.estimated_minutes
+  coalesce(learning_modules.title, 'Learning Module') as module_title,
+  coalesce(learning_modules.estimated_minutes, 15) as estimated_minutes
 from app.learning_path_items
-join app.competencies
+left join app.competencies
   on competencies.competency_id = learning_path_items.competency_id
-join app.learning_modules
+left join app.learning_modules
   on learning_modules.module_id = learning_path_items.module_id
 where learning_path_items.student_id = $1
 order by learning_path_items.priority
@@ -233,6 +234,22 @@ _SAVE_ANSWERS_SQL = "select app.save_assessment_answers($1, $2::jsonb)"
 _SUBMIT_SQL = "select * from app.submit_assessment_attempt($1, $2::jsonb)"
 _AUTHORISE_SQL = "select * from app.authorize_reassessment($1, $2, $3, $4, $5)"
 
+_OWN_STUDENT_SQL = """
+select student_profiles.student_id
+from app.student_profiles
+where student_profiles.user_id = $1
+"""
+
+
+async def own_student_id(connection: ActorConnection, user_id: UUID) -> Any:
+    """Resolve the caller's `user_id` to their `student_id`, or ``None``.
+
+    No student identifier is ever accepted from a request; this is the
+    authoritative server-side resolution. Returns ``None`` when no learner
+    profile has been created yet for the given user.
+    """
+    return await connection.fetchval(_OWN_STUDENT_SQL, user_id)
+
 
 async def listing(
     connection: ActorConnection,
@@ -244,6 +261,7 @@ async def listing(
     limit: int,
     offset: int,
 ) -> list[Any]:
+    """Return the published assessment catalogue with the caller's attempt summary."""
     return await connection.fetch(
         _LIST_SQL, user_id, assessment_type, grade_id, status, limit, offset
     )
