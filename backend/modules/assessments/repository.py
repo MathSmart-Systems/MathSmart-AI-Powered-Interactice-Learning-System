@@ -233,6 +233,22 @@ _SAVE_ANSWERS_SQL = "select app.save_assessment_answers($1, $2::jsonb)"
 _SUBMIT_SQL = "select * from app.submit_assessment_attempt($1, $2::jsonb)"
 _AUTHORISE_SQL = "select * from app.authorize_reassessment($1, $2, $3, $4, $5)"
 
+_OWN_STUDENT_SQL = """
+select student_profiles.student_id
+from app.student_profiles
+where student_profiles.user_id = $1
+"""
+
+
+async def own_student_id(connection: ActorConnection, user_id: UUID) -> Any:
+    """Resolve the caller's `user_id` to their `student_id`, or ``None``.
+
+    No student identifier is ever accepted from a request; this is the
+    authoritative server-side resolution. Returns ``None`` when no learner
+    profile has been created yet for the given user.
+    """
+    return await connection.fetchval(_OWN_STUDENT_SQL, user_id)
+
 
 async def listing(
     connection: ActorConnection,
@@ -244,6 +260,7 @@ async def listing(
     limit: int,
     offset: int,
 ) -> list[Any]:
+    """Return the published assessment catalogue with the caller's attempt summary."""
     return await connection.fetch(
         _LIST_SQL, user_id, assessment_type, grade_id, status, limit, offset
     )

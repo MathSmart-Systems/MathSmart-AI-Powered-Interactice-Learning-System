@@ -214,6 +214,90 @@ async def start_attempt(
     return {"data": delivery.model_dump(mode="json")}
 
 
+@router.get("/assessment-attempts/me")
+async def list_own_attempts(
+    actor: CurrentActor,
+    connection: ActorDb,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+) -> dict[str, Any]:
+    """The authenticated learner's own attempt history.
+
+    This route is declared before ``/assessment-attempts/{attempt_id}`` so that
+    FastAPI routes the literal segment ``"me"`` here rather than attempting to
+    parse it as a UUID (which would return 422).
+
+    Naming a learner is a Teacher/Administrator action; a learner always reads
+    their own history through this route.
+    """
+    _only_a_learner(actor)
+
+    student_id = await repository.own_student_id(connection, actor.user_id)
+    if student_id is None:
+        raise ApiError(403, "No learner profile was found for your account")
+
+    student_id = UUID(str(student_id))
+    offset = (page - 1) * page_size
+    rows = await repository.attempt_history(
+        connection, student_id=student_id, limit=page_size, offset=offset
+    )
+    total = await repository.attempt_history_total(connection, student_id=student_id)
+
+    return {
+        "data": [
+            AttemptSummary(
+                attempt_id=row["attempt_id"],
+                assessment_id=row["assessment_id"],
+                title=row["title"],
+                type=str(row["assessment_type"]) if row["assessment_type"] else None,
+                status=str(row["status"]),
+                overall_score=row["overall_score"],
+                started_at=row["started_at"],
+                submitted_at=row["submitted_at"],
+            ).model_dump(mode="json")
+            for row in rows
+        ],
+        "meta": {
+            "page": page,
+            "page_size": page_size,
+            "total_items": total,
+            "total_pages": (total + page_size - 1) // page_size if page_size else 0,
+        },
+    }
+
+
+@router.get("/diagnostic-status/me")
+async def read_own_diagnostic_status(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
+    """Where the authenticated learner stands on the diagnostic.
+
+    Naming a learner is a Teacher/Administrator action; a learner always reads
+    their own status through this route. Returns ``reassessment_eligible: true``
+    when a teacher has granted an unexpired, unconsumed authorization.
+    """
+    _only_a_learner(actor)
+
+    student_id = await repository.own_student_id(connection, actor.user_id)
+    if student_id is None:
+        raise ApiError(403, "No learner profile was found for your account")
+
+    student_id = UUID(str(student_id))
+    row = await repository.diagnostic_status(connection, student_id)
+    if row is None:
+        raise ApiError(404, "No learner was found")
+
+    authorised = row["authorization_id"] is not None
+    status = DiagnosticStatus(
+        status=str(row["diagnostic_status"]),
+        latest_attempt_id=row["latest_attempt_id"],
+        latest_score=row["latest_score"],
+        reassessment_eligible=authorised,
+        reassessment_reason=(
+            "A Teacher/Administrator has authorised a reassessment." if authorised else None
+        ),
+    )
+    return {"data": status.model_dump(mode="json")}
+
+
 @router.patch("/assessment-attempts/{attempt_id}")
 async def save_answers(
     actor: CurrentActor, connection: ActorDb, attempt_id: UUID, body: SaveAnswersRequest
