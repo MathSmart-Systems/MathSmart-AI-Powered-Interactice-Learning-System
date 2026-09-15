@@ -33,6 +33,9 @@ ROW = {
     "full_name": "Juan Dela Cruz",
     "grade_id": GRADE,
     "section_id": SECTION,
+    "grade_name": "Grade 6",
+    "section_name": "Rizal",
+    "school_name": "San Jose Elementary School",
     "monitoring_status": "active",
     "diagnostic_status": "completed",
 }
@@ -61,6 +64,35 @@ def test_a_learner_updates_their_own_display_name():
     _query, args = next(call for call in connection.calls if PROFILE_UPDATE in call[0])
     assert "Juan D. Cruz" in args
     assert LEARNER in args
+
+
+def test_a_learner_reads_their_own_record_with_enrollment_names():
+    connection = student_connection()
+    client = build_client(connection)
+
+    response = client.get("/api/v1/students/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    record = response.json()["data"]
+    assert record["learner_id"] == "STU-2026-001"
+    assert record["grade_name"] == "Grade 6"
+    assert record["section_name"] == "Rizal"
+    assert record["school_name"] == "San Jose Elementary School"
+    assert record["monitoring_status"] == "active"
+    assert record["diagnostic_status"] == "completed"
+
+
+def test_an_unassigned_learner_has_null_enrollment_names():
+    unassigned = dict(ROW, grade_id=None, section_id=None, grade_name=None, section_name=None)
+    client = build_client(student_connection(**{OWN_LEARNER: unassigned}))
+
+    response = client.get("/api/v1/students/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    record = response.json()["data"]
+    assert record["grade_name"] is None
+    assert record["section_name"] is None
+    assert record["school_name"] == "San Jose Elementary School"
 
 
 def test_a_learner_cannot_change_their_own_role_or_status():

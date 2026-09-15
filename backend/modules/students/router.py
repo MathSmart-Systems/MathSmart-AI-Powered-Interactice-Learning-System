@@ -45,6 +45,9 @@ def _learner(row: Any) -> dict[str, Any]:
         full_name=row["full_name"],
         grade_id=row["grade_id"],
         section_id=row["section_id"],
+        grade_name=row["grade_name"] if row["grade_name"] else None,
+        section_name=row["section_name"] if row["section_name"] else None,
+        school_name=row["school_name"] if row["school_name"] else None,
         monitoring_status=str(row["monitoring_status"]) if row["monitoring_status"] else None,
         diagnostic_status=str(row["diagnostic_status"]) if row["diagnostic_status"] else None,
     ).model_dump(mode="json")

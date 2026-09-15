@@ -63,5 +63,8 @@ class LearnerSummary(BaseModel):
     full_name: str | None = None
     grade_id: UUID | None = None
     section_id: UUID | None = None
+    grade_name: str | None = None
+    section_name: str | None = None
+    school_name: str | None = None
     monitoring_status: str | None = None
     diagnostic_status: str | None = None
