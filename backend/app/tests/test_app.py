@@ -241,6 +241,25 @@ def test_the_openapi_document_is_served(client):
     assert "/api/v1/auth/me" in response.json()["paths"]
 
 
+def test_the_api_answers_the_frontend_origin(client):
+    response = client.get("/api/v1/health", headers={"Origin": "http://localhost:3000"})
+
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_a_cross_origin_preflight_is_answered(client):
+    response = client.options(
+        "/api/v1/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
 # ---------------------------------------------------------------------------
 # Sensitive operations also require a live session
 # ---------------------------------------------------------------------------
