@@ -526,6 +526,7 @@ def test_a_repeated_question_is_refused_with_validation_feedback():
 
 
 def test_publishing_an_empty_assessment_is_refused():
+    """Verify publishing an assessment with 0 questions is refused with 422."""
     connection = admin_connection(
         **{READINESS: {**READINESS_ROW, "question_total": 0}, "returning": ASSESSMENT_ROW}
     )
@@ -557,6 +558,7 @@ def test_publishing_an_assessment_holding_a_draft_question_is_refused():
 
 
 def test_publishing_an_assessment_for_an_inactive_grade_is_refused():
+    """Verify publishing an assessment targeting an inactive grade level is refused with 422."""
     connection = admin_connection(
         **{READINESS: {**READINESS_ROW, "grade_is_active": False}, "returning": ASSESSMENT_ROW}
     )
@@ -572,6 +574,7 @@ def test_publishing_an_assessment_for_an_inactive_grade_is_refused():
 
 
 def test_publishing_an_absent_assessment_reports_not_found():
+    """Verify attempting to publish a non-existent assessment returns 404."""
     client = build_client(admin_connection(**{READINESS: None}))
 
     response = client.post(
@@ -582,6 +585,7 @@ def test_publishing_an_absent_assessment_reports_not_found():
 
 
 def test_publishing_a_populated_assessment_succeeds():
+    """Verify publishing an assessment with valid active questions transitions status to published."""
     client = build_client(
         admin_connection(
             **{
@@ -624,6 +628,7 @@ def test_reading_one_assessment_carries_its_membership_in_order():
 
 
 def test_an_assessment_listing_carries_how_many_questions_each_holds():
+    """Verify assessment listing payload includes question_count computed from membership."""
     client = build_client(
         admin_connection(
             **{MEMBERSHIP_COUNTS: [{"assessment_id": ASSESSMENT, "question_total": 3}]}
@@ -637,6 +642,7 @@ def test_an_assessment_listing_carries_how_many_questions_each_holds():
 
 
 def test_an_assessment_row_without_membership_reports_no_questions():
+    """Verify assessments without question membership default to question_count of 0."""
     client = build_client(admin_connection())
 
     response = client.get("/api/v1/teacher-admin/assessments", headers=ADVISER_HEADERS)
@@ -665,6 +671,7 @@ def test_an_assessment_listing_can_be_filtered_by_publication_status():
 
 
 def test_an_assessment_status_filter_outside_the_enum_is_refused():
+    """Verify an unsupported status filter query parameter returns validation error 422."""
     client = build_client(admin_connection())
 
     response = client.get(
@@ -696,6 +703,7 @@ def test_an_assessment_type_outside_the_enum_is_refused():
 
 
 def test_each_assessment_type_in_the_enum_is_accepted():
+    """Verify all valid assessment type enum values are accepted upon creation."""
     for assessment_type in ("diagnostic", "reassessment", "unit_quiz"):
         client = build_client(
             admin_connection(

@@ -28,6 +28,14 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 300;
 
+/**
+ * Accessible alert banner for reporting error or informational notices.
+ *
+ * @param {object} props
+ * @param {"problem"|"info"} [props.tone] - Visual and semantic severity tone
+ * @param {React.ReactNode} props.children - Banner content
+ * @returns {JSX.Element}
+ */
 function Notice({ tone = "problem", children }) {
   const border = tone === "problem" ? "border-destructive" : "border-primary";
   const tint = tone === "problem" ? "bg-destructive/5" : "bg-card";
@@ -97,6 +105,9 @@ function QuestionManager({ assessment, onClose, onSaved }) {
   useEffect(() => {
     let active = true;
 
+    /**
+     * Loads the current question membership list for this assessment.
+     */
     async function load() {
       setIsLoadingMembership(true);
       const result = await getAssessment(assessmentId);
@@ -126,6 +137,9 @@ function QuestionManager({ assessment, onClose, onSaved }) {
   useEffect(() => {
     let active = true;
 
+    /**
+     * Loads questions from the Question Bank matching the search term.
+     */
     async function load() {
       setIsLoadingBank(true);
       const result = await listQuestions({ search: appliedSearch });
@@ -351,6 +365,16 @@ function QuestionManager({ assessment, onClose, onSaved }) {
   );
 }
 
+/**
+ * Modal dialog for managing and ordering question membership in an assessment.
+ *
+ * @param {object} props
+ * @param {boolean} props.open - Modal visibility state
+ * @param {(open: boolean) => void} props.onOpenChange - Visibility change handler
+ * @param {(updated: object) => void} props.onSaved - Save completion callback
+ * @param {object|null} props.assessment - Target assessment record
+ * @returns {JSX.Element}
+ */
 export function AssessmentQuestionManagerModal({ open, onOpenChange, onSaved, assessment }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

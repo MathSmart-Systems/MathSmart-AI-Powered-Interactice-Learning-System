@@ -113,6 +113,7 @@ async def _list(
     size: int,
     status: str | None = None,
 ) -> dict[str, Any]:
+    """Execute paginated listing query for a resource and package in standard envelope."""
     offset = (page - 1) * size
     rows = await repository.listing(
         connection, resource, search=search, limit=size, offset=offset, status=status

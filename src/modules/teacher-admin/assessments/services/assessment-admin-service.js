@@ -18,6 +18,11 @@ import { DEFAULT_PAGE_SIZE, createApiClient, pageQuery } from "./api-client.js";
 
 export { DEFAULT_PAGE_SIZE } from "./api-client.js";
 
+/**
+ * Resolves the configured base URL for the MathSmart backend API.
+ *
+ * @returns {string|null}
+ */
 function apiBaseUrl() {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
@@ -39,10 +44,22 @@ async function accessToken() {
   }
 }
 
+/**
+ * Creates an instance of the authenticated API client.
+ *
+ * @returns {ReturnType<typeof createApiClient>}
+ */
 function client() {
   return createApiClient({ baseUrl: apiBaseUrl(), getAccessToken: accessToken });
 }
 
+/**
+ * Dispatches an HTTP request through the authenticated API client.
+ *
+ * @param {string} path - Target path
+ * @param {object} [options] - Fetch and request options
+ * @returns {Promise<object>}
+ */
 function request(path, options) {
   return client().request(path, options);
 }
@@ -70,10 +87,27 @@ export function getAssessment(assessmentId, { token = null } = {}) {
   return request(`/teacher-admin/assessments/${encodeURIComponent(assessmentId)}`, { token });
 }
 
+/**
+ * Creates a new assessment record.
+ *
+ * @param {object} draft - Assessment draft payload
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token
+ * @returns {Promise<object>}
+ */
 export function createAssessment(draft, { token = null } = {}) {
   return request("/teacher-admin/assessments", { method: "POST", body: draft, token });
 }
 
+/**
+ * Partially updates an existing assessment draft.
+ *
+ * @param {string} assessmentId - Unique assessment identifier
+ * @param {object} changes - Fields to update
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token
+ * @returns {Promise<object>}
+ */
 export function updateAssessment(assessmentId, changes, { token = null } = {}) {
   return request(`/teacher-admin/assessments/${encodeURIComponent(assessmentId)}`, {
     method: "PATCH",
@@ -104,6 +138,14 @@ export function replaceAssessmentQuestions(assessmentId, questionIds, { token = 
   });
 }
 
+/**
+ * Transitions an assessment to the published state after readiness checks pass.
+ *
+ * @param {string} assessmentId - Unique assessment identifier
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token
+ * @returns {Promise<object>}
+ */
 export function publishAssessment(assessmentId, { token = null } = {}) {
   return request(`/teacher-admin/assessments/${encodeURIComponent(assessmentId)}/publish`, {
     method: "POST",
@@ -111,6 +153,15 @@ export function publishAssessment(assessmentId, { token = null } = {}) {
   });
 }
 
+/**
+ * Fetches available grade levels for authoring and filtering.
+ *
+ * @param {object} [options]
+ * @param {number} [options.page]
+ * @param {number} [options.pageSize]
+ * @param {string|null} [options.token]
+ * @returns {Promise<object>}
+ */
 export function listGrades({ page = 1, pageSize = DEFAULT_PAGE_SIZE, token = null } = {}) {
   return request(`/teacher-admin/grades?${pageQuery({ search: "", page, pageSize })}`, { token });
 }

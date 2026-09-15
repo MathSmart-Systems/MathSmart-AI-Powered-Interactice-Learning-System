@@ -73,6 +73,9 @@ export function TeacherAssessmentsView() {
   useEffect(() => {
     let active = true;
 
+    /**
+     * Loads paginated assessments from the API matching search and status.
+     */
     async function load() {
       setIsLoading(true);
       const result = await listAssessments({
@@ -105,6 +108,9 @@ export function TeacherAssessmentsView() {
   useEffect(() => {
     let active = true;
 
+    /**
+     * Loads available grade levels for assessment authoring and lookup.
+     */
     async function load() {
       const result = await listGrades();
       if (active && result.ok) {
@@ -123,16 +129,32 @@ export function TeacherAssessmentsView() {
     gradeNames[grade.grade_id] = grade.name;
   }
 
+  /**
+   * Opens a management dialog for a specific action and optional target assessment.
+   *
+   * @param {string} kind - Dialog type identifier
+   * @param {object|null} [assessment] - Target assessment record
+   */
   function openDialog(kind, assessment = null) {
     setDialog({ kind, assessment });
   }
 
+  /**
+   * Closes the active dialog when dismissed.
+   *
+   * @param {boolean} open - Dialog open state
+   */
   function closeDialog(open) {
     if (!open) {
       setDialog(NO_DIALOG);
     }
   }
 
+  /**
+   * Updates the selected status filter tab and resets pagination.
+   *
+   * @param {string} next - Target status filter key
+   */
   function handleStatusChange(next) {
     setStatus(next);
     setPage(1);

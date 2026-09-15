@@ -26,6 +26,16 @@ export const CLIENT_FAILURE = Object.freeze({
   MALFORMED: "malformed_response",
 });
 
+/**
+ * Constructs a normalized error response envelope.
+ *
+ * @param {object} options
+ * @param {number|null} [options.status] - HTTP status code
+ * @param {string} options.code - Machine-readable error code
+ * @param {string} options.error - Human-readable error message
+ * @param {Record<string, string>} [options.fields] - Validation field errors
+ * @returns {object}
+ */
 function failure({ status = null, code, error, fields = {} }) {
   return {
     ok: false,
@@ -119,6 +129,16 @@ export function createApiClient({
 } = {}) {
   const base = typeof baseUrl === "string" && baseUrl ? baseUrl.replace(/\/+$/, "") : null;
 
+  /**
+   * Executes an authenticated HTTP request against the API server.
+   *
+   * @param {string} path - Endpoint path
+   * @param {object} [requestOptions]
+   * @param {string} [requestOptions.method] - HTTP method
+   * @param {any} [requestOptions.body] - Request payload
+   * @param {string|null} [requestOptions.token] - Optional explicit auth token
+   * @returns {Promise<object>}
+   */
   async function request(path, { method = "GET", body = null, token = null } = {}) {
     if (!base) {
       return failure({

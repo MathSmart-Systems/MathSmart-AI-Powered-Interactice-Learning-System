@@ -346,6 +346,7 @@ def test_an_enrolment_request_cannot_choose_a_role():
 
 
 def test_cors_preflight_options_for_teacher_admin_assessments(client):
+    """Verify OPTIONS preflight request returns allowed CORS headers for authorized origins."""
     response = client.options(
         "/api/v1/teacher-admin/assessments",
         headers={
@@ -363,6 +364,7 @@ def test_cors_preflight_options_for_teacher_admin_assessments(client):
 
 
 def test_cors_preflight_refuses_unconfigured_origin(client):
+    """Verify CORS preflight fails with 400 when origin is not configured."""
     response = client.options(
         "/api/v1/teacher-admin/assessments",
         headers={
@@ -376,6 +378,7 @@ def test_cors_preflight_refuses_unconfigured_origin(client):
 
 
 def test_authenticated_get_teacher_admin_assessments_carries_cors_headers(client):
+    """Verify authenticated GET response includes CORS headers and exposed request ID."""
     response = client.get(
         "/api/v1/teacher-admin/assessments",
         headers={

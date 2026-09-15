@@ -177,6 +177,7 @@ def _status_clause(resource: Resource, placeholder: str) -> str:
 
 
 def list_sql(resource: Resource) -> str:
+    """Generate SQL query for paginated resource listing with search and status filters."""
     columns = ", ".join(f"{resource.table}.{column}" for column in resource.readable)
     return (
         f"select {columns}\nfrom app.{resource.table}\n"
@@ -186,6 +187,7 @@ def list_sql(resource: Resource) -> str:
 
 
 def count_sql(resource: Resource) -> str:
+    """Generate SQL query for counting total matching resource rows."""
     return (
         f"select count(*) as total\nfrom app.{resource.table}\n"
         f"where true{_search_clause(resource)}{_status_clause(resource, '$2')}"
@@ -400,6 +402,7 @@ async def listing(
     offset: int,
     status: str | None = None,
 ) -> list[Any]:
+    """Retrieve a paginated slice of resource rows filtered by search and status."""
     return await connection.fetch(list_sql(resource), search, limit, offset, status)
 
 
@@ -410,6 +413,7 @@ async def listing_total(
     search: str | None,
     status: str | None = None,
 ) -> int:
+    """Count the total number of resource rows matching search and status filters."""
     return await connection.fetchval(count_sql(resource), search, status) or 0
 
 
@@ -515,6 +519,7 @@ async def audit_events(
 async def replace_assessment_questions(
     connection: ActorConnection, *, assessment_id: UUID, question_ids: list[UUID]
 ) -> None:
+    """Atomically replace the ordered set of questions belonging to an assessment."""
     await connection.execute(_MEMBERSHIP_DELETE_SQL, assessment_id)
     if question_ids:
         await connection.execute(_MEMBERSHIP_INSERT_SQL, assessment_id, question_ids)
@@ -541,6 +546,7 @@ async def assessment_question_counts(
 async def assessment_publication_readiness(
     connection: ActorConnection, assessment_id: UUID
 ) -> Any:
+    """Check whether an assessment meets criteria for publication readiness."""
     return await connection.fetchrow(_PUBLICATION_READINESS_SQL, assessment_id)
 
 
