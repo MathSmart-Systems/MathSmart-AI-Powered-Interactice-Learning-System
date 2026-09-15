@@ -448,21 +448,22 @@ export async function loadDiagnostic() {
     }
   }
 
+  // Scope status and attempt ID to the selected diagnostic assessment
   const diagnosticStatus =
-    status?.status ??
-    me?.diagnostic_status ??
-    (diagnostic.latest_status === "scored"
+    diagnostic.latest_status === "scored"
       ? "completed"
       : diagnostic.latest_status === "in_progress"
         ? "in_progress"
-        : "not_started");
+        : status?.status ??
+          me?.diagnostic_status ??
+          "not_started";
 
   return {
     assessment_id: diagnostic.id,
     title: diagnostic.title,
     total_questions: diagnostic.total_questions ?? 0,
     time_limit_minutes: diagnostic.duration_minutes ?? 60,
-    latest_attempt_id: status?.latest_attempt_id ?? diagnostic.latest_attempt_id ?? null,
+    latest_attempt_id: diagnostic.latest_attempt_id ?? status?.latest_attempt_id ?? null,
     latest_status: diagnostic.latest_status ?? null,
     diagnostic_status: diagnosticStatus,
     reassessment_eligible: status?.reassessment_eligible === true,

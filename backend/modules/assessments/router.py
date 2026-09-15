@@ -313,48 +313,71 @@ async def save_answers(
     return {"data": {"attempt_id": str(attempt_id), "saved": saved}}
 
 
-def _report_from_attempt(
-    attempt_row: Any,
-    results: list[Any],
-    path_rows: list[Any],
-) -> AttemptReport:
-    payload = None
+def _extract_valid_payload(attempt_row: Any) -> dict[str, Any] | None:
+    """Safely extract and validate result_payload if it contains valid competency results."""
     try:
         payload = attempt_row["result_payload"]
     except (KeyError, IndexError, TypeError):
-        payload = None
+        return None
 
     if isinstance(payload, str):
         try:
             payload = json.loads(payload)
         except Exception:
-            payload = None
+            return None
 
-    if payload and isinstance(payload, dict) and "competency_results" in payload:
-        competency_results = [
-            CompetencyResult(
-                competency_id=r["competency_id"],
-                competency_name=r.get("competency_name"),
-                raw_score=r["raw_score"],
-                max_score=r["max_score"],
-                percentage=r["percentage"],
-                mastery_band=str(r["mastery_band"]),
-            )
-            for r in payload.get("competency_results", [])
-        ]
-        path = [
-            PathItem(
-                id=p["id"],
-                priority=p["priority"],
-                reason=p.get("reason"),
-                status=str(p["status"]),
-                competency=p["competency"],
-                module=p["module"],
-            )
-            for p in payload.get("recommended_learning_path", [])
-        ]
-        next_action = payload.get("next_action") or _next_action(path)
-    else:
+    if (
+        isinstance(payload, dict)
+        and isinstance(payload.get("competency_results"), list)
+        and len(payload["competency_results"]) > 0
+    ):
+        return payload
+    return None
+
+
+def _report_from_attempt(
+    attempt_row: Any,
+    results: list[Any],
+    path_rows: list[Any],
+    valid_payload: dict[str, Any] | None = None,
+) -> AttemptReport:
+    payload = valid_payload if valid_payload is not None else _extract_valid_payload(attempt_row)
+
+    competency_results: list[CompetencyResult] = []
+    path: list[PathItem] = []
+    next_action: str | None = None
+
+    if payload:
+        try:
+            competency_results = [
+                CompetencyResult(
+                    competency_id=r["competency_id"],
+                    competency_name=r.get("competency_name"),
+                    raw_score=r["raw_score"],
+                    max_score=r["max_score"],
+                    percentage=r["percentage"],
+                    mastery_band=str(r["mastery_band"]),
+                )
+                for r in payload.get("competency_results", [])
+            ]
+            path = [
+                PathItem(
+                    id=p["id"],
+                    priority=p["priority"],
+                    reason=p.get("reason"),
+                    status=str(p["status"]),
+                    competency=p["competency"],
+                    module=p["module"],
+                )
+                for p in payload.get("recommended_learning_path", [])
+            ]
+            next_action = payload.get("next_action") or _next_action(path)
+        except (KeyError, TypeError, ValueError):
+            competency_results = []
+            path = []
+            next_action = None
+
+    if not competency_results:
         competency_results = [
             CompetencyResult(
                 competency_id=row["competency_id"],
@@ -404,20 +427,15 @@ async def submit_attempt(
     if attempt_row is None:
         raise ApiError(404, "No attempt of yours is in progress")
 
-    payload = None
-    try:
-        payload = attempt_row["result_payload"]
-    except (KeyError, IndexError, TypeError):
-        payload = None
-
-    if payload and isinstance(payload, (dict, str)):
+    valid_payload = _extract_valid_payload(attempt_row)
+    if valid_payload is not None:
         results = []
         path_rows = []
     else:
         results = await repository.results_for(connection, attempt_id)
         path_rows = await repository.path_for(connection, attempt_row["student_id"])
 
-    report = _report_from_attempt(attempt_row, results, path_rows)
+    report = _report_from_attempt(attempt_row, results, path_rows, valid_payload=valid_payload)
     return {"data": report.model_dump(mode="json")}
 
 
@@ -435,13 +453,8 @@ async def read_attempt(
     if attempt_row is None:
         raise ApiError(404, "No attempt was found")
 
-    payload = None
-    try:
-        payload = attempt_row["result_payload"]
-    except (KeyError, IndexError, TypeError):
-        payload = None
-
-    if payload and isinstance(payload, (dict, str)):
+    valid_payload = _extract_valid_payload(attempt_row)
+    if valid_payload is not None:
         results = []
         path_rows = []
     else:
@@ -452,7 +465,7 @@ async def read_attempt(
             else []
         )
 
-    report = _report_from_attempt(attempt_row, results, path_rows)
+    report = _report_from_attempt(attempt_row, results, path_rows, valid_payload=valid_payload)
     return {"data": report.model_dump(mode="json")}
 
 
