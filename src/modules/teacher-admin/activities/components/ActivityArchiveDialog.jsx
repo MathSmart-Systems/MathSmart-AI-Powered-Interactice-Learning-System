@@ -32,6 +32,11 @@ function ArchiveDialogContent({ activity, onClose, onArchived }) {
   const [isArchiving, setIsArchiving] = useState(false);
   const [error, setError] = useState(null);
 
+  /**
+   * Submits the activity archive request and handles completion or error.
+   *
+   * @returns {Promise<void>}
+   */
   async function handleArchive() {
     setIsArchiving(true);
     setError(null);

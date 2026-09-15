@@ -5,22 +5,52 @@ import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { X } from "lucide-react"
 
+/**
+ * Root component that manages open/closed state for a dialog modal.
+ *
+ * @param {import("radix-ui").DialogProps} props
+ * @returns {JSX.Element}
+ */
 function Dialog({ ...props }) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
+/**
+ * Trigger element that opens the dialog when activated.
+ *
+ * @param {import("radix-ui").DialogTriggerProps} props
+ * @returns {JSX.Element}
+ */
 function DialogTrigger({ ...props }) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
+/**
+ * Portals dialog content into the document body.
+ *
+ * @param {import("radix-ui").DialogPortalProps} props
+ * @returns {JSX.Element}
+ */
 function DialogPortal({ ...props }) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
+/**
+ * Button element that closes the active dialog when clicked.
+ *
+ * @param {import("radix-ui").DialogCloseProps} props
+ * @returns {JSX.Element}
+ */
 function DialogClose({ ...props }) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
+/**
+ * Semi-transparent backdrop overlay rendered behind the dialog surface.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>} props
+ * @returns {JSX.Element}
+ */
 function DialogOverlay({ className, ...props }) {
   return (
     <DialogPrimitive.Overlay
@@ -66,6 +96,12 @@ function DialogContent({ className, children, showCloseButton = true, ...props }
   )
 }
 
+/**
+ * Header section of the dialog containing title, description, and optional banner.
+ *
+ * @param {React.HTMLAttributes<HTMLDivElement>} props
+ * @returns {JSX.Element}
+ */
 function DialogHeader({ className, ...props }) {
   return (
     <div
@@ -79,6 +115,12 @@ function DialogHeader({ className, ...props }) {
   )
 }
 
+/**
+ * Scrollable content body container within the dialog surface.
+ *
+ * @param {React.HTMLAttributes<HTMLDivElement>} props
+ * @returns {JSX.Element}
+ */
 function DialogBody({ className, ...props }) {
   return (
     <div
@@ -89,6 +131,12 @@ function DialogBody({ className, ...props }) {
   )
 }
 
+/**
+ * Footer section of the dialog containing action buttons.
+ *
+ * @param {React.HTMLAttributes<HTMLDivElement>} props
+ * @returns {JSX.Element}
+ */
 function DialogFooter({ className, ...props }) {
   return (
     <div
@@ -102,6 +150,12 @@ function DialogFooter({ className, ...props }) {
   )
 }
 
+/**
+ * Accessible title heading for the dialog.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>} props
+ * @returns {JSX.Element}
+ */
 function DialogTitle({ className, ...props }) {
   return (
     <DialogPrimitive.Title
@@ -115,6 +169,12 @@ function DialogTitle({ className, ...props }) {
   )
 }
 
+/**
+ * Accessible description text explaining the dialog's purpose.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>} props
+ * @returns {JSX.Element}
+ */
 function DialogDescription({ className, ...props }) {
   return (
     <DialogPrimitive.Description

@@ -86,6 +86,9 @@ export function TeacherActivitiesView() {
   useEffect(() => {
     let active = true;
 
+    /**
+     * Fetches all learning modules for dropdown options and lookup.
+     */
     async function load() {
       setModuleError(null);
       let allModules = [];
@@ -122,6 +125,9 @@ export function TeacherActivitiesView() {
   useEffect(() => {
     let active = true;
 
+    /**
+     * Fetches paginated activity records matching current filters.
+     */
     async function load() {
       setIsLoading(true);
       const result = await listActivities({

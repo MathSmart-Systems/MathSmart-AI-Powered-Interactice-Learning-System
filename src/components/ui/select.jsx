@@ -5,18 +5,42 @@ import { cn } from "cn"
 import { Select as SelectPrimitive } from "radix-ui"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
+/**
+ * Root component that manages state and context for a select dropdown.
+ *
+ * @param {import("radix-ui").SelectProps} props
+ * @returns {JSX.Element}
+ */
 function Select({ ...props }) {
   return <SelectPrimitive.Root data-slot="select" {...props} />
 }
 
+/**
+ * Groups related select items with optional section labels.
+ *
+ * @param {import("radix-ui").SelectGroupProps} props
+ * @returns {JSX.Element}
+ */
 function SelectGroup({ ...props }) {
   return <SelectPrimitive.Group data-slot="select-group" {...props} />
 }
 
+/**
+ * Displays the selected value or placeholder text within the select trigger.
+ *
+ * @param {import("radix-ui").SelectValueProps} props
+ * @returns {JSX.Element}
+ */
 function SelectValue({ ...props }) {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
 
+/**
+ * Interactive button that opens the select dropdown menu.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & { size?: "default" | "sm" }} props
+ * @returns {JSX.Element}
+ */
 function SelectTrigger({ className, size = "default", children, ...props }) {
   return (
     <SelectPrimitive.Trigger
@@ -38,6 +62,12 @@ function SelectTrigger({ className, size = "default", children, ...props }) {
   )
 }
 
+/**
+ * Dropdown popover surface containing select items and scroll buttons.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>} props
+ * @returns {JSX.Element}
+ */
 function SelectContent({ className, children, position = "popper", ...props }) {
   return (
     <SelectPrimitive.Portal>
@@ -68,6 +98,12 @@ function SelectContent({ className, children, position = "popper", ...props }) {
   )
 }
 
+/**
+ * Non-interactive label for a group of select items.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>} props
+ * @returns {JSX.Element}
+ */
 function SelectLabel({ className, ...props }) {
   return (
     <SelectPrimitive.Label
@@ -78,6 +114,12 @@ function SelectLabel({ className, ...props }) {
   )
 }
 
+/**
+ * Selectable item within the select dropdown list.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>} props
+ * @returns {JSX.Element}
+ */
 function SelectItem({ className, children, ...props }) {
   return (
     <SelectPrimitive.Item
@@ -98,6 +140,12 @@ function SelectItem({ className, children, ...props }) {
   )
 }
 
+/**
+ * Visual divider separating groups of select items.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>} props
+ * @returns {JSX.Element}
+ */
 function SelectSeparator({ className, ...props }) {
   return (
     <SelectPrimitive.Separator
@@ -108,6 +156,12 @@ function SelectSeparator({ className, ...props }) {
   )
 }
 
+/**
+ * Scroll indicator button rendered at the top of the select viewport.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollUpButton>} props
+ * @returns {JSX.Element}
+ */
 function SelectScrollUpButton({ className, ...props }) {
   return (
     <SelectPrimitive.ScrollUpButton
@@ -120,6 +174,12 @@ function SelectScrollUpButton({ className, ...props }) {
   )
 }
 
+/**
+ * Scroll indicator button rendered at the bottom of the select viewport.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollDownButton>} props
+ * @returns {JSX.Element}
+ */
 function SelectScrollDownButton({ className, ...props }) {
   return (
     <SelectPrimitive.ScrollDownButton

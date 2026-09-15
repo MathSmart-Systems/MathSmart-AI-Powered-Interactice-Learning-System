@@ -142,6 +142,16 @@ export function createApiClient({
 } = {}) {
   const base = typeof baseUrl === "string" && baseUrl ? baseUrl.replace(/\/+$/, "") : null;
 
+  /**
+   * Executes an authenticated HTTP request against the API server.
+   *
+   * @param {string} path
+   * @param {object} [requestOptions]
+   * @param {string} [requestOptions.method]
+   * @param {any} [requestOptions.body]
+   * @param {string|null} [requestOptions.token]
+   * @returns {Promise<object>}
+   */
   async function request(path, { method = "GET", body = null, token = null } = {}) {
     if (!base) {
       return failure({

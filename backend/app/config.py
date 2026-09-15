@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
+        """Parse allowed origins from a comma-delimited string or a JSON array string."""
         raw = self.cors_origins.strip()
         if raw.startswith("[") and raw.endswith("]"):
             import json

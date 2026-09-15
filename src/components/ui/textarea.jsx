@@ -1,6 +1,12 @@
 import * as React from "react"
 import { cn } from "cn"
 
+/**
+ * Multi-line text input field supporting auto-sizing and validation styles.
+ *
+ * @param {React.TextareaHTMLAttributes<HTMLTextAreaElement>} props
+ * @returns {JSX.Element}
+ */
 function Textarea({
   className,
   ...props

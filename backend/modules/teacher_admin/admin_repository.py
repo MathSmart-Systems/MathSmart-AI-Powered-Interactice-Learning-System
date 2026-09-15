@@ -472,14 +472,17 @@ async def reset_diagnostic(
 
 
 def _activity_status_clause(placeholder: str) -> str:
+    """Build a SQL clause filtering activities by publication status."""
     return f" and ({placeholder}::text is null or activities.status::text = {placeholder})"
 
 
 def _activity_module_clause(placeholder: str) -> str:
+    """Build a SQL clause filtering activities by parent learning module ID."""
     return f" and ({placeholder}::uuid is null or activities.module_id = {placeholder})"
 
 
 def list_activities_sql() -> str:
+    """Construct a SQL statement to retrieve paginated activity records."""
     columns = ", ".join(f"activities.{column}" for column in ACTIVITIES.readable)
     where = (
         f"where true{_search_clause(ACTIVITIES)}"
@@ -493,6 +496,7 @@ def list_activities_sql() -> str:
 
 
 def count_activities_sql() -> str:
+    """Construct a SQL statement to count total matching activity records."""
     where = (
         f"where true{_search_clause(ACTIVITIES)}"
         f"{_activity_status_clause('$2')}{_activity_module_clause('$3')}"
@@ -509,6 +513,7 @@ async def list_activities(
     status: str | None = None,
     module_id: UUID | None = None,
 ) -> list[Any]:
+    """Fetch paginated activity rows filtered by search, status, and module."""
     return await connection.fetch(
         list_activities_sql(), search, limit, offset, status, module_id
     )
@@ -521,6 +526,7 @@ async def count_activities(
     status: str | None = None,
     module_id: UUID | None = None,
 ) -> int:
+    """Count total matching activity records matching search, status, and module."""
     return await connection.fetchval(
         count_activities_sql(), search, status, module_id
     ) or 0

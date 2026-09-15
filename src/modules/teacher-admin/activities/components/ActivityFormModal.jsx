@@ -91,12 +91,24 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
   const [serverError, setServerError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  /**
+   * Updates a single form field value and clears associated field errors.
+   *
+   * @param {string} field
+   * @param {string} value
+   */
   function change(field, value) {
     setValues((previous) => ({ ...previous, [field]: value }));
     setErrors((previous) => ({ ...previous, [field]: undefined }));
     setServerError(null);
   }
 
+  /**
+   * Validates form state and submits create or update activity payload.
+   *
+   * @param {React.FormEvent} event
+   * @returns {Promise<void>}
+   */
   async function handleSubmit(event) {
     event.preventDefault();
 
