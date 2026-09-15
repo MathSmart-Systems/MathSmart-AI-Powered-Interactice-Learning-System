@@ -1,10 +1,19 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { TEACHER_ADMIN_WORKSPACE } from "@/modules/teacher-admin";
+import { readStudentsData, StudentsView } from "@/modules/teacher-admin/students";
 
 export const metadata = { title: "Students | MathSmart" };
 
-export default function TeacherStudentsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function TeacherStudentsPage() {
+  const { learners, grades, sections, rosterTruncated, error } = await readStudentsData();
+
   return (
-    <WorkspacePlaceholder title="Students" workspaceName={TEACHER_ADMIN_WORKSPACE.name} />
+    <StudentsView
+      initialLearners={learners}
+      initialGrades={grades}
+      initialSections={sections}
+      initialError={error}
+      initialTruncated={rosterTruncated}
+    />
   );
 }
