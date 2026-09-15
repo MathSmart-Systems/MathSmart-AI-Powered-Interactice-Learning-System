@@ -218,9 +218,6 @@ export function DiagnosticResultsView({
               {showReview ? "Hide my answers" : "Review my answers"}
             </Button>
           )}
-          <Button asChild variant="outline" size="lg">
-            <Link href="/student/assessments">Back to assessments</Link>
-          </Button>
           <Button asChild variant="ghost" size="lg" className="sm:ml-auto">
             <Link href="/student/dashboard">Back to dashboard</Link>
           </Button>
