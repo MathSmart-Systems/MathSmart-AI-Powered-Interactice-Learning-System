@@ -44,19 +44,35 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        """Parse allowed origins from a comma-delimited string or a JSON array string."""
+        """Parse allowed origins from a comma-delimited string or a JSON array string.
+
+        The wildcard ``*`` is never permitted: this API uses explicit
+        ``Authorization: Bearer`` headers and the CORS middleware is configured
+        with ``allow_credentials=True``, so accepting every origin would
+        violate the repository's explicit-origin contract.
+        """
         raw = self.cors_origins.strip()
         if raw.startswith("[") and raw.endswith("]"):
             import json
 
             try:
                 parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    return [str(origin).strip() for origin in parsed if str(origin).strip()]
-            except (json.JSONDecodeError, TypeError, ValueError):
-                # Fallback to comma-separated parsing if JSON parsing fails
+            except (json.JSONDecodeError, TypeError):
                 pass
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+            else:
+                if isinstance(parsed, list):
+                    origins = [
+                        item
+                        for o in parsed
+                        if (item := str(o).strip()) and item != "*"
+                    ]
+                    if not origins:
+                        raise ValueError("CORS_ORIGINS must not be empty or contain only wildcards")
+                    return origins
+        origins = [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
+        if not origins:
+            raise ValueError("CORS_ORIGINS must not be empty or contain only wildcards")
+        return origins
 
     @model_validator(mode="after")
     def _groq_is_completely_configured_or_off(self) -> Settings:
