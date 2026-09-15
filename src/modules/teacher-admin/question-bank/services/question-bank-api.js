@@ -15,11 +15,13 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/** Returns the configured API origin without trailing slashes. */
 function apiBaseUrl() {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
 }
 
+/** Reads the current teacher's access token without exposing session failures. */
 async function accessToken() {
   if (!isSupabaseConfigured()) {
     return null;
@@ -150,10 +152,12 @@ export async function listCompetencies() {
   return { ...result, items: Array.isArray(result.data) ? result.data : [] };
 }
 
+/** Creates a question using the validated authoring payload. */
 export async function createQuestion(payload) {
   return apiRequest("/teacher-admin/questions", { method: "POST", body: payload });
 }
 
+/** Applies validated authoring changes to an existing question. */
 export async function updateQuestion(questionId, payload) {
   return apiRequest(`/teacher-admin/questions/${questionId}`, {
     method: "PATCH",

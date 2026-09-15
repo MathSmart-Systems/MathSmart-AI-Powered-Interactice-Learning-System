@@ -51,6 +51,7 @@ export function QuestionRow({ question, actions }) {
   );
 }
 
+/** Joins the available option count, version, and update date into row metadata. */
 function qMeta(question) {
   const bits = [];
 

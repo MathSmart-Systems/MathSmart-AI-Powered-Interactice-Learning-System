@@ -6,6 +6,7 @@ import { RotateCcw, SearchX, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
+/** Refreshes the current route after a Question Bank read failure. */
 function RetryButton({ label = "Try again" }) {
   const router = useRouter();
 

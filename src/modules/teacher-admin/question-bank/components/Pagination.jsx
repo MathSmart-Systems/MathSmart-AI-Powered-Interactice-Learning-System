@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
+/** Builds a Question Bank page URL while preserving the active search term. */
 function pageQuery(search, page) {
   const query = new URLSearchParams();
   if (search) {

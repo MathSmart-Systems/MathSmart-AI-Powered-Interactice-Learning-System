@@ -47,18 +47,22 @@ export function QuestionBankClient({
   const currentQuestions =
     tab === "archived" ? archivedQuestions : tab === "draft" ? draftQuestions : publishedQuestions;
 
+  /** Opens an empty authoring dialog for a new question. */
   function openCreate() {
     setDialog({ key: "create", mode: "create", question: null });
   }
 
+  /** Opens the authoring dialog for the selected question. */
   function openEdit(question) {
     setDialog({ key: `edit-${question.id}`, mode: "edit", question });
   }
 
+  /** Opens the archive confirmation for the selected question. */
   function openArchive(question) {
     setDialog({ key: `archive-${question.id}`, mode: "archive", question });
   }
 
+  /** Closes whichever Question Bank dialog is active. */
   function close() {
     setDialog(null);
   }

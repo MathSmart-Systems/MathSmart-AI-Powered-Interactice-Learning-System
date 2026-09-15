@@ -1,7 +1,9 @@
+/** Renders one decorative placeholder block in the loading layout. */
 function Block({ className }) {
   return <div aria-hidden="true" className={`animate-pulse bg-secondary ${className}`} />;
 }
 
+/** Reserves the layout occupied by one loaded question row. */
 function RowSkeleton() {
   return (
     <li>

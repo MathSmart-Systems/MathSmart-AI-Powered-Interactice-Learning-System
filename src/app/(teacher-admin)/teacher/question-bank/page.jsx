@@ -4,6 +4,7 @@ import { QuestionBankSkeleton, QuestionBankView } from "@/modules/teacher-admin/
 
 export const metadata = { title: "Question Bank | MathSmart" };
 
+/** Renders the Question Bank route with a loading fallback for its server data. */
 export default async function TeacherQuestionBankPage({ searchParams }) {
   const params = await searchParams;
 

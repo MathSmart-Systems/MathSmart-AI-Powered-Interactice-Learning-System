@@ -17,6 +17,7 @@ import {
 
 const QUESTION_BANK_PATH = "/teacher/question-bank";
 
+/** Creates the shared unsuccessful server-action result shape. */
 function failure(formError, fieldErrors = {}) {
   return { success: false, formError, fieldErrors };
 }

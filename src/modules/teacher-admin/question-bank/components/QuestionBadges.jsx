@@ -16,6 +16,7 @@ export function QuestionBadges({ typeLabel, difficultyLabel, competency }) {
   );
 }
 
+/** Displays the lifecycle status of a question with the matching badge variant. */
 export function StatusBadge({ status, label }) {
   const variant =
     status === "published" ? "default" : status === "archived" ? "outline" : "secondary";

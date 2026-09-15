@@ -5,22 +5,27 @@ import { X } from "lucide-react"
 import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
+/** Provides the root state container for a modal dialog. */
 function Dialog(props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
+/** Renders the control that opens its associated dialog. */
 function DialogTrigger(props) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
+/** Portals dialog content outside the surrounding document flow. */
 function DialogPortal(props) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
+/** Renders a control that closes its associated dialog. */
 function DialogClose(props) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
+/** Covers the page behind an open dialog and applies its transition styles. */
 function DialogOverlay({ className, ...props }) {
   return (
     <DialogPrimitive.Overlay
@@ -34,6 +39,7 @@ function DialogOverlay({ className, ...props }) {
   )
 }
 
+/** Renders the modal panel, overlay, and optional close control. */
 function DialogContent({ className, children, showCloseButton = true, ...props }) {
   return (
     <DialogPortal>
@@ -61,6 +67,7 @@ function DialogContent({ className, children, showCloseButton = true, ...props }
   )
 }
 
+/** Groups a dialog's heading and supporting description. */
 function DialogHeader({ className, ...props }) {
   return (
     <div
@@ -71,6 +78,7 @@ function DialogHeader({ className, ...props }) {
   )
 }
 
+/** Lays out the action controls at the bottom of a dialog. */
 function DialogFooter({ className, ...props }) {
   return (
     <div
@@ -81,6 +89,7 @@ function DialogFooter({ className, ...props }) {
   )
 }
 
+/** Provides the accessible title for a dialog. */
 function DialogTitle({ className, ...props }) {
   return (
     <DialogPrimitive.Title
@@ -91,6 +100,7 @@ function DialogTitle({ className, ...props }) {
   )
 }
 
+/** Provides supporting accessible text for a dialog. */
 function DialogDescription({ className, ...props }) {
   return (
     <DialogPrimitive.Description

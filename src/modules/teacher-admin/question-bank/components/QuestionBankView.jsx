@@ -8,11 +8,13 @@ import { formatUpdated } from "../utils/format.js";
 
 const MAX_SEARCH_LENGTH = 100;
 
+/** Normalises an untrusted page query to a positive integer. */
 function parsePage(value) {
   const page = Number.parseInt(value ?? "1", 10);
   return Number.isNaN(page) ? 1 : Math.max(page, 1);
 }
 
+/** Selects the safe competency fields used by the authoring interface. */
 function toCompetency(row) {
   return {
     id: typeof row?.competency_id === "string" ? row.competency_id : null,
@@ -98,6 +100,7 @@ export async function QuestionBankView({ search: searchParam, page: pageParam })
   );
 }
 
+/** Normalises an API question row for the interactive list. */
 function toQuestionRow(row, competencyByCode) {
   const competencyId = typeof row?.competency_id === "string" ? row.competency_id : null;
   const choiceCount = Array.isArray(row?.choices) ? row.choices.length : null;

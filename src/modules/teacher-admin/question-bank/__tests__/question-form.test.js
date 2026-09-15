@@ -28,6 +28,7 @@ function formFrom(entries) {
   return data;
 }
 
+/** Returns a complete valid set of authoring fields with optional overrides. */
 function validFields(overrides = {}) {
   return {
     competency_id: "comp-1",
@@ -44,6 +45,7 @@ function validFields(overrides = {}) {
   };
 }
 
+/** Converts authoring values into the repeated FormData entries used by the form. */
 function multi(value, options = {}) {
   const entries = [["competency_id", value.competency_id]];
 
