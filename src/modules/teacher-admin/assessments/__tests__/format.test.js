@@ -112,7 +112,7 @@ describe("formatDate", () => {
     // 23:30 in Manila is 15:30 UTC the same day. Formatting in UTC would be
     // right, and formatting in the viewer's zone would read as the day before
     // for anyone west of the Philippines.
-    assert.equal(formatDate("2026-09-12T15:30:00Z"), "12 Sep 2026");
+    assert.equal(formatDate("2026-09-11T16:30:00Z"), "12 Sep 2026");
   });
 
   it("has nothing to show for a missing or unreadable date", () => {

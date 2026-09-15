@@ -127,7 +127,7 @@ export function AssessmentPublishDialog({ open, onOpenChange, onPublished, asses
         <DialogHeader>
           <DialogTitle>Publish assessment</DialogTitle>
           <DialogDescription>
-            Publishing makes this assessment deliverable to Grade 6 learners.
+            Publishing makes this assessment deliverable to learners in its grade level.
           </DialogDescription>
         </DialogHeader>
 

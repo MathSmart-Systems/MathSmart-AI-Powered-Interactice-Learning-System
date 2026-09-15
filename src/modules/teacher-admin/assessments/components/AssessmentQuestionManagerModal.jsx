@@ -94,6 +94,8 @@ function QuestionManager({ assessment, onClose, onSaved }) {
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [bank, setBank] = useState([]);
+  const [bankPage, setBankPage] = useState(1);
+  const [bankMeta, setBankMeta] = useState(null);
   const [isLoadingBank, setIsLoadingBank] = useState(true);
   const [bankError, setBankError] = useState(null);
 
@@ -130,7 +132,10 @@ function QuestionManager({ assessment, onClose, onSaved }) {
   }, [assessmentId]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setAppliedSearch(search), SEARCH_DEBOUNCE_MS);
+    const timer = setTimeout(() => {
+      setAppliedSearch(search);
+      setBankPage(1);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [search]);
 
@@ -138,16 +143,17 @@ function QuestionManager({ assessment, onClose, onSaved }) {
     let active = true;
 
     /**
-     * Loads questions from the Question Bank matching the search term.
+     * Loads questions from the Question Bank matching the search term and page.
      */
     async function load() {
       setIsLoadingBank(true);
-      const result = await listQuestions({ search: appliedSearch });
+      const result = await listQuestions({ search: appliedSearch, page: bankPage });
       if (!active) {
         return;
       }
       if (result.ok) {
         setBank(result.data);
+        setBankMeta(result.meta);
         setBankError(null);
       } else {
         setBankError(result.error);
@@ -159,7 +165,7 @@ function QuestionManager({ assessment, onClose, onSaved }) {
     return () => {
       active = false;
     };
-  }, [appliedSearch]);
+  }, [appliedSearch, bankPage]);
 
   const byId = new Map(bank.map((question) => [question.question_id, question]));
 
@@ -315,7 +321,9 @@ function QuestionManager({ assessment, onClose, onSaved }) {
             <p className="text-sm text-muted-foreground">Loading questions…</p>
           ) : bank.length === 0 ? (
             <p className="border-l-[3px] border-border bg-card px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-              No question in the bank matches this search.
+              {appliedSearch
+                ? "No question in the bank matches this search."
+                : "No questions are in the bank yet."}
             </p>
           ) : (
             <ul className="divide-y divide-border border border-border bg-card">
@@ -344,6 +352,30 @@ function QuestionManager({ assessment, onClose, onSaved }) {
               })}
             </ul>
           )}
+
+          {bankMeta && bankMeta.totalPages > 1 ? (
+            <div className="flex items-center justify-between gap-2 pt-1 text-sm">
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-muted-foreground hover:bg-secondary disabled:pointer-events-none disabled:opacity-40"
+                disabled={bankPage <= 1 || isLoadingBank}
+                onClick={() => setBankPage((p) => Math.max(1, p - 1))}
+              >
+                ← Previous
+              </button>
+              <span className="text-muted-foreground">
+                Page {bankPage} of {bankMeta.totalPages}
+              </span>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-muted-foreground hover:bg-secondary disabled:pointer-events-none disabled:opacity-40"
+                disabled={bankPage >= bankMeta.totalPages || isLoadingBank}
+                onClick={() => setBankPage((p) => Math.min(bankMeta.totalPages, p + 1))}
+              >
+                Next →
+              </button>
+            </div>
+          ) : null}
         </section>
       </DialogBody>
 
