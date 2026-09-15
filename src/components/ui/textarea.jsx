@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cn } from "cn"
 
+/** Renders the shared multiline text input with MathSmart form styling. */
 function Textarea({ className, ...props }) {
   return (
     <textarea
