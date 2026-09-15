@@ -30,14 +30,6 @@ class Settings(BaseSettings):
     supabase_jwt_issuer: str
     supabase_jwt_audience: str = "authenticated"
 
-    # Browser origins allowed to call the API. A JSON list; the default matches
-    # local development on either localhost spelling, and production sets the
-    # deployed frontend origin.
-    cors_origins: list[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-
     # Groq is advisory. Grading, mastery, progression and intervention triggers
     # are deterministic and must work with this disabled, so the credential and
     # the model are optional until it is switched on.
@@ -45,6 +37,42 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr | None = None
     groq_model: str | None = None
     groq_timeout_seconds: float = 8.0
+
+    # CORS allowed origins. Deliberately explicit: credentials and authorization
+    # headers must not be accepted from arbitrary origins.
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """Parse allowed origins from a comma-delimited string or a JSON array string.
+
+        The wildcard ``*`` is never permitted: this API uses explicit
+        ``Authorization: Bearer`` headers and the CORS middleware is configured
+        with ``allow_credentials=True``, so accepting every origin would
+        violate the repository's explicit-origin contract.
+        """
+        raw = self.cors_origins.strip()
+        if raw.startswith("[") and raw.endswith("]"):
+            import json
+
+            try:
+                parsed = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+            else:
+                if isinstance(parsed, list):
+                    origins = [
+                        item
+                        for o in parsed
+                        if (item := str(o).strip()) and item != "*"
+                    ]
+                    if not origins:
+                        raise ValueError("CORS_ORIGINS must not be empty or contain only wildcards")
+                    return origins
+        origins = [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
+        if not origins:
+            raise ValueError("CORS_ORIGINS must not be empty or contain only wildcards")
+        return origins
 
     @model_validator(mode="after")
     def _groq_is_completely_configured_or_off(self) -> Settings:

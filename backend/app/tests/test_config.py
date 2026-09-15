@@ -15,6 +15,7 @@ BASE_ENV = {
 
 
 def build(monkeypatch, **overrides):
+    """Construct a clean Settings instance with isolated environment overrides."""
     for key in (
         *BASE_ENV,
         "SUPABASE_JWT_AUDIENCE",
@@ -22,6 +23,7 @@ def build(monkeypatch, **overrides):
         "GROQ_MODEL",
         "GROQ_ENABLED",
         "GROQ_TIMEOUT_SECONDS",
+        "CORS_ORIGINS",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in {**BASE_ENV, **overrides}.items():
@@ -67,19 +69,66 @@ def test_enabling_groq_without_a_model_is_rejected(monkeypatch):
 
 
 def test_groq_credential_never_renders(monkeypatch):
+    """Verify Groq API credentials are masked and never leak in repr or str formats."""
     settings = build(monkeypatch, GROQ_ENABLED="true", GROQ_API_KEY="gsk_example", GROQ_MODEL="m")
 
     assert "gsk_example" not in repr(settings)
     assert "gsk_example" not in str(settings)
 
 
-def test_cors_defaults_to_both_local_development_origins(monkeypatch):
+def test_cors_origins_defaults_to_local_nextjs_ports(monkeypatch):
+    """Verify default CORS allowed origins target local Next.js ports 3000."""
     settings = build(monkeypatch)
 
-    assert settings.cors_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
+    assert settings.allowed_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
-def test_cors_origins_can_be_set_from_the_environment(monkeypatch):
-    settings = build(monkeypatch, CORS_ORIGINS='["https://mathsmart.example.com"]')
+def test_cors_origins_parses_comma_separated_env(monkeypatch):
+    """Verify comma-separated CORS_ORIGINS string is parsed into a list of origins."""
+    settings = build(
+        monkeypatch,
+        CORS_ORIGINS="http://localhost:3000, https://staging.mathsmart.dev",
+    )
 
-    assert settings.cors_origins == ["https://mathsmart.example.com"]
+    assert settings.allowed_origins == [
+        "http://localhost:3000",
+        "https://staging.mathsmart.dev",
+    ]
+
+
+def test_cors_origins_parses_json_list_env(monkeypatch):
+    """Verify JSON array formatted CORS_ORIGINS is parsed into a list of origins."""
+    settings = build(
+        monkeypatch,
+        CORS_ORIGINS='["http://localhost:3000", "https://app.mathsmart.dev"]',
+    )
+
+    assert settings.allowed_origins == [
+        "http://localhost:3000",
+        "https://app.mathsmart.dev",
+    ]
+
+
+def test_cors_origins_rejects_wildcard_in_comma_separated(monkeypatch):
+    """Verify that a bare wildcard in comma-separated CORS_ORIGINS is rejected."""
+    with pytest.raises(ValueError, match="wildcard"):
+        _ = build(monkeypatch, CORS_ORIGINS="*").allowed_origins
+
+
+def test_cors_origins_rejects_wildcard_in_json_array(monkeypatch):
+    """Verify that a bare wildcard inside a JSON-array CORS_ORIGINS is rejected."""
+    with pytest.raises(ValueError, match="wildcard"):
+        _ = build(monkeypatch, CORS_ORIGINS='["*"]').allowed_origins
+
+
+def test_cors_origins_filters_wildcard_mixed_with_explicit_origins(monkeypatch):
+    """Verify that a wildcard mixed with explicit origins is silently dropped."""
+    settings = build(
+        monkeypatch,
+        CORS_ORIGINS="http://localhost:3000, *, https://staging.mathsmart.dev",
+    )
+
+    assert settings.allowed_origins == [
+        "http://localhost:3000",
+        "https://staging.mathsmart.dev",
+    ]

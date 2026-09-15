@@ -27,8 +27,15 @@ GRADE = UUID("3f0f0000-0000-4000-8000-000000000006")
 SECTION = UUID("cc7ef387-7435-4af0-8c50-0a7ce6aa5f5c")
 USER = UUID("b0000000-0000-4000-8000-00000000000e")
 STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
+ACTIVITY = UUID("7b2b0000-0000-4000-8000-000000000008")
 
 TOTAL = "count(*) as total"
+
+#: Distinctive fragments of the assessment membership statements, so a test can
+#: answer one of them without answering the others.
+READINESS = "as grade_is_active"
+MEMBERSHIP_IDS = "order by assessment_questions.position"
+MEMBERSHIP_COUNTS = "group by assessment_questions.assessment_id"
 
 COMPETENCY_ROW = {
     "competency_id": COMPETENCY,
@@ -39,6 +46,36 @@ COMPETENCY_ROW = {
     "description": "Apply sign rules.",
     "status": "draft",
     "prerequisite_ids": [],
+    "created_at": None,
+    "updated_at": None,
+}
+
+MODULE_ROW = {
+    "module_id": MODULE,
+    "competency_id": COMPETENCY,
+    "title": "Multiplication and Division of Integers",
+    "estimated_minutes": 15,
+    "learning_objective": "Apply sign rules.",
+    "short_explanation": "Equal signs give a positive result.",
+    "rules": [],
+    "worked_examples": [],
+    "status": "draft",
+    "version": 1,
+    "order_index": 1,
+    "created_at": None,
+    "updated_at": None,
+}
+
+ACTIVITY_ROW = {
+    "activity_id": ACTIVITY,
+    "module_id": MODULE,
+    "title": "Integers Multiplication Practice",
+    "description": "Apply sign rules.",
+    "estimated_minutes": 15,
+    "points": 100,
+    "mastery_threshold": 75,
+    "status": "draft",
+    "version": 1,
     "created_at": None,
     "updated_at": None,
 }
@@ -68,6 +105,15 @@ ASSESSMENT_ROW = {
     "version": 1,
     "created_at": None,
     "updated_at": None,
+}
+
+#: An assessment that is ready to publish: it has questions, all of them are
+#: published, and its grade level is still active.
+READINESS_ROW = {
+    "assessment_status": "draft",
+    "grade_is_active": True,
+    "question_total": 1,
+    "unpublished_total": 0,
 }
 
 USER_ROW = {
@@ -112,10 +158,16 @@ ATTEMPT_ROW = {
 
 
 def admin_connection(**overrides):
+    """Build a mock database connection pre-populated with admin fixtures."""
     results = {
         TOTAL: 1,
         "from app.competencies": [COMPETENCY_ROW],
+        "from app.learning_modules": [MODULE_ROW],
+        "from app.activities": [ACTIVITY_ROW],
         "from app.questions": [QUESTION_ROW],
+        # Ahead of the assessments listing, because the readiness statement
+        # selects from app.assessments too and this fragment is the specific one.
+        READINESS: READINESS_ROW,
         "from app.assessments": [ASSESSMENT_ROW],
         "from app.user_profiles": [USER_ROW],
         "from app.system_settings": [SETTING_ROW],
@@ -140,6 +192,24 @@ def test_a_teacher_admin_lists_competency_drafts():
 
     assert response.status_code == 200
     assert response.json()["data"][0]["code"] == "MATH6-INT-02"
+
+
+def test_module_status_filters_the_page_and_its_count():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/modules",
+        params={"search": "integers", "status": "draft", "page": 2, "page_size": 10},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    module_calls = [call for call in connection.calls if "from app.learning_modules" in call[0]]
+    assert len(module_calls) == 2
+    assert module_calls[0][1] == ("integers", "draft", 10, 10)
+    assert module_calls[1][1] == ("integers", "draft")
+    assert all("learning_modules.status = $2" in query for query, _args in module_calls)
 
 
 def test_a_learner_cannot_reach_administration():
@@ -216,6 +286,115 @@ def test_archiving_a_competency_does_not_delete_it():
     archiving = [call for call in connection.calls if "set status = 'archived'" in call[0]]
     assert archiving
     assert not [call for call in connection.calls if "delete from app.competencies" in call[0]]
+
+
+def test_a_teacher_admin_lists_activity_drafts():
+    """Verify that a teacher administrator can retrieve a paginated list of activities."""
+    client = build_client(admin_connection())
+
+    response = client.get("/api/v1/teacher-admin/activities", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["title"] == "Integers Multiplication Practice"
+
+
+def test_a_teacher_admin_filters_activities_by_status():
+    """Verify that activities can be filtered by their publication status."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/activities?status=draft", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert any("status::text" in call[0] and "draft" in call[1] for call in connection.calls)
+
+
+def test_a_teacher_admin_filters_activities_by_module():
+    """Verify that activities can be filtered by their parent learning module ID."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/teacher-admin/activities?module_id={MODULE}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert any(
+        "activities.module_id =" in call[0] and MODULE in call[1]
+        for call in connection.calls
+    )
+
+
+def test_an_activity_draft_can_be_created():
+    """Verify that a new activity draft can be created with required attributes."""
+    connection = admin_connection(**{"returning": ACTIVITY_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/activities",
+        json={
+            "module_id": str(MODULE),
+            "title": "Integers Multiplication Practice",
+            "description": "Apply sign rules.",
+            "estimated_minutes": 15,
+            "points": 100,
+            "mastery_threshold": 75,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["title"] == "Integers Multiplication Practice"
+
+
+def test_creating_an_activity_needs_a_live_session():
+    """Verify that creating an activity without a live session is refused with 401."""
+    client = build_client(admin_connection(), live_session=False)
+
+    response = client.post(
+        "/api/v1/teacher-admin/activities",
+        json={
+            "module_id": str(MODULE),
+            "title": "Integers Multiplication Practice",
+            "estimated_minutes": 15,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 401
+
+
+def test_an_activity_can_be_updated():
+    """Verify that an existing activity draft can be partially updated."""
+    updated = {**ACTIVITY_ROW, "points": 120}
+    connection = admin_connection(**{"returning": updated})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}",
+        json={"points": 120},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["points"] == 120
+
+
+def test_archiving_an_activity_does_not_delete_it():
+    """Verify that archiving an activity sets status to archived without deleting the row."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 204
+    archiving = [call for call in connection.calls if "set status = 'archived'" in call[0]]
+    assert archiving
+    assert not [call for call in connection.calls if "delete from app.activities" in call[0]]
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +527,10 @@ def test_a_repeated_question_is_refused_with_validation_feedback():
 
 
 def test_publishing_an_empty_assessment_is_refused():
-    connection = admin_connection(**{TOTAL: 0, "returning": ASSESSMENT_ROW})
+    """Verify publishing an assessment with 0 questions is refused with 422."""
+    connection = admin_connection(
+        **{READINESS: {**READINESS_ROW, "question_total": 0}, "returning": ASSESSMENT_ROW}
+    )
     client = build_client(connection)
 
     response = client.post(
@@ -357,11 +539,81 @@ def test_publishing_an_empty_assessment_is_refused():
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert not any("set status" in query for query in connection.queries())
+
+
+def test_publishing_an_assessment_holding_a_draft_question_is_refused():
+    """A draft question would reach the learner as an unanswerable item."""
+    connection = admin_connection(
+        **{READINESS: {**READINESS_ROW, "unpublished_total": 2}, "returning": ASSESSMENT_ROW}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert not any("set status" in query for query in connection.queries())
+
+
+def test_publishing_an_assessment_for_an_inactive_grade_is_refused():
+    """Verify publishing an assessment targeting an inactive grade level is refused with 422."""
+    connection = admin_connection(
+        **{READINESS: {**READINESS_ROW, "grade_is_active": False}, "returning": ASSESSMENT_ROW}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert not any("set status" in query for query in connection.queries())
+
+
+def test_publishing_a_non_draft_assessment_is_refused():
+    """Only draft assessments can be published; archived or published ones cannot."""
+    connection = admin_connection(
+        **{
+            READINESS: {**READINESS_ROW, "assessment_status": "archived"},
+            "returning": ASSESSMENT_ROW,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert "draft" in response.json()["error"]["message"]
+    assert not any("set status" in query for query in connection.queries())
+
+
+def test_publishing_an_absent_assessment_reports_not_found():
+    """Verify attempting to publish a non-existent assessment returns 404."""
+    client = build_client(admin_connection(**{READINESS: None}))
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 404
 
 
 def test_publishing_a_populated_assessment_succeeds():
+    """Verify publishing an assessment with valid questions marks status as published."""
     client = build_client(
-        admin_connection(**{TOTAL: 4, "returning": {**ASSESSMENT_ROW, "status": "published"}})
+        admin_connection(
+            **{
+                READINESS: {**READINESS_ROW, "question_total": 4},
+                "returning": {**ASSESSMENT_ROW, "status": "published"},
+            }
+        )
     )
 
     response = client.post(
@@ -369,7 +621,130 @@ def test_publishing_a_populated_assessment_succeeds():
     )
 
     assert response.status_code == 200
-    assert response.json()["data"]["status"] == "published"
+    body = response.json()["data"]
+    assert body["status"] == "published"
+    assert body["question_count"] == 4
+
+
+def test_reading_one_assessment_carries_its_membership_in_order():
+    """Replacement is whole-list, so the editor has to be able to read the order."""
+    second = UUID("f1a4a9f2-63a3-4a47-9e0b-6a6d1f1f3a55")
+    client = build_client(
+        admin_connection(
+            **{
+                "from app.assessments": ASSESSMENT_ROW,
+                MEMBERSHIP_IDS: [{"question_id": QUESTION}, {"question_id": second}],
+            }
+        )
+    )
+
+    response = client.get(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["question_ids"] == [str(QUESTION), str(second)]
+    assert body["question_count"] == 2
+
+
+def test_an_assessment_listing_carries_how_many_questions_each_holds():
+    """Verify assessment listing payload includes question_count computed from membership."""
+    client = build_client(
+        admin_connection(
+            **{MEMBERSHIP_COUNTS: [{"assessment_id": ASSESSMENT, "question_total": 3}]}
+        )
+    )
+
+    response = client.get("/api/v1/teacher-admin/assessments", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["question_count"] == 3
+
+
+def test_an_assessment_row_without_membership_reports_no_questions():
+    """Verify assessments without question membership default to question_count of 0."""
+    client = build_client(admin_connection())
+
+    response = client.get("/api/v1/teacher-admin/assessments", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["question_count"] == 0
+
+
+def test_an_assessment_listing_can_be_filtered_by_publication_status():
+    """`status` is a documented collection filter, so the tabs are server-truthful.
+
+    Filtering a page in the browser would hide every assessment after it.
+    """
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/assessments?status=published", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    listing = next(
+        args for query, args in connection.calls if "limit $2 offset $3" in query
+    )
+    assert listing[3] == "published"
+
+
+def test_an_assessment_status_filter_outside_the_enum_is_refused():
+    """Verify an unsupported status filter query parameter returns validation error 422."""
+    client = build_client(admin_connection())
+
+    response = client.get(
+        "/api/v1/teacher-admin/assessments?status=retired", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+
+
+def test_an_assessment_type_outside_the_enum_is_refused():
+    """diagnostic, reassessment and unit_quiz are the only types the data model has."""
+    connection = admin_connection(**{"returning": ASSESSMENT_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/assessments",
+        json={
+            "grade_id": str(GRADE),
+            "title": "Grade 6 Summative",
+            "assessment_type": "summative",
+            "duration_minutes": 45,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert "assessment_type" in response.json()["error"]["fields"]
+    assert not connection.calls
+
+
+def test_each_assessment_type_in_the_enum_is_accepted():
+    """Verify all valid assessment type enum values are accepted upon creation."""
+    for assessment_type in ("diagnostic", "reassessment", "unit_quiz"):
+        client = build_client(
+            admin_connection(
+                **{"returning": {**ASSESSMENT_ROW, "assessment_type": assessment_type}}
+            )
+        )
+
+        response = client.post(
+            "/api/v1/teacher-admin/assessments",
+            json={
+                "grade_id": str(GRADE),
+                "title": f"Grade 6 {assessment_type}",
+                "assessment_type": assessment_type,
+                "duration_minutes": 45,
+            },
+            headers=ADVISER_HEADERS,
+        )
+
+        assert response.status_code == 201
+        assert response.json()["data"]["assessment_type"] == assessment_type
 
 
 # ---------------------------------------------------------------------------
