@@ -44,6 +44,18 @@ class UserRole(StrEnum):
     TEACHER_ADMIN = "teacher_admin"
 
 
+class AssessmentType(StrEnum):
+    """The app.assessment_type enum, stated here so a wrong type is a 422.
+
+    A free-text type reached Postgres as an invalid enum input and surfaced as a
+    server error, which told the author nothing about the choices available.
+    """
+
+    DIAGNOSTIC = "diagnostic"
+    REASSESSMENT = "reassessment"
+    UNIT_QUIZ = "unit_quiz"
+
+
 class CompetencyDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -189,7 +201,7 @@ class AssessmentDraft(BaseModel):
 
     grade_id: UUID
     title: str = Field(min_length=2, max_length=MAX_TITLE)
-    assessment_type: str = Field(min_length=2, max_length=40)
+    assessment_type: AssessmentType
     duration_minutes: int = Field(ge=1, le=480)
     description: str | None = Field(default=None, max_length=MAX_TEXT)
     status: PublicationStatus = PublicationStatus.DRAFT
@@ -200,7 +212,7 @@ class AssessmentChanges(BaseModel):
 
     grade_id: UUID | None = None
     title: str | None = Field(default=None, min_length=2, max_length=MAX_TITLE)
-    assessment_type: str | None = Field(default=None, min_length=2, max_length=40)
+    assessment_type: AssessmentType | None = None
     duration_minutes: int | None = Field(default=None, ge=1, le=480)
     description: str | None = Field(default=None, max_length=MAX_TEXT)
     status: PublicationStatus | None = None

@@ -427,6 +427,142 @@ def test_diagnostic_status_is_reported():
 
 
 # ---------------------------------------------------------------------------
+# Learner own attempt history (/assessment-attempts/me)
+# ---------------------------------------------------------------------------
+
+OWN_STUDENT = "where student_profiles.user_id = $1"
+DIAG_STATUS = "student_profiles.diagnostic_status"
+
+
+def _me_history_connection(**overrides):
+    results = {
+        OWN_STUDENT: STUDENT_ID,
+        TOTAL: 1,
+        HISTORY: [HISTORY_ROW],
+    }
+    results.update(overrides)
+    return FakeConnection(results=results)
+
+
+def test_a_learner_reads_own_attempt_history():
+    """GET /assessment-attempts/me returns the caller's history without naming a student."""
+    client = build_client(_me_history_connection())
+
+    response = client.get("/api/v1/assessment-attempts/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data[0]["attempt_id"] == str(ATTEMPT)
+    assert data[0]["title"] == "Grade 6 Mathematics Diagnostic Assessment"
+
+
+def test_own_attempt_history_pagination_meta_is_correct():
+    client = build_client(_me_history_connection())
+
+    response = client.get(
+        "/api/v1/assessment-attempts/me",
+        params={"page": 1, "page_size": 5},
+        headers=LEARNER_HEADERS,
+    )
+
+    meta = response.json()["meta"]
+    assert meta["total_items"] == 1
+    assert meta["total_pages"] == 1
+    assert meta["page"] == 1
+
+
+def test_own_attempt_history_is_empty_when_no_attempts_exist():
+    connection = FakeConnection(results={OWN_STUDENT: STUDENT_ID, TOTAL: 0, HISTORY: []})
+    client = build_client(connection)
+
+    response = client.get("/api/v1/assessment-attempts/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"] == []
+    assert response.json()["meta"]["total_items"] == 0
+
+
+def test_teacher_admin_cannot_read_own_attempt_history_via_me():
+    """The /me routes belong to learners; a Teacher/Administrator is refused."""
+    client = build_client(_me_history_connection())
+
+    response = client.get("/api/v1/assessment-attempts/me", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 403
+
+
+def test_learner_without_a_profile_is_refused_on_attempt_history_me():
+    """``own_student_id`` returns None when the profile does not exist; route returns 403."""
+    connection = FakeConnection(results={OWN_STUDENT: None, TOTAL: 0, HISTORY: []})
+    client = build_client(connection)
+
+    response = client.get("/api/v1/assessment-attempts/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Learner own diagnostic status (/diagnostic-status/me)
+# ---------------------------------------------------------------------------
+
+
+def _me_status_connection(*, authorization_id=None, **overrides):
+    results = {
+        OWN_STUDENT: STUDENT_ID,
+        DIAG_STATUS: {
+            "diagnostic_status": "completed",
+            "latest_attempt_id": ATTEMPT,
+            "latest_score": 75,
+            "authorization_id": authorization_id,
+        },
+    }
+    results.update(overrides)
+    return FakeConnection(results=results)
+
+
+def test_a_learner_reads_own_diagnostic_status():
+    """GET /diagnostic-status/me returns the caller's standing without naming a student."""
+    client = build_client(_me_status_connection())
+
+    response = client.get("/api/v1/diagnostic-status/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "completed"
+    assert data["latest_score"] == 75
+    assert data["reassessment_eligible"] is False
+    assert data["reassessment_reason"] is None
+
+
+def test_own_diagnostic_status_shows_reassessment_eligible_when_authorised():
+    auth_id = UUID("7c1f0000-0000-4000-8000-000000000001")
+    client = build_client(_me_status_connection(authorization_id=auth_id))
+
+    response = client.get("/api/v1/diagnostic-status/me", headers=LEARNER_HEADERS)
+
+    data = response.json()["data"]
+    assert data["reassessment_eligible"] is True
+    assert data["reassessment_reason"] is not None
+
+
+def test_teacher_admin_cannot_read_own_diagnostic_status_via_me():
+    client = build_client(_me_status_connection())
+
+    response = client.get("/api/v1/diagnostic-status/me", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 403
+
+
+def test_learner_without_a_profile_is_refused_on_diagnostic_status_me():
+    connection = FakeConnection(results={OWN_STUDENT: None})
+    client = build_client(connection)
+
+    response = client.get("/api/v1/diagnostic-status/me", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Reassessment authorization
 # ---------------------------------------------------------------------------
 

@@ -1,72 +1,200 @@
 "use client"
 
 import * as React from "react"
-import { Dialog } from "radix-ui"
+import { cn } from "cn"
+import { Dialog as DialogPrimitive } from "radix-ui"
 import { X } from "lucide-react"
 
-import { cn } from "cn"
-
-const DialogRoot = Dialog.Root
-const DialogTrigger = Dialog.Trigger
-const DialogPortal = Dialog.Portal
-const DialogClose = Dialog.Close
-const DialogOverlay = Dialog.Overlay
-const DialogContentPrimitive = Dialog.Content
-const DialogTitle = Dialog.Title
-const DialogDescription = Dialog.Description
-
-function DialogContent({ className, children, ...props }) {
-  return (
-    <DialogPortal>
-      <DialogOverlay
-        className="fixed inset-0 z-50 bg-shell/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
-      />
-      <DialogContentPrimitive
-        data-slot="dialog-content"
-        className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-        <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-          <X className="size-4" />
-          <span className="sr-only">Close</span>
-        </DialogClose>
-      </DialogContentPrimitive>
-    </DialogPortal>
-  )
+/**
+ * Root component that manages open/closed state for a dialog modal.
+ *
+ * @param {import("radix-ui").DialogProps} props
+ * @returns {JSX.Element}
+ */
+function Dialog({ ...props }) {
+  return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
-function DialogHeader({ className, ...props }) {
+/**
+ * Trigger element that opens the dialog when activated.
+ *
+ * @param {import("radix-ui").DialogTriggerProps} props
+ * @returns {JSX.Element}
+ */
+function DialogTrigger({ ...props }) {
+  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
+}
+
+/**
+ * Portals dialog content into the document body.
+ *
+ * @param {import("radix-ui").DialogPortalProps} props
+ * @returns {JSX.Element}
+ */
+function DialogPortal({ ...props }) {
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+}
+
+/**
+ * Button element that closes the active dialog when clicked.
+ *
+ * @param {import("radix-ui").DialogCloseProps} props
+ * @returns {JSX.Element}
+ */
+function DialogClose({ ...props }) {
+  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
+}
+
+/**
+ * Semi-transparent backdrop overlay rendered behind the dialog surface.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>} props
+ * @returns {JSX.Element}
+ */
+function DialogOverlay({ className, ...props }) {
   return (
-    <div
-      data-slot="dialog-header"
-      className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)}
+    <DialogPrimitive.Overlay
+      data-slot="dialog-overlay"
+      className={cn("fixed inset-0 z-50 bg-shell/60", className)}
       {...props}
     />
   )
 }
 
+/**
+ * The dialog surface.
+ *
+ * Radix supplies the parts a hand-rolled overlay keeps missing: the focus trap,
+ * Escape to dismiss, the scroll lock, and focus returning to whatever opened
+ * the dialog. The surface is a column so a long body scrolls while the header
+ * and footer stay put.
+ */
+function DialogContent({ className, children, showCloseButton = true, ...props }) {
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        data-slot="dialog-content"
+        className={cn(
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100svh-2rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none",
+          className
+        )}
+        {...props}
+      >
+        {children}
+        {showCloseButton ? (
+          <DialogPrimitive.Close
+            data-slot="dialog-close"
+            className="absolute top-4 right-4 rounded-md p-1 text-muted-foreground transition-colors outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none"
+          >
+            <X className="size-4" />
+            <span className="sr-only">Close dialog</span>
+          </DialogPrimitive.Close>
+        ) : null}
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  )
+}
+
+/**
+ * Header section of the dialog containing title, description, and optional banner.
+ *
+ * @param {React.HTMLAttributes<HTMLDivElement>} props
+ * @returns {JSX.Element}
+ */
+function DialogHeader({ className, ...props }) {
+  return (
+    <div
+      data-slot="dialog-header"
+      className={cn(
+        "flex shrink-0 flex-col gap-1 border-b border-border px-6 py-5 pr-14",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+/**
+ * Scrollable content body container within the dialog surface.
+ *
+ * @param {React.HTMLAttributes<HTMLDivElement>} props
+ * @returns {JSX.Element}
+ */
+function DialogBody({ className, ...props }) {
+  return (
+    <div
+      data-slot="dialog-body"
+      className={cn("min-h-0 flex-1 overflow-y-auto px-6 py-5", className)}
+      {...props}
+    />
+  )
+}
+
+/**
+ * Footer section of the dialog containing action buttons.
+ *
+ * @param {React.HTMLAttributes<HTMLDivElement>} props
+ * @returns {JSX.Element}
+ */
 function DialogFooter({ className, ...props }) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}
+      className={cn(
+        "flex shrink-0 flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-end",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+/**
+ * Accessible title heading for the dialog.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>} props
+ * @returns {JSX.Element}
+ */
+function DialogTitle({ className, ...props }) {
+  return (
+    <DialogPrimitive.Title
+      data-slot="dialog-title"
+      className={cn(
+        "font-display text-lg font-semibold tracking-tight text-foreground",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+/**
+ * Accessible description text explaining the dialog's purpose.
+ *
+ * @param {React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>} props
+ * @returns {JSX.Element}
+ */
+function DialogDescription({ className, ...props }) {
+  return (
+    <DialogPrimitive.Description
+      data-slot="dialog-description"
+      className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
   )
 }
 
 export {
-  DialogRoot as Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogOverlay,
-  DialogTitle,
+  Dialog,
   DialogTrigger,
+  DialogPortal,
+  DialogClose,
+  DialogOverlay,
+  DialogContent,
+  DialogHeader,
+  DialogBody,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
 }
