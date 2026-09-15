@@ -137,7 +137,8 @@ select
   assessment_attempts.status,
   assessment_attempts.overall_score,
   assessment_attempts.started_at,
-  assessment_attempts.submitted_at
+  assessment_attempts.submitted_at,
+  assessment_attempts.result_payload
 from app.assessment_attempts
 where assessment_attempts.attempt_id = $1
 """
@@ -168,13 +169,13 @@ where assessment_attempts.student_id = $1
 _RESULTS_SQL = """
 select
   competency_results.competency_id,
-  competencies.name as competency_name,
+  coalesce(competencies.name, 'Competency') as competency_name,
   competency_results.raw_score,
   competency_results.max_score,
   competency_results.percentage,
   competency_results.mastery_band
 from app.competency_results
-join app.competencies on competencies.competency_id = competency_results.competency_id
+left join app.competencies on competencies.competency_id = competency_results.competency_id
 where competency_results.attempt_id = $1
 order by competency_results.percentage
 """
@@ -186,15 +187,15 @@ select
   learning_path_items.reason,
   learning_path_items.status,
   learning_path_items.competency_id,
-  competencies.code as competency_code,
-  competencies.name as competency_name,
+  coalesce(competencies.code, '') as competency_code,
+  coalesce(competencies.name, 'Competency') as competency_name,
   learning_path_items.module_id,
-  learning_modules.title as module_title,
-  learning_modules.estimated_minutes
+  coalesce(learning_modules.title, 'Learning Module') as module_title,
+  coalesce(learning_modules.estimated_minutes, 15) as estimated_minutes
 from app.learning_path_items
-join app.competencies
+left join app.competencies
   on competencies.competency_id = learning_path_items.competency_id
-join app.learning_modules
+left join app.learning_modules
   on learning_modules.module_id = learning_path_items.module_id
 where learning_path_items.student_id = $1
 order by learning_path_items.priority

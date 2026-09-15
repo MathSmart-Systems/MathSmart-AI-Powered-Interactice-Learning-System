@@ -313,9 +313,81 @@ async def save_answers(
     return {"data": {"attempt_id": str(attempt_id), "saved": saved}}
 
 
+def _report_from_attempt(
+    attempt_row: Any,
+    results: list[Any],
+    path_rows: list[Any],
+) -> AttemptReport:
+    payload = None
+    try:
+        payload = attempt_row["result_payload"]
+    except (KeyError, IndexError, TypeError):
+        payload = None
+
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = None
+
+    if payload and isinstance(payload, dict) and "competency_results" in payload:
+        competency_results = [
+            CompetencyResult(
+                competency_id=r["competency_id"],
+                competency_name=r.get("competency_name"),
+                raw_score=r["raw_score"],
+                max_score=r["max_score"],
+                percentage=r["percentage"],
+                mastery_band=str(r["mastery_band"]),
+            )
+            for r in payload.get("competency_results", [])
+        ]
+        path = [
+            PathItem(
+                id=p["id"],
+                priority=p["priority"],
+                reason=p.get("reason"),
+                status=str(p["status"]),
+                competency=p["competency"],
+                module=p["module"],
+            )
+            for p in payload.get("recommended_learning_path", [])
+        ]
+        next_action = payload.get("next_action") or _next_action(path)
+    else:
+        competency_results = [
+            CompetencyResult(
+                competency_id=row["competency_id"],
+                competency_name=row["competency_name"],
+                raw_score=row["raw_score"],
+                max_score=row["max_score"],
+                percentage=row["percentage"],
+                mastery_band=str(row["mastery_band"]),
+            )
+            for row in results
+        ]
+        path = [_path_item(row) for row in path_rows]
+        next_action = _next_action(path)
+
+    return AttemptReport(
+        attempt_id=attempt_row["attempt_id"],
+        assessment_id=attempt_row["assessment_id"],
+        status=str(attempt_row["status"]),
+        overall_score=attempt_row["overall_score"],
+        started_at=attempt_row["started_at"],
+        submitted_at=attempt_row["submitted_at"],
+        competency_results=competency_results,
+        recommended_learning_path=path,
+        next_action=next_action,
+    )
+
+
 @router.post("/assessment-attempts/{attempt_id}/submit")
 async def submit_attempt(
-    actor: CurrentActor, connection: ActorDb, attempt_id: UUID, body: SaveAnswersRequest
+    actor: CurrentActor,
+    connection: ActorDb,
+    attempt_id: UUID,
+    body: SaveAnswersRequest,
 ) -> dict[str, Any]:
     """Finalise and grade an attempt.
 
@@ -332,31 +404,20 @@ async def submit_attempt(
     if attempt_row is None:
         raise ApiError(404, "No attempt of yours is in progress")
 
-    results = await repository.results_for(connection, attempt_id)
-    path_rows = await repository.path_for(connection, attempt_row["student_id"])
-    path = [_path_item(row) for row in path_rows]
+    payload = None
+    try:
+        payload = attempt_row["result_payload"]
+    except (KeyError, IndexError, TypeError):
+        payload = None
 
-    report = AttemptReport(
-        attempt_id=attempt_row["attempt_id"],
-        assessment_id=attempt_row["assessment_id"],
-        status=str(attempt_row["status"]),
-        overall_score=attempt_row["overall_score"],
-        started_at=attempt_row["started_at"],
-        submitted_at=attempt_row["submitted_at"],
-        competency_results=[
-            CompetencyResult(
-                competency_id=row["competency_id"],
-                competency_name=row["competency_name"],
-                raw_score=row["raw_score"],
-                max_score=row["max_score"],
-                percentage=row["percentage"],
-                mastery_band=str(row["mastery_band"]),
-            )
-            for row in results
-        ],
-        recommended_learning_path=path,
-        next_action=_next_action(path),
-    )
+    if payload and isinstance(payload, (dict, str)):
+        results = []
+        path_rows = []
+    else:
+        results = await repository.results_for(connection, attempt_id)
+        path_rows = await repository.path_for(connection, attempt_row["student_id"])
+
+    report = _report_from_attempt(attempt_row, results, path_rows)
     return {"data": report.model_dump(mode="json")}
 
 
@@ -374,26 +435,24 @@ async def read_attempt(
     if attempt_row is None:
         raise ApiError(404, "No attempt was found")
 
-    results = await repository.results_for(connection, attempt_id)
-    report = AttemptReport(
-        attempt_id=attempt_row["attempt_id"],
-        assessment_id=attempt_row["assessment_id"],
-        status=str(attempt_row["status"]),
-        overall_score=attempt_row["overall_score"],
-        started_at=attempt_row["started_at"],
-        submitted_at=attempt_row["submitted_at"],
-        competency_results=[
-            CompetencyResult(
-                competency_id=row["competency_id"],
-                competency_name=row["competency_name"],
-                raw_score=row["raw_score"],
-                max_score=row["max_score"],
-                percentage=row["percentage"],
-                mastery_band=str(row["mastery_band"]),
-            )
-            for row in results
-        ],
-    )
+    payload = None
+    try:
+        payload = attempt_row["result_payload"]
+    except (KeyError, IndexError, TypeError):
+        payload = None
+
+    if payload and isinstance(payload, (dict, str)):
+        results = []
+        path_rows = []
+    else:
+        results = await repository.results_for(connection, attempt_id)
+        path_rows = (
+            await repository.path_for(connection, attempt_row["student_id"])
+            if attempt_row.get("student_id")
+            else []
+        )
+
+    report = _report_from_attempt(attempt_row, results, path_rows)
     return {"data": report.model_dump(mode="json")}
 
 

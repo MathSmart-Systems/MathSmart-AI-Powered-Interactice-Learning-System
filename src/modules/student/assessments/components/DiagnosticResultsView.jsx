@@ -216,9 +216,65 @@ export function DiagnosticResultsView({
         </CardFooter>
       </Card>
 
+      {Array.isArray(result.recommended_learning_path) &&
+        result.recommended_learning_path.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <Sparkles aria-hidden="true" className="size-4 text-primary" />
+                Recommended learning path
+              </CardTitle>
+              <CardDescription>
+                Tailored ARAL modules assigned to target competencies flagged in your diagnostic.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="divide-y divide-border">
+                {result.recommended_learning_path.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">Priority {item.priority}</Badge>
+                        <p className="text-sm font-medium text-foreground">
+                          {item.module?.title ?? "Learning module"}
+                        </p>
+                      </div>
+                      {item.reason && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {item.reason}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      {item.module?.estimated_minutes && (
+                        <span className="text-xs text-muted-foreground">
+                          {item.module.estimated_minutes} mins
+                        </span>
+                      )}
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/student/my-learning/${item.module?.id ?? ""}`}>
+                          Study module
+                        </Link>
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
       {showReview && (
         <div className="flex flex-col gap-4">
-          <h2 className="text-sm font-semibold text-foreground">Answer review</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Answer review</h2>
+            <p className="text-xs text-muted-foreground">
+              Review your submitted responses for each question below.
+            </p>
+          </div>
           <ol className="flex flex-col gap-4">
             {questions.map((question) => {
               const picked = answers[question.id];
@@ -234,20 +290,16 @@ export function DiagnosticResultsView({
                         {question.prompt}
                       </p>
                     </div>
-                    <span
-                      aria-label={hasAnswer(picked) ? "Answered" : "Left blank"}
-                      className={`flex size-7 shrink-0 items-center justify-center rounded-full border ${
+                    <Badge
+                      variant={hasAnswer(picked) ? "secondary" : "outline"}
+                      className={
                         hasAnswer(picked)
-                          ? "border-primary/40 bg-primary/10 text-primary"
-                          : "border-destructive/40 bg-destructive/10 text-destructive"
-                      }`}
+                          ? "text-xs font-normal"
+                          : "border-destructive/40 text-xs font-normal text-destructive"
+                      }
                     >
-                      {hasAnswer(picked) ? (
-                        <Check aria-hidden="true" className="size-4" />
-                      ) : (
-                        <X aria-hidden="true" className="size-4" />
-                      )}
-                    </span>
+                      {hasAnswer(picked) ? "Answer recorded" : "Unanswered"}
+                    </Badge>
                   </div>
 
                   {question.type === QUESTION_TYPE.MULTIPLE_CHOICE ? (
