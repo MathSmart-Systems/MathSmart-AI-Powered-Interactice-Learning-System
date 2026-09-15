@@ -27,9 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { createActivity, updateActivity } from "../services/activity-admin-service.js";
 import {
   DEFAULT_MASTERY_THRESHOLD,
-  MAX_DESCRIPTION_LENGTH,
   MAX_DURATION_MINUTES,
-  MAX_TITLE_LENGTH,
   MIN_DURATION_MINUTES,
   validateActivityDraft,
 } from "../utils/validation.js";
@@ -172,7 +170,6 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
             id={FIELD_IDS.title}
             type="text"
             required
-            maxLength={MAX_TITLE_LENGTH}
             value={values.title}
             aria-invalid={Boolean(errors.title)}
             aria-describedby={errors.title ? `${FIELD_IDS.title}-error` : undefined}
@@ -304,7 +301,6 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
           <Textarea
             id={FIELD_IDS.description}
             rows={3}
-            maxLength={MAX_DESCRIPTION_LENGTH}
             value={values.description}
             aria-invalid={Boolean(errors.description)}
             aria-describedby={

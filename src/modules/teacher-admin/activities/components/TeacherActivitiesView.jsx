@@ -143,10 +143,17 @@ export function TeacherActivitiesView() {
       }
 
       if (result.ok) {
+        const lastPage = Math.max(1, result.meta?.totalPages || 1);
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
         setActivities(result.data || []);
         setMeta(result.meta);
         setError(null);
       } else {
+        setActivities([]);
+        setMeta(null);
         setError(result.error);
       }
       setIsLoading(false);
