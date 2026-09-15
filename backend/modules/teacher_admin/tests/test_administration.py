@@ -585,7 +585,7 @@ def test_publishing_an_absent_assessment_reports_not_found():
 
 
 def test_publishing_a_populated_assessment_succeeds():
-    """Verify publishing an assessment with valid active questions transitions status to published."""
+    """Verify publishing an assessment with valid questions marks status as published."""
     client = build_client(
         admin_connection(
             **{
