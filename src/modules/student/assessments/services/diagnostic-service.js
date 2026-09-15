@@ -333,6 +333,41 @@ function mockReportView(attemptId) {
   };
 }
 
+/**
+ * Selects the single best published diagnostic from a list of candidates.
+ *
+ * Priority:
+ *  1. The one the caller has an in-progress attempt on (resume).
+ *  2. The one the caller has already scored (show report).
+ *  3. The first in the list (alphabetical by title from the API).
+ *
+ * When more than one candidate exists a console warning is emitted so the
+ * Teacher/Administrator knows to archive the extras, but the learner is not
+ * blocked — the system is designed to have exactly one published diagnostic
+ * per grade, and this is a graceful degradation.
+ */
+function selectDiagnostic(matching) {
+  if (matching.length === 0) return null;
+
+  if (matching.length > 1) {
+    console.warn(
+      `[MathSmart] ${matching.length} published diagnostics found for this grade. ` +
+        "Only one should be published at a time. " +
+        "The Teacher/Administrator should archive the extras.",
+    );
+  }
+
+  // Resume an in-progress attempt if one exists.
+  const inProgress = matching.filter((e) => e?.latest_status === "in_progress");
+  if (inProgress.length > 0) return inProgress[0];
+
+  // Prefer one already scored over a fresh one.
+  const scored = matching.filter((e) => e?.latest_status === "scored");
+  if (scored.length > 0) return scored[0];
+
+  return matching[0];
+}
+
 /** Load the learner's one published diagnostic without starting its clock. */
 export async function loadDiagnostic() {
   if (USE_MOCK) {
@@ -363,16 +398,8 @@ export async function loadDiagnostic() {
       String(entry?.grade_id) === String(gradeId) &&
       entry?.status === "published",
   );
-  const open = matching.filter((entry) => entry?.latest_status === "in_progress");
 
-  if (open.length > 1 || (open.length === 0 && matching.length > 1)) {
-    throw new AssessmentError(
-      "More than one diagnostic assessment is available for your grade. Please ask your teacher which one to use.",
-      { code: "diagnostic_ambiguous" },
-    );
-  }
-
-  const diagnostic = open[0] ?? matching[0];
+  const diagnostic = selectDiagnostic(matching);
   if (!diagnostic?.id) {
     throw new AssessmentError(
       "No diagnostic assessment has been published for your grade yet.",
@@ -380,23 +407,19 @@ export async function loadDiagnostic() {
     );
   }
 
+  // Fetch the learner's diagnostic standing. The /me endpoint returns the
+  // standing for their grade's diagnostic regardless of assessment_id, so no
+  // query parameter is needed or accepted.
   let status = null;
   try {
-    const statusQuery = new URLSearchParams({ assessment_id: diagnostic.id });
-    status = await request(`/diagnostic-status/me?${statusQuery.toString()}`);
+    status = await request("/diagnostic-status/me");
   } catch (error) {
     if (error instanceof AssessmentError && (error.status === 404 || error.code === "not_found")) {
+      // No learner profile yet or no diagnostic row — treat as not_started.
       status = null;
     } else {
       throw error;
     }
-  }
-
-  if (status && String(status?.assessment_id ?? "") !== String(diagnostic.id)) {
-    throw new AssessmentError(
-      "We could not verify the status of the selected diagnostic. Please try again or ask your teacher for help.",
-      { code: "diagnostic_status_mismatch" },
-    );
   }
 
   const diagnosticStatus =
@@ -409,12 +432,12 @@ export async function loadDiagnostic() {
         : "not_started");
 
   return {
-    assessment_id: status?.assessment_id ?? diagnostic.id,
+    assessment_id: diagnostic.id,
     title: diagnostic.title,
     total_questions: diagnostic.total_questions ?? 0,
     time_limit_minutes: diagnostic.duration_minutes ?? 60,
     latest_attempt_id: status?.latest_attempt_id ?? diagnostic.latest_attempt_id ?? null,
-    latest_status: status?.latest_status ?? diagnostic.latest_status ?? null,
+    latest_status: diagnostic.latest_status ?? null,
     diagnostic_status: diagnosticStatus,
     reassessment_eligible: status?.reassessment_eligible === true,
     reassessment_reason: status?.reassessment_reason ?? null,
