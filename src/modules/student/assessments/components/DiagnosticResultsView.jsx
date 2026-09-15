@@ -3,14 +3,13 @@
 import Link from "next/link";
 import {
   AlertCircle,
+  ArrowLeft,
   Award,
   BarChart3,
   BookOpen,
-  Check,
   CheckCircle2,
   Sparkles,
   Timer,
-  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +42,15 @@ export function DiagnosticResultsView({
 
   return (
     <section className="flex flex-col gap-8">
+      <div>
+        <Button asChild variant="ghost" size="sm" className="-ml-2.5">
+          <Link href="/student/assessments">
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            Back to assessments
+          </Link>
+        </Button>
+      </div>
+
       <header className="flex flex-col gap-2">
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <BarChart3 aria-hidden="true" className="size-4 text-primary" />
@@ -210,6 +218,9 @@ export function DiagnosticResultsView({
               {showReview ? "Hide my answers" : "Review my answers"}
             </Button>
           )}
+          <Button asChild variant="outline" size="lg">
+            <Link href="/student/assessments">Back to assessments</Link>
+          </Button>
           <Button asChild variant="ghost" size="lg" className="sm:ml-auto">
             <Link href="/student/dashboard">Back to dashboard</Link>
           </Button>
