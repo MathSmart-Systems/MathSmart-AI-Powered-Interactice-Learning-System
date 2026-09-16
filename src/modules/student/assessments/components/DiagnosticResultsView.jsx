@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -8,6 +9,7 @@ import {
   BarChart3,
   BookOpen,
   CheckCircle2,
+  RefreshCw,
   Sparkles,
   Timer,
 } from "lucide-react";
@@ -21,24 +23,87 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { QUESTION_TYPE } from "../services/diagnostic-service";
+import { QUESTION_TYPE, getStudentFeedback } from "../services/diagnostic-service";
+import { buildAssessmentFeedbackContext } from "../services/diagnostic-feedback";
 import { LETTERS, hasAnswer, styleForBand } from "../utils/format";
+import { FeedbackMarkdown } from "./FeedbackMarkdown";
 
 export function DiagnosticResultsView({
   result,
+  assessmentTitle = "",
   autoSubmitted = false,
   questions = [],
   answers = {},
   showReview = false,
   onToggleReview,
 }) {
-  if (!result) return null;
+  const [feedback, setFeedback] = useState(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(true);
+  const [feedbackUnavailable, setFeedbackUnavailable] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [focusedCompetency, setFocusedCompetency] = useState(null);
 
-  const gaps = result.domain_scores?.filter((entry) => entry.gap_identified) ?? [];
+  const gaps = useMemo(
+    () => result?.domain_scores?.filter((entry) => entry.gap_identified) ?? [],
+    [result?.domain_scores],
+  );
   const primaryActionHref =
-    result.next_action?.type === "dashboard"
+    result?.next_action?.type === "dashboard"
       ? "/student/dashboard"
       : "/student/my-learning";
+
+  useEffect(() => {
+    if (!result) return undefined;
+
+    let cancelled = false;
+
+    const dominantBand =
+      gaps.length === 0
+        ? "Mastered"
+        : gaps[0]?.mastery_band ?? "Needs Improvement";
+
+    const context = buildAssessmentFeedbackContext({
+      assessmentTitle,
+      percentage: result.percentage,
+      totalScore: result.total_score,
+      maxScore: result.max_score,
+      domainScores: result.domain_scores,
+      focusedCompetency,
+    });
+
+    getStudentFeedback({
+      score: result.percentage,
+      masteryBand: dominantBand,
+      displayContext: context,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.feedback_text) {
+          setFeedback(res);
+          setFeedbackUnavailable(false);
+        } else {
+          setFeedbackUnavailable(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFeedbackUnavailable(true);
+      })
+      .finally(() => {
+        if (!cancelled) setFeedbackLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [result, assessmentTitle, focusedCompetency, gaps, retryCount]);
+
+  const handleRetry = useCallback(() => {
+    setFeedbackLoading(true);
+    setFeedbackUnavailable(false);
+    setRetryCount((prev) => prev + 1);
+  }, []);
+
+  if (!result) return null;
 
   return (
     <section className="flex flex-col gap-8">
@@ -105,6 +170,102 @@ export function DiagnosticResultsView({
         </Card>
       </div>
 
+      <Card className="border-primary/20 bg-gradient-to-br from-card via-card to-primary/[0.03] shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Sparkles aria-hidden="true" className="size-4" />
+            </span>
+            <div>
+              <CardTitle className="text-base font-semibold text-foreground">
+                Personalized Learning Insights
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Advisory summary to guide your next learning steps
+              </CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {focusedCompetency && (
+              <Badge
+                variant="secondary"
+                className="flex items-center gap-1 text-xs cursor-pointer hover:bg-secondary/80"
+                onClick={() => setFocusedCompetency(null)}
+                title="Click to clear competency focus"
+              >
+                <span>Focus: {focusedCompetency}</span>
+                <span aria-hidden="true" className="font-bold">×</span>
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRetry}
+              disabled={feedbackLoading}
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              title="Regenerate advisory feedback"
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={`mr-1 size-3 ${feedbackLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+            <Badge
+              variant="outline"
+              className="border-primary/30 bg-primary/5 text-xs font-normal text-primary"
+            >
+              Advisory
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-1">
+          {feedbackLoading ? (
+            <div
+              className="flex flex-col gap-2 py-2"
+              role="status"
+              aria-label="Generating learning insights"
+            >
+              <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-5/6 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+              <p className="mt-1 text-xs text-muted-foreground animate-pulse">
+                Consulting Groq AI for learning recommendations...
+              </p>
+            </div>
+          ) : feedback?.feedback_text ? (
+            <div className="flex flex-col gap-3">
+              <FeedbackMarkdown content={feedback.feedback_text} />
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5 text-[11px] text-muted-foreground">
+                <span>
+                  Advisory insight powered by Groq
+                  {feedback.model ? ` (${feedback.model})` : ""}
+                </span>
+                <span>
+                  Deterministic scoring &amp; progression are never decided by AI
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 py-1">
+              <p className="text-xs text-muted-foreground">
+                AI assistance is currently unavailable. Your official scores and
+                competency breakdown below are complete.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRetry}
+                className="h-7 shrink-0 px-2.5 text-xs"
+              >
+                <RefreshCw aria-hidden="true" className="mr-1.5 size-3" />
+                Retry
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base font-semibold">
@@ -115,45 +276,84 @@ export function DiagnosticResultsView({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
-          {result.domain_scores.map((entry) => (
-            <div key={entry.competency_id ?? entry.domain} className="flex flex-col gap-2">
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="text-sm font-medium text-foreground">
-                  {entry.domain}
-                </span>
-                <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                  {entry.score != null && entry.max_score != null
-                    ? `${entry.score}/${entry.max_score} · ${entry.percentage}%`
-                    : `${entry.percentage}%`}
-                </span>
-              </div>
-
+          {result.domain_scores.map((entry) => {
+            const isFocused = focusedCompetency === entry.domain;
+            return (
               <div
-                role="progressbar"
-                aria-valuenow={entry.percentage}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={`${entry.domain} mastery`}
-                className="h-2 overflow-hidden rounded-full bg-secondary"
+                key={entry.competency_id ?? entry.domain}
+                className={`flex flex-col gap-2 rounded-lg p-2.5 transition-colors ${
+                  isFocused
+                    ? "bg-primary/5 ring-1 ring-primary/40 shadow-xs"
+                    : "hover:bg-muted/40"
+                }`}
               >
-                <div
-                  className={`h-full rounded-full transition-[width] duration-700 ease-out ${styleForBand(entry.mastery_band).bar}`}
-                  style={{ width: `${entry.percentage}%` }}
-                />
-              </div>
-
-              {entry.mastery_band && (
-                <div className="flex justify-end">
-                  <Badge
-                    variant="outline"
-                    className={styleForBand(entry.mastery_band).badge}
+                <div className="flex items-baseline justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFocusedCompetency((prev) =>
+                        prev === entry.domain ? null : entry.domain
+                      )
+                    }
+                    className="text-left text-sm font-medium text-foreground hover:text-primary transition-colors cursor-pointer"
+                    title={
+                      isFocused
+                        ? "Click to clear focus"
+                        : `Click to focus AI insights on ${entry.domain}`
+                    }
                   >
-                    {entry.mastery_band}
-                  </Badge>
+                    {entry.domain}
+                    {isFocused && (
+                      <span className="ml-2 text-xs font-normal text-primary">
+                        (Focus active)
+                      </span>
+                    )}
+                  </button>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {entry.score != null && entry.max_score != null
+                      ? `${entry.score}/${entry.max_score} · ${entry.percentage}%`
+                      : `${entry.percentage}%`}
+                  </span>
                 </div>
-              )}
-            </div>
-          ))}
+
+                <div
+                  role="progressbar"
+                  aria-valuenow={entry.percentage}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`${entry.domain} mastery`}
+                  className="h-2 overflow-hidden rounded-full bg-secondary"
+                >
+                  <div
+                    className={`h-full rounded-full transition-[width] duration-700 ease-out ${styleForBand(entry.mastery_band).bar}`}
+                    style={{ width: `${entry.percentage}%` }}
+                  />
+                </div>
+
+                {entry.mastery_band && (
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFocusedCompetency((prev) =>
+                          prev === entry.domain ? null : entry.domain
+                        )
+                      }
+                      className="text-[11px] text-muted-foreground hover:text-primary transition-colors cursor-pointer underline-offset-2 hover:underline"
+                    >
+                      {isFocused ? "Clear focus" : "Focus AI insights"}
+                    </button>
+                    <Badge
+                      variant="outline"
+                      className={styleForBand(entry.mastery_band).badge}
+                    >
+                      {entry.mastery_band}
+                    </Badge>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 

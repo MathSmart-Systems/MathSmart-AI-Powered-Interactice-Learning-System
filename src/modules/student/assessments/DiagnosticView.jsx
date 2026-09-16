@@ -556,6 +556,7 @@ export function DiagnosticView({
       {screen === "report" && result && (
         <DiagnosticResultsView
           result={result}
+          assessmentTitle={assessment?.title}
           autoSubmitted={autoSubmitted}
           questions={questions}
           answers={answers}
