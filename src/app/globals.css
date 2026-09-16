@@ -110,6 +110,54 @@
       linear-gradient(to bottom, hsl(var(--border) / 0.7) 1px, transparent 1px);
     background-size: 24px 24px;
   }
+
+  /*
+   * The plotted point's reading light. A second copy of the ruling, masked to a
+   * small radius around the point and faded in over the first, so the cells the
+   * point stands in read clearly while the rest of the plane stays quiet. The
+   * alpha is 0.45 rather than 0.75 because it composites over the 0.55 base:
+   * the two together land on the intended 0.75, not on 0.89.
+   */
+  .grid-paper-glow {
+    background-image:
+      linear-gradient(to right, hsl(var(--shell-border) / 0.45) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--shell-border) / 0.45) 1px, transparent 1px);
+    background-size: 24px 24px;
+    -webkit-mask-image: radial-gradient(
+      circle 160px at var(--plot-x, 50%) var(--plot-y, 50%),
+      #000 0%,
+      transparent 100%
+    );
+    mask-image: radial-gradient(
+      circle 160px at var(--plot-x, 50%) var(--plot-y, 50%),
+      #000 0%,
+      transparent 100%
+    );
+    opacity: 0;
+    transition: opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .grid-paper-glow[data-lit="true"] {
+    opacity: 1;
+  }
+
+  /* One expanding ring, once, when a point is marked. Never loops. */
+  @keyframes gap-mark-ring {
+    from {
+      transform: scale(1);
+      opacity: 0.5;
+    }
+    to {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+
+  .gap-mark-ring {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: gap-mark-ring 420ms cubic-bezier(0.16, 1, 0.3, 1) 1 both;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
