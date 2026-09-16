@@ -13,9 +13,13 @@ import submitMock from "@/data/submit.mock.json";
 import { getApiUrl, USE_MOCK } from "./api-config.js";
 import { createClient } from "@/lib/supabase/client";
 import { newIdempotencyKey } from "../utils/reconciliation.js";
+import {
+  buildFeedbackPayload,
+  fallbackMessage,
+  getMockFeedback,
+} from "./diagnostic-feedback.js";
 
-export { newIdempotencyKey };
-
+export { fallbackMessage, newIdempotencyKey };
 /** `mastery_band` vocabulary from the canonical enum table. */
 export const MASTERY_BAND = Object.freeze({
   MASTERED: "Mastered",
@@ -44,25 +48,6 @@ export class AssessmentError extends Error {
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const delay = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function fallbackMessage(status) {
-  switch (status) {
-    case 401:
-      return "Your session has expired. Please sign in again.";
-    case 403:
-      return "You do not have access to this assessment.";
-    case 404:
-      return "The diagnostic assessment is not available yet.";
-    case 409:
-      return "This assessment has already been submitted.";
-    case 412:
-      return "You are not eligible to take this assessment right now.";
-    case 422:
-      return "Some answers could not be accepted. Please review and try again.";
-    default:
-      return "Something went wrong while loading your assessment. Please try again.";
-  }
-}
 
 /**
  * Reads the current access token so it can be forwarded to FastAPI.
@@ -564,3 +549,42 @@ export async function submitDiagnostic({ attemptId, answers, idempotencyKey }) {
 
   return toReportView(result);
 }
+
+/**
+ * Advisory Groq AI student feedback on a scored diagnostic assessment.
+ *
+ * Calls POST /api/v1/ai/student-feedback.
+ * Only advisory: scores and mastery are determined deterministically
+ * in the database and passed as inputs. Never throws on Groq errors or
+ * 503 unavailability; falls back cleanly.
+ */
+export async function getStudentFeedback({
+  competencyId = null,
+  score = null,
+  masteryBand = null,
+  displayContext = null,
+} = {}) {
+  if (USE_MOCK) {
+    await delay(350);
+    return getMockFeedback({ score });
+  }
+
+  const payload = buildFeedbackPayload({
+    competencyId,
+    score,
+    masteryBand,
+    displayContext,
+  });
+
+  try {
+    const data = await request("/ai/student-feedback", {
+      method: "POST",
+      body: payload,
+    });
+    return data;
+  } catch (error) {
+    console.warn("[MathSmart] AI student feedback unavailable:", error?.message || error);
+    return null;
+  }
+}
+

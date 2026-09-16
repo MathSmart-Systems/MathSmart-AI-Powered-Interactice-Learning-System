@@ -139,7 +139,10 @@ class GroqAdapter:
 
         if response.status_code != httpx.codes.OK:
             logger.warning(
-                "Groq advisory request returned %s for purpose %s", response.status_code, purpose
+                "Groq advisory request returned %s for purpose %s: %s",
+                response.status_code,
+                purpose,
+                response.text,
             )
             return None
 
