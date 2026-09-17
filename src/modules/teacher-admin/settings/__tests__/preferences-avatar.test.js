@@ -103,7 +103,6 @@ describe("display preferences storage", () => {
     const prefs = {
       theme: "dark",
       projectorMode: true,
-      soundEffects: false,
       density: "compact",
     };
     saveDisplayPreferences(prefs);

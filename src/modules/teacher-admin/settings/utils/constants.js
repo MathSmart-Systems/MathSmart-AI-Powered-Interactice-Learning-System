@@ -20,7 +20,6 @@ export const SETTINGS_TABS = Object.freeze({
 
 export const DEFAULT_DISPLAY_PREFERENCES = Object.freeze({
   theme: "light",
-  soundEffects: true,
   density: "comfortable",
   projectorMode: false,
 });
@@ -47,7 +46,6 @@ export const FIELD_IDS = Object.freeze({
   THEME_LIGHT_BTN: "teacher-settings-theme-light-btn",
   THEME_DARK_BTN: "teacher-settings-theme-dark-btn",
   THEME_SYSTEM_BTN: "teacher-settings-theme-system-btn",
-  SOUND_EFFECTS_TOGGLE: "teacher-settings-sound-toggle",
   PROJECTOR_PREFERENCE_CHECKBOX: "teacher-settings-projector-preference-toggle",
   DENSITY_COMFORTABLE_BTN: "teacher-settings-density-comfortable-btn",
   DENSITY_COMPACT_BTN: "teacher-settings-density-compact-btn",

@@ -10,8 +10,6 @@ import {
   Sun,
   Table,
   Tv,
-  Volume2,
-  VolumeX,
 } from "lucide-react";
 
 import { FIELD_IDS } from "../utils/constants.js";
@@ -33,7 +31,6 @@ export function DisplayPreferencesTab({
 
   const isProjectorMode = Boolean(preferences.projectorMode);
   const theme = preferences.theme || "light";
-  const soundEffects = Boolean(preferences.soundEffects ?? true);
   const density = preferences.density || "comfortable";
 
   return (
@@ -195,45 +192,7 @@ export function DisplayPreferencesTab({
         </div>
       </div>
 
-      {/* 3. Audio & Sound Effects */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-4">
-        <div className="flex items-center gap-2 border-b border-border/60 pb-3">
-          {soundEffects ? (
-            <Volume2 className="w-5 h-5 text-primary" />
-          ) : (
-            <VolumeX className="w-5 h-5 text-muted-foreground" />
-          )}
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Audio & Chimes</h2>
-            <p className="text-xs text-muted-foreground">
-              Interactive audio feedback during classroom practice.
-            </p>
-          </div>
-        </div>
-
-        <label
-          htmlFor={FIELD_IDS.SOUND_EFFECTS_TOGGLE}
-          className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-muted/40 transition-colors cursor-pointer"
-        >
-          <div className="space-y-0.5 pr-4">
-            <span className="text-xs font-semibold text-foreground block">
-              Activity Completion Sounds
-            </span>
-            <p className="text-[11px] text-muted-foreground">
-              Play gentle audio chimes and celebratory sounds when students finish an activity or master a competency.
-            </p>
-          </div>
-          <input
-            id={FIELD_IDS.SOUND_EFFECTS_TOGGLE}
-            type="checkbox"
-            checked={soundEffects}
-            onChange={(e) => updatePref("soundEffects", e.target.checked)}
-            className="rounded border-border text-primary accent-primary focus:ring-ring w-5 h-5 cursor-pointer shrink-0"
-          />
-        </label>
-      </div>
-
-      {/* 4. Table Density */}
+      {/* 3. Table Density */}
       <div className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-4">
         <div className="flex items-center gap-2 border-b border-border/60 pb-3">
           <Table className="w-5 h-5 text-primary" />
