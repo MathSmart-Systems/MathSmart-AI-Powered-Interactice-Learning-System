@@ -12,7 +12,7 @@ const describe = hasAccount(STUDENT_ACCOUNT) ? test.describe : test.describe.ski
 
 const IMPLEMENTED_HEADINGS = new Map([
   ["/student/assessments", "Assessments"],
-  ["/student/profile", "Your profile"],
+  ["/student/profile", "Student Profile & Learning Record"],
 ]);
 
 describe("student workspace", () => {

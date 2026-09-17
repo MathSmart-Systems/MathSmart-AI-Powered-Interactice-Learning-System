@@ -134,6 +134,12 @@ describe("student dashboard", () => {
 
     await cta.click();
     await expect(page).toHaveURL(new RegExp(`${href}$`));
+
+    if (href === "/student/assessments/diagnostic") {
+      await expect(
+        page.getByRole("heading", { name: "Let's find out exactly where to start." }),
+      ).toBeVisible();
+    }
   });
 
   test("every dashboard link points at a route that exists", async ({ page }) => {
@@ -200,6 +206,12 @@ describe("student dashboard", () => {
 
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(new RegExp(`${href}$`));
+
+    if (href === "/student/assessments/diagnostic") {
+      await expect(
+        page.getByRole("heading", { name: "Let's find out exactly where to start." }),
+      ).toBeVisible();
+    }
   });
 
   test("the dashboard fits a phone without sideways scrolling", async ({ page }) => {
