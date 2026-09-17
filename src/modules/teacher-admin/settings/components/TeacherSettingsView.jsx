@@ -28,6 +28,7 @@ import {
   fetchSettings,
   fetchSettingsAuditEvents,
   loadDisplayPreferences,
+  loadTeacherAvatar,
   saveDisplayPreferences,
   updateSettings,
 } from "../services/settings-admin-service.js";
@@ -51,6 +52,13 @@ export function TeacherSettingsView() {
   // Teacher Profile Context
   const [userEmail, setUserEmail] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [avatar, setAvatar] = useState(() => loadTeacherAvatar());
+
+  useEffect(() => {
+    const onAvatarChange = () => setAvatar(loadTeacherAvatar());
+    window.addEventListener("mathsmart:teacher-avatar-change", onAvatarChange);
+    return () => window.removeEventListener("mathsmart:teacher-avatar-change", onAvatarChange);
+  }, []);
 
   // Form State (Classroom Rules)
   const [passingThreshold, setPassingThreshold] = useState(DEFAULT_PASSING_THRESHOLD);
@@ -380,8 +388,13 @@ export function TeacherSettingsView() {
       {/* 2. Educator Profile Summary Strip */}
       <div className="bg-card p-4 sm:p-5 rounded-xl border border-border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors">
         <div className="flex items-center gap-3">
-          <div className="size-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-            <User className="size-5" aria-hidden="true" />
+          <div className="size-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 overflow-hidden shadow-2xs">
+            {avatar ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={avatar} alt={teacherName} className="size-full object-cover" />
+            ) : (
+              <User className="size-5" aria-hidden="true" />
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">

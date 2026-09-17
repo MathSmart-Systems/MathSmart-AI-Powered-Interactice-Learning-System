@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Building2,
+  Camera,
   CheckCircle2,
   GraduationCap,
   KeyRound,
@@ -12,11 +13,14 @@ import {
   Save,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   User,
 } from "lucide-react";
 
-import { FIELD_IDS } from "../utils/constants.js";
+import { FIELD_IDS, PRESET_AVATARS } from "../utils/constants.js";
 import {
+  loadTeacherAvatar,
+  saveTeacherAvatar,
   updateOwnPassword,
   updateOwnProfile,
 } from "../services/settings-admin-service.js";
@@ -26,6 +30,18 @@ export function ProfileAccountTab({
   onProfileUpdated,
   userEmail,
 }) {
+  // Photo State
+  const [avatar, setAvatar] = useState(() => loadTeacherAvatar());
+  const [photoSuccess, setPhotoSuccess] = useState(false);
+  const [photoError, setPhotoError] = useState(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const onAvatarChange = () => setAvatar(loadTeacherAvatar());
+    window.addEventListener("mathsmart:teacher-avatar-change", onAvatarChange);
+    return () => window.removeEventListener("mathsmart:teacher-avatar-change", onAvatarChange);
+  }, []);
+
   // Name Edit State
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [savingName, setSavingName] = useState(false);
@@ -103,6 +119,74 @@ export function ProfileAccountTab({
     }, 5000);
   };
 
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset value so re-selecting same file triggers event
+    e.target.value = "";
+
+    if (!file.type.startsWith("image/")) {
+      setPhotoError("Please select a valid image file (PNG, JPG, WebP).");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("Image size exceeds 5MB limit. Please choose a smaller file.");
+      return;
+    }
+
+    setPhotoError(null);
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 256;
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        const resizedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+        saveTeacherAvatar(resizedDataUrl);
+        setAvatar(resizedDataUrl);
+        setPhotoSuccess(true);
+        setTimeout(() => setPhotoSuccess(false), 3000);
+      };
+      img.src = loadEvent.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    saveTeacherAvatar(null);
+    setAvatar(null);
+    setPhotoSuccess(true);
+    setPhotoError(null);
+    setTimeout(() => setPhotoSuccess(false), 3000);
+  };
+
+  const handleSelectPresetAvatar = (presetSvg) => {
+    saveTeacherAvatar(presetSvg);
+    setAvatar(presetSvg);
+    setPhotoSuccess(true);
+    setPhotoError(null);
+    setTimeout(() => setPhotoSuccess(false), 3000);
+  };
+
   const displayName = profile?.full_name || fullName || "Not available";
   const displayEmail = profile?.email || userEmail || "Not available";
   const schoolName = profile?.school_name || "Not assigned";
@@ -126,15 +210,128 @@ export function ProfileAccountTab({
       {/* 1. Teacher Display Profile Card */}
       <div className="bg-card p-6 sm:p-8 rounded-xl border border-border shadow-xs space-y-5 transition-colors">
         <div className="flex items-center gap-3 border-b border-border pb-4">
-          <div className="size-12 rounded-xl bg-primary/10 border border-primary/20 text-primary font-bold text-base flex items-center justify-center shadow-xs shrink-0">
-            {initials}
+          <div className="size-12 rounded-xl bg-primary/10 border border-primary/20 text-primary font-bold text-base flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
+            {avatar ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={avatar} alt={displayName} className="size-full object-cover" />
+            ) : (
+              initials
+            )}
           </div>
           <div>
             <h2 className="font-display text-lg font-semibold text-foreground">Teacher Profile</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Customize how your name is shown to students and faculty.
+              Customize your profile photo, display title, and account details.
             </p>
           </div>
+        </div>
+
+        {/* Profile Photo Section */}
+        <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-foreground block">
+                Profile Photo & Avatar
+              </span>
+              <p className="text-[11px] text-muted-foreground">
+                Upload a custom photo or choose a DepEd-aligned educator avatar.
+              </p>
+            </div>
+            {avatar && (
+              <button
+                id={FIELD_IDS.AVATAR_REMOVE_BUTTON}
+                type="button"
+                onClick={handleRemovePhoto}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-destructive hover:underline cursor-pointer"
+              >
+                <Trash2 className="size-3" aria-hidden="true" />
+                <span>Remove Photo</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            {/* Avatar Preview */}
+            <div className="relative size-16 rounded-full border-2 border-primary/30 overflow-hidden bg-primary/10 flex items-center justify-center shrink-0 shadow-xs">
+              {avatar ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={avatar}
+                  alt={displayName}
+                  className="size-full object-cover"
+                />
+              ) : (
+                <span className="font-display text-xl font-bold text-primary">
+                  {initials}
+                </span>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2.5 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  id={FIELD_IDS.AVATAR_UPLOAD_INPUT}
+                  type="file"
+                  accept="image/png, image/jpeg, image/webp"
+                  onChange={handleFileChange}
+                  className="sr-only"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium transition-colors shadow-xs cursor-pointer"
+                >
+                  <Camera className="size-3.5" aria-hidden="true" />
+                  <span>Upload Photo</span>
+                </button>
+              </div>
+
+              {/* Preset Avatars */}
+              <div className="flex items-center gap-2 pt-0.5">
+                <span className="text-[11px] text-muted-foreground">Or pick an avatar:</span>
+                <div className="flex items-center gap-1.5">
+                  {PRESET_AVATARS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      title={preset.title}
+                      onClick={() => handleSelectPresetAvatar(preset.svg)}
+                      className={`size-7 rounded-full border overflow-hidden p-0.5 transition-all cursor-pointer ${
+                        avatar === preset.svg
+                          ? "border-primary ring-2 ring-primary/40 scale-110"
+                          : "border-border hover:border-foreground"
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={preset.svg} alt={preset.title} className="size-full rounded-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {photoSuccess && (
+            <div
+              role="status"
+              className="p-2.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-medium flex items-center gap-2 animate-in fade-in duration-150"
+            >
+              <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+              <span>Profile photo updated successfully!</span>
+            </div>
+          )}
+
+          {photoError && (
+            <div
+              role="alert"
+              className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center gap-2 animate-in fade-in duration-150"
+            >
+              <ShieldAlert className="size-3.5 shrink-0" aria-hidden="true" />
+              <span>{photoError}</span>
+            </div>
+          )}
         </div>
 
         {nameSuccess && (
