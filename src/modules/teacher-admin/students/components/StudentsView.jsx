@@ -3,6 +3,28 @@
 import { useMemo, useState } from "react";
 import { Pencil, Plus, Search, Users } from "lucide-react";
 
+const PREFS_KEY = "mathsmart.teacher_preferences";
+
+/**
+ * Reads the teacher's density preference ("comfortable" | "compact") from
+ * localStorage. Falls back to "comfortable" when missing or unreadable.
+ *
+ * @returns {"comfortable" | "compact"}
+ */
+function readDensity() {
+  if (typeof window === "undefined") return "comfortable";
+  try {
+    const raw = window.localStorage.getItem(PREFS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.density === "compact") return "compact";
+    }
+  } catch {
+    // Graceful fallback
+  }
+  return "comfortable";
+}
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +63,12 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
   const [sections, setSections] = useState(initialSections);
   const [rosterTruncated, setRosterTruncated] = useState(Boolean(initialTruncated));
   const [pageError, setPageError] = useState(null);
+
+  // Read density preference once on mount — avoids re-renders.
+  // A page refresh picks up any change the teacher saved in Settings > Display.
+  const [density] = useState(() => readDensity());
+  const rowPadding = density === "compact" ? "px-4 py-2" : "px-4 py-3";
+  const headPadding = density === "compact" ? "px-4 py-2" : "px-4 py-3";
 
   const [search, setSearch] = useState("");
   const [gradeFilter, setGradeFilter] = useState("");
@@ -288,19 +316,19 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
               <caption className="sr-only">Enrolled students</caption>
               <thead>
                 <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                  <th scope="col" className="px-4 py-3 font-semibold">
+                  <th scope="col" className={`${headPadding} font-semibold`}>
                     Student
                   </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
+                  <th scope="col" className={`${headPadding} font-semibold`}>
                     Class section
                   </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
+                  <th scope="col" className={`${headPadding} font-semibold`}>
                     Diagnostic
                   </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
+                  <th scope="col" className={`${headPadding} font-semibold`}>
                     Status
                   </th>
-                  <th scope="col" className="px-4 py-3 text-right font-semibold">
+                  <th scope="col" className={`${headPadding} text-right font-semibold`}>
                     <span className="sr-only">Actions</span>
                   </th>
                 </tr>
@@ -311,23 +339,23 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
                   const section = sectionName(learner.section_id);
                   return (
                     <tr key={learner.student_id} className="hover:bg-secondary/40">
-                      <td className="px-4 py-3">
+                      <td className={rowPadding}>
                         <p className="font-semibold text-foreground">{learner.full_name ?? "Unnamed learner"}</p>
                         <p className="font-mono text-[11px] text-muted-foreground">{learner.learner_id}</p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={rowPadding}>
                         <p className="text-foreground">{grade ?? "—"}</p>
                         <p className="text-[11px] text-muted-foreground">
                           {section ? `Section ${section}` : "No section assigned"}
                         </p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={rowPadding}>
                         <StatusPill status={diagnosticStatus(learner.diagnostic_status)} />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={rowPadding}>
                         <StatusPill status={monitoringStatus(learner.monitoring_status)} />
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className={`${rowPadding} text-right`}>
                         <Button
                           size="icon"
                           variant="outline"

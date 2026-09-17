@@ -420,3 +420,65 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Projector / Classroom Big-Screen Mode
+ *
+ * Applied via `.projector-mode` class on <html> by TeacherThemeListener
+ * when the teacher enables Big Screen / TV Mode in Settings > Display.
+ *
+ * Goals: readable from the back of a classroom at 4–8 metres.
+ * Strategy: scale up base font, loosen table row padding, enlarge badges/buttons.
+ */
+.projector-mode {
+  font-size: 1.125rem; /* 18px base — up from 16px */
+}
+
+.projector-mode h1 {
+  font-size: 2.5rem !important;
+}
+
+.projector-mode h2 {
+  font-size: 1.75rem !important;
+}
+
+.projector-mode h3 {
+  font-size: 1.25rem !important;
+}
+
+/* Table rows in student roster and grade reports */
+.projector-mode table td,
+.projector-mode table th {
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+  font-size: 1rem !important;
+}
+
+/* Badges and small status pills */
+.projector-mode .text-xs {
+  font-size: 0.8125rem !important; /* 13px — slightly larger than 12px */
+}
+
+.projector-mode .text-\[11px\],
+.projector-mode .text-\[10px\] {
+  font-size: 0.75rem !important; /* floor at 12px for projector */
+}
+
+/* Navigation sidebar links */
+.projector-mode nav a,
+.projector-mode nav button {
+  font-size: 0.9375rem !important; /* 15px */
+  padding-top: 0.625rem !important;
+  padding-bottom: 0.625rem !important;
+}
+
+/* Primary action buttons */
+.projector-mode button[class*="bg-primary"],
+.projector-mode a[class*="bg-primary"] {
+  padding-top: 0.625rem !important;
+  padding-bottom: 0.625rem !important;
+  padding-left: 1.25rem !important;
+  padding-right: 1.25rem !important;
+  font-size: 0.9375rem !important;
+}
+
