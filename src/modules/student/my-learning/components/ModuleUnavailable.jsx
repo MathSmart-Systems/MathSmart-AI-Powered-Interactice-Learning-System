@@ -13,7 +13,7 @@ import { MY_LEARNING_ROUTE } from "../utils/my-learning-model";
  * answer is marked in the marking-pen red, because it is a software problem a
  * retry can actually fix.
  */
-export function ModuleUnavailable({ kind }) {
+export function ModuleUnavailable({ kind, retryHref }) {
   const notFound = kind === "not_found";
 
   return (
@@ -66,7 +66,11 @@ export function ModuleUnavailable({ kind }) {
 
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <Button asChild className="h-11 px-5">
-            <Link href={MY_LEARNING_ROUTE}>{notFound ? "Back to My Learning" : "Try again"}</Link>
+            {notFound ? (
+              <Link href={MY_LEARNING_ROUTE}>Back to My Learning</Link>
+            ) : (
+              <a href={retryHref}>Try again</a>
+            )}
           </Button>
         </div>
       </section>

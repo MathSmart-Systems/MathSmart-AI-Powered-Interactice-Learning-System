@@ -44,7 +44,7 @@ function SectionToggle({ section, saving, onChange }) {
       />
       <span
         aria-hidden="true"
-        className="flex size-5 shrink-0 items-center justify-center border border-input bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary"
+        className="flex size-5 shrink-0 items-center justify-center border border-input bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:border-ring peer-focus-visible:ring-[3px] peer-focus-visible:ring-ring/50"
       >
         {section.done ? <Check className="size-3.5 text-primary-foreground" /> : null}
       </span>

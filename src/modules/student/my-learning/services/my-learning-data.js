@@ -24,9 +24,15 @@ export const MY_LEARNING_STATE = Object.freeze({
   ERROR: "error",
 });
 
-function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+function apiBaseUrl(base = process.env.NEXT_PUBLIC_API_BASE_URL) {
+  if (typeof base !== "string" || !base) {
+    return null;
+  }
+  const trimmed = base.replace(/\/+$/, "");
+  const isLoopback =
+    /^http:\/\/127\.0\.0\.1(?::\d+)?($|\/)/i.test(trimmed) ||
+    /^http:\/\/localhost(?::\d+)?($|\/)/i.test(trimmed);
+  return /^https:/i.test(trimmed) || isLoopback ? trimmed : null;
 }
 
 async function accessToken() {
@@ -46,7 +52,7 @@ async function accessToken() {
 /**
  * One authenticated GET against the MathSmart API.
  *
- * @returns {Promise<{ok: true, data: unknown} | {ok: false, status: number|null}>}
+ * @returns {Promise<{ok: true, data: unknown, meta: unknown} | {ok: false, status: number|null}>}
  */
 async function readFromApi(path, token, base) {
   let response;
@@ -69,7 +75,7 @@ async function readFromApi(path, token, base) {
 
   try {
     const body = await response.json();
-    return { ok: true, data: body?.data ?? null };
+    return { ok: true, data: body?.data ?? null, meta: body?.meta ?? null };
   } catch {
     return { ok: false, status: response.status };
   }
@@ -102,7 +108,7 @@ export async function readMyLearning() {
     return { state: MY_LEARNING_STATE.ERROR, reason: "session" };
   }
 
-  const [learner, catalogue, pathData] = await Promise.all([
+  const [learner, firstCataloguePage, pathData] = await Promise.all([
     readFromApi("/students/me", token, base),
     readFromApi("/modules?page_size=100", token, base),
     readFromApi("/learning-path/me", token, base),
@@ -115,14 +121,32 @@ export async function readMyLearning() {
   // The learner record and the catalogue are what the page is about. The
   // learning path is a supporting list, so an unavailable path degrades to an
   // empty one rather than replacing the whole screen with a failure.
-  if (!learner.ok || !catalogue.ok) {
+  if (!learner.ok || !firstCataloguePage.ok) {
     return { state: MY_LEARNING_STATE.ERROR, reason: "unavailable" };
   }
+
+  const totalPages = Math.max(
+    1,
+    Math.trunc(Number(firstCataloguePage.meta?.total_pages) || 1),
+  );
+  const remainingCataloguePages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      readFromApi(`/modules?page=${index + 2}&page_size=100`, token, base),
+    ),
+  );
+
+  if (remainingCataloguePages.some((page) => !page.ok)) {
+    return { state: MY_LEARNING_STATE.ERROR, reason: "unavailable" };
+  }
+
+  const modules = [firstCataloguePage, ...remainingCataloguePages].flatMap((page) =>
+    Array.isArray(page.data) ? page.data : [],
+  );
 
   return {
     state: MY_LEARNING_STATE.READY,
     model: buildMyLearningModel({
-      modules: Array.isArray(catalogue.data) ? catalogue.data : [],
+      modules,
       pathItems: pathData.ok && Array.isArray(pathData.data) ? pathData.data : [],
     }),
     diagnosticStatus: learner.data?.diagnostic_status ?? null,

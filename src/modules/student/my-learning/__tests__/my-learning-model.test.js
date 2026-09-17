@@ -144,6 +144,21 @@ describe("buildMyLearningModel", () => {
     assert.equal(model.browse[0].cta, "Review this module");
   });
 
+  it("preserves catalogue path statuses and clamps browse progress", () => {
+    const model = buildMyLearningModel({
+      modules: [
+        catalogueItem({
+          module_id: MODULE_B,
+          path_status: "locked",
+          completion_percentage: 140,
+        }),
+      ],
+      pathItems: [],
+    });
+    assert.equal(model.browse[0].statusValue, "locked");
+    assert.equal(model.browse[0].completionPercentage, 100);
+  });
+
   it("reports an empty catalogue before anything else", () => {
     const model = buildMyLearningModel({ modules: [], pathItems: [] });
     assert.equal(model.catalogueEmpty, true);
@@ -235,6 +250,18 @@ describe("buildModuleReaderModel", () => {
       }),
     );
     assert.equal(model.allSectionsFinished, true);
+  });
+
+  it("clamps reader progress before rendering", () => {
+    const aboveRange = buildModuleReaderModel(
+      detail({ progress: { completion_percentage: 140, is_complete: false } }),
+    );
+    const belowRange = buildModuleReaderModel(
+      detail({ progress: { completionPercentage: -12, isComplete: false } }),
+    );
+
+    assert.equal(aboveRange.progress.percent, 100);
+    assert.equal(belowRange.progress.percent, 0);
   });
 
   it("survives malformed content without guessing", () => {

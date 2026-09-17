@@ -10,7 +10,7 @@
  */
 
 import { catalogueStatus, pathItemStatus } from "./status.js";
-import { toNumber } from "./format.js";
+import { formatPercent, toNumber } from "./format.js";
 
 export const MY_LEARNING_ROUTE = "/student/my-learning";
 
@@ -43,7 +43,7 @@ function catalogueRow(item = {}) {
     minutes: toNumber(item.estimated_minutes),
     orderIndex: toNumber(item.order_index) ?? Number.MAX_SAFE_INTEGER,
     pathStatus: item.path_status ?? null,
-    completionPercentage: toNumber(item.completion_percentage) ?? 0,
+    completionPercentage: formatPercent(item.completion_percentage) ?? 0,
     isComplete: Boolean(item.is_complete),
   };
 }
@@ -124,7 +124,7 @@ export function buildMyLearningModel({ modules = [], pathItems = [] }) {
         minutes: row.minutes,
         completionPercentage: row.completionPercentage,
         isComplete: row.isComplete,
-        statusValue: row.isComplete ? "completed" : null,
+        statusValue: row.isComplete ? "completed" : row.pathStatus,
         pathStatus: status,
         cta: `${status.verb} this module`,
       };
@@ -214,8 +214,8 @@ export function buildModuleReaderModel(detail = {}) {
   }));
 
   const completionPercent =
-    toNumber(progress.completion_percentage) ??
-    toNumber(progress.completionPercentage) ??
+    formatPercent(progress.completion_percentage) ??
+    formatPercent(progress.completionPercentage) ??
     0;
   const isComplete = Boolean(progress.is_complete ?? progress.isComplete);
 

@@ -1,5 +1,7 @@
 import { MODULE_STATE, readModule } from "../services/my-learning-data";
 
+import { moduleRoute } from "../utils/my-learning-model";
+
 import { ModuleReader } from "./ModuleReader";
 import { ModuleUnavailable } from "./ModuleUnavailable";
 
@@ -16,7 +18,7 @@ export async function ModuleViewer({ moduleId }) {
   }
 
   if (result.state === MODULE_STATE.ERROR) {
-    return <ModuleUnavailable kind="error" />;
+    return <ModuleUnavailable kind="error" retryHref={moduleRoute(moduleId)} />;
   }
 
   return <ModuleReader module={result.model} />;

@@ -234,6 +234,16 @@ async def list_modules(
 async def create_module(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: ModuleDraft
 ) -> dict[str, Any]:
+    if body.status is PublicationStatus.PUBLISHED:
+        competency_is_published = await repository.lock_published_competency(
+            connection, body.competency_id
+        )
+        if not competency_is_published:
+            raise ApiError(
+                422,
+                "Publish the competency before publishing the module.",
+                code="module_not_publishable",
+            )
     return await _create(connection, LEARNING_MODULES, body)
 
 
@@ -252,7 +262,27 @@ async def update_module(
     module_id: UUID,
     body: ModuleChanges,
 ) -> dict[str, Any]:
-    return await _update(connection, LEARNING_MODULES, module_id, body)
+    current = await repository.module_write_state(connection, module_id)
+    if current is None:
+        raise ApiError(404, "No record was found")
+
+    values = _values(body)
+    competency_id = values.get("competency_id", current["competency_id"])
+    status = values.get("status", current["status"])
+
+    if status == PublicationStatus.PUBLISHED and not await repository.lock_published_competency(
+        connection, competency_id
+    ):
+        raise ApiError(
+            422,
+            "Publish the competency before publishing the module.",
+            code="module_not_publishable",
+        )
+
+    row = await repository.update(connection, LEARNING_MODULES, module_id, values)
+    if row is None:
+        raise ApiError(404, "No record was found")
+    return {"data": _row(row, LEARNING_MODULES)}
 
 
 @router.delete("/teacher-admin/modules/{module_id}", status_code=204)

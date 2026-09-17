@@ -198,7 +198,7 @@ describe("student my learning", () => {
     expect(MODULE_URL.test(href)).toBe(true);
 
     await link.click();
-    await expect(page).toHaveURL(MODULE_URL);
+    await expect(page).toHaveURL(/\/student\/my-learning\/[0-9a-f-]+$/);
     await settled(page);
 
     await expect(
