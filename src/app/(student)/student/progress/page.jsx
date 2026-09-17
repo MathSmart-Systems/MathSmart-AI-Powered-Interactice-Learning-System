@@ -1,10 +1,13 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { STUDENT_WORKSPACE } from "@/modules/student";
+import { Suspense } from "react";
 
-export const metadata = { title: "Progress | MathSmart" };
+import { ProgressSkeleton, StudentProgress } from "@/modules/student/progress";
+
+export const metadata = { title: "My Progress | MathSmart" };
 
 export default function StudentProgressPage() {
   return (
-    <WorkspacePlaceholder title="Progress" workspaceName={STUDENT_WORKSPACE.name} />
+    <Suspense fallback={<ProgressSkeleton />}>
+      <StudentProgress />
+    </Suspense>
   );
 }
