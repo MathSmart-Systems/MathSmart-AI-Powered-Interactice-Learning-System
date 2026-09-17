@@ -130,64 +130,13 @@ export async function updateOwnPassword(newPassword) {
   }
 }
 
-const PREFERENCES_KEY = "mathsmart.teacher_preferences";
-
-/**
- * Reads saved display preferences from localStorage.
- *
- * @param {object} [fallback]
- * @returns {object}
- */
-export function loadDisplayPreferences(fallback = {}) {
-  if (typeof window === "undefined") {
-    return { ...fallback };
-  }
-  try {
-    const raw = window.localStorage.getItem(PREFERENCES_KEY);
-    if (!raw) return { ...fallback };
-    return { ...fallback, ...JSON.parse(raw) };
-  } catch {
-    return { ...fallback };
-  }
-}
-
-/**
- * Applies the active theme (light, dark, or system) to the document root element.
- *
- * @param {string} [theme]
- */
-export function applyTheme(theme = "light") {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return;
-  }
-  const root = document.documentElement;
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
-
-  if (isDark) {
-    root.classList.add("dark");
-  } else {
-    root.classList.remove("dark");
-  }
-}
-
-/**
- * Saves display preferences to localStorage and updates DOM styling.
- *
- * @param {object} prefs
- */
-export function saveDisplayPreferences(prefs) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
-  } catch {
-    // Safe fallback
-  }
-  if (prefs?.theme) {
-    applyTheme(prefs.theme);
-  }
-}
+export {
+  applyTheme,
+  loadDisplayPreferences,
+  loadTeacherAvatar,
+  PREFERENCES_KEY,
+  saveDisplayPreferences,
+  saveTeacherAvatar,
+  TEACHER_AVATAR_KEY,
+} from "../utils/preferences-storage.js";
 

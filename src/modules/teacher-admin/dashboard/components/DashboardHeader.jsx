@@ -53,9 +53,9 @@ export function DashboardHeader({
               disabled={isRefreshing}
               className="w-full appearance-none rounded-lg border border-border bg-card py-2.5 pl-3.5 pr-9 text-xs font-semibold text-foreground shadow-2xs outline-none transition-colors hover:bg-muted/40 focus:border-ring focus:ring-[3px] focus:ring-ring/50 disabled:opacity-50 cursor-pointer"
             >
-              <option value="">All Grade 6 Sections</option>
+              <option value="" className="bg-card text-foreground">All Grade 6 Sections</option>
               {sections.map((sec) => (
-                <option key={sec.id} value={sec.id}>
+                <option key={sec.id} value={sec.id} className="bg-card text-foreground">
                   {sec.name} {sec.learnerCount ? `(${sec.learnerCount} students)` : ""}
                 </option>
               ))}

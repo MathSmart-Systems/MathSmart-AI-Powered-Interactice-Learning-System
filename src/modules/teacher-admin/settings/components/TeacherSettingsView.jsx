@@ -28,6 +28,7 @@ import {
   fetchSettings,
   fetchSettingsAuditEvents,
   loadDisplayPreferences,
+  loadTeacherAvatar,
   saveDisplayPreferences,
   updateSettings,
 } from "../services/settings-admin-service.js";
@@ -51,6 +52,13 @@ export function TeacherSettingsView() {
   // Teacher Profile Context
   const [userEmail, setUserEmail] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [avatar, setAvatar] = useState(() => loadTeacherAvatar());
+
+  useEffect(() => {
+    const onAvatarChange = () => setAvatar(loadTeacherAvatar());
+    window.addEventListener("mathsmart:teacher-avatar-change", onAvatarChange);
+    return () => window.removeEventListener("mathsmart:teacher-avatar-change", onAvatarChange);
+  }, []);
 
   // Form State (Classroom Rules)
   const [passingThreshold, setPassingThreshold] = useState(DEFAULT_PASSING_THRESHOLD);
@@ -294,13 +302,14 @@ export function TeacherSettingsView() {
     return (
       <div className="space-y-6 max-w-4xl mx-auto pb-16 animate-pulse" aria-busy="true">
         <div className="space-y-2">
-          <div className="h-6 w-36 bg-slate-200 rounded-full" />
-          <div className="h-8 w-64 bg-slate-200 rounded-lg" />
-          <div className="h-4 w-80 bg-slate-200 rounded-md" />
+          <div className="h-6 w-36 bg-muted rounded-full" />
+          <div className="h-8 w-64 bg-muted rounded-lg" />
+          <div className="h-0.5 w-16 bg-muted rounded" />
+          <div className="h-4 w-80 max-w-full bg-muted rounded-md" />
         </div>
-        <div className="h-12 bg-slate-100 rounded-xl border border-slate-200" />
-        <div className="h-24 bg-slate-100 rounded-2xl border border-slate-200" />
-        <div className="h-56 bg-slate-100 rounded-2xl border border-slate-200" />
+        <div className="h-12 bg-card rounded-xl border border-border" />
+        <div className="h-20 bg-card rounded-xl border border-border" />
+        <div className="h-56 bg-card rounded-xl border border-border" />
       </div>
     );
   }
@@ -322,122 +331,128 @@ export function TeacherSettingsView() {
       }`}
     >
       {/* 1. Header with Classroom Mode Toggle */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold mb-2">
-            <Settings className="w-3.5 h-3.5 text-indigo-600" />
+      <header className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="space-y-2">
+          <p className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <Settings className="size-3.5" aria-hidden="true" />
             <span>Classroom Controls</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          </p>
+          <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight text-foreground">
             Teacher Settings
           </h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <span aria-hidden="true" className="mt-1 block h-0.5 w-16 bg-primary" />
+          <p className="text-sm leading-relaxed text-muted-foreground max-w-2xl">
             Easily adjust passing scores, student alerts, teacher profile, and display preferences.
           </p>
         </div>
 
-        <div className="shrink-0 flex items-center gap-2">
+        <div className="shrink-0 flex items-center gap-2 sm:pt-1">
           <button
             id={FIELD_IDS.PROJECTOR_MODE_TOGGLE}
             type="button"
             onClick={toggleProjectorMode}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border shadow-xs ${
               isProjectorMode
-                ? "bg-indigo-600 text-white border-indigo-700 shadow-sm hover:bg-indigo-700"
-                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-2xs"
+                ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
+                : "bg-card text-foreground border-border hover:bg-muted"
             }`}
             title="Enlarge display for classroom TVs, projectors, or smart screens"
           >
-            <Tv className="w-4 h-4" />
+            <Tv className="size-4" aria-hidden="true" />
             <span>{isProjectorMode ? "Big Screen: ON" : "Big Screen / TV Mode"}</span>
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Global Fetch Error */}
       {fetchError && (
         <div
           role="alert"
-          className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-medium flex items-center justify-between"
+          className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center justify-between"
         >
           <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+            <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
             <span>{fetchError}</span>
           </div>
           <button
             type="button"
             onClick={() => loadSettings(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-semibold transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card hover:bg-muted text-foreground border border-border text-xs font-medium transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="size-3.5" aria-hidden="true" />
             <span>Try Again</span>
           </button>
         </div>
       )}
 
       {/* 2. Educator Profile Summary Strip */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-card p-4 sm:p-5 rounded-xl border border-border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-            <User className="w-5 h-5" />
+          <div className="size-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 overflow-hidden shadow-2xs">
+            {avatar ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={avatar} alt={teacherName} className="size-full object-cover" />
+            ) : (
+              <User className="size-5" aria-hidden="true" />
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900">
+              <span className="text-xs font-bold text-foreground">
                 {teacherName}
               </span>
-              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-medium text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
                 Active
               </span>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Grade 6 Mathematics{institutionalDetails ? ` • ${institutionalDetails}` : ""}
             </p>
           </div>
         </div>
-        <div className="text-[11px] text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/60 shrink-0">
-          Role: <strong className="text-slate-800">Teacher / Administrator</strong>
+        <div className="text-xs text-muted-foreground bg-muted/60 px-3 py-1.5 rounded-lg border border-border shrink-0">
+          Role: <strong className="text-foreground font-semibold">Teacher / Administrator</strong>
         </div>
       </div>
 
       {/* 3. Settings Navigation Tabs */}
-      <div className="flex border-b border-slate-200 gap-2 sm:gap-4 overflow-x-auto">
+      <div className="flex border-b border-border gap-2 sm:gap-4 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab(SETTINGS_TABS.CLASSROOM)}
-          className={`pb-3 pt-1 px-2 font-bold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
+          className={`pb-3 pt-1 px-2 text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-colors cursor-pointer shrink-0 ${
             activeTab === SETTINGS_TABS.CLASSROOM
-              ? "border-indigo-600 text-indigo-700"
-              : "border-transparent text-slate-500 hover:text-slate-900"
+              ? "border-primary text-primary font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:border-border font-medium"
           }`}
         >
-          <Sliders className="w-4 h-4" />
+          <Sliders className="size-4" aria-hidden="true" />
           <span>Classroom Rules</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab(SETTINGS_TABS.PROFILE)}
-          className={`pb-3 pt-1 px-2 font-bold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
+          className={`pb-3 pt-1 px-2 text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-colors cursor-pointer shrink-0 ${
             activeTab === SETTINGS_TABS.PROFILE
-              ? "border-indigo-600 text-indigo-700"
-              : "border-transparent text-slate-500 hover:text-slate-900"
+              ? "border-primary text-primary font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:border-border font-medium"
           }`}
         >
-          <User className="w-4 h-4" />
+          <User className="size-4" aria-hidden="true" />
           <span>My Profile & Account</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab(SETTINGS_TABS.DISPLAY)}
-          className={`pb-3 pt-1 px-2 font-bold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
+          className={`pb-3 pt-1 px-2 text-xs sm:text-sm flex items-center gap-2 border-b-2 transition-colors cursor-pointer shrink-0 ${
             activeTab === SETTINGS_TABS.DISPLAY
-              ? "border-indigo-600 text-indigo-700"
-              : "border-transparent text-slate-500 hover:text-slate-900"
+              ? "border-primary text-primary font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:border-border font-medium"
           }`}
         >
-          <Palette className="w-4 h-4" />
+          <Palette className="size-4" aria-hidden="true" />
           <span>Display & Preferences</span>
         </button>
       </div>

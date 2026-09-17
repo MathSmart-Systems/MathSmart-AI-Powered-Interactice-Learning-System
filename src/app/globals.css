@@ -232,17 +232,62 @@
 
   /* Form Controls */
   .dark input[type="text"],
-  .dark input[type="password"] {
+  .dark input[type="password"],
+  .dark input[type="email"],
+  .dark input[type="number"],
+  .dark input[type="search"],
+  .dark textarea {
     background-color: hsl(222 47% 11%) !important;
     border-color: hsl(217 33% 26%) !important;
     color: hsl(210 40% 98%) !important;
+    color-scheme: dark !important;
   }
   .dark input[type="range"] {
     background-color: hsl(217 33% 24%) !important;
   }
-  .dark input[type="checkbox"] {
+  .dark input[type="checkbox"],
+  .dark input[type="radio"] {
     background-color: hsl(222 47% 11%) !important;
     border-color: hsl(217 33% 30%) !important;
+    color-scheme: dark !important;
+  }
+
+  /* Dropdowns & Native Select Surfaces in Dark Mode */
+  .dark select {
+    background-color: hsl(222 47% 14%) !important;
+    border-color: hsl(217 33% 24%) !important;
+    color: hsl(210 40% 98%) !important;
+    color-scheme: dark !important;
+  }
+
+  .dark select option,
+  .dark select optgroup {
+    background-color: hsl(222 47% 14%) !important;
+    color: hsl(210 40% 98%) !important;
+    color-scheme: dark !important;
+  }
+
+  .dark .bg-popover,
+  .dark [data-slot="select-content"],
+  .dark [data-slot="select-viewport"],
+  .dark [data-radix-popper-content-wrapper],
+  .dark [role="listbox"],
+  .dark [role="menu"] {
+    background-color: hsl(222 47% 14%) !important;
+    color: hsl(210 40% 98%) !important;
+    border-color: hsl(217 33% 20%) !important;
+    color-scheme: dark !important;
+  }
+
+  .dark [data-slot="select-item"] {
+    color: hsl(210 40% 98%) !important;
+  }
+
+  .dark [data-slot="select-item"]:hover,
+  .dark [data-slot="select-item"]:focus,
+  .dark [data-slot="select-item"][data-highlighted] {
+    background-color: hsl(222 47% 20%) !important;
+    color: hsl(210 40% 98%) !important;
   }
 }
 

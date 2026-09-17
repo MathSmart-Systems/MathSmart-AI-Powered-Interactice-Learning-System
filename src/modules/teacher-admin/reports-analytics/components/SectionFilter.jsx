@@ -1,7 +1,7 @@
 import { School } from "lucide-react";
 
 const FILTER_STYLE =
-  "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "h-9 rounded-md border border-input bg-card text-foreground px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 export function SectionFilter({ sections, selectedSectionId, onChange, disabled }) {
   return (
@@ -22,9 +22,9 @@ export function SectionFilter({ sections, selectedSectionId, onChange, disabled 
           disabled={disabled}
           aria-label="Filter reports by class section"
         >
-          <option value="">All sections</option>
+          <option value="" className="bg-card text-foreground">All sections</option>
           {sections.map((section) => (
-            <option key={section.id} value={section.id}>
+            <option key={section.id} value={section.id} className="bg-card text-foreground">
               {section.name}
             </option>
           ))}
