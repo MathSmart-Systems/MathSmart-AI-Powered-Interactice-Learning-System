@@ -7,7 +7,6 @@ import {
   Settings,
   ShieldAlert,
   Sliders,
-  Tv,
   User,
 } from "lucide-react";
 
@@ -18,7 +17,6 @@ import {
   DEFAULT_GROQ_FEATURE_ENABLED,
   DEFAULT_INTERVENTION_ATTEMPTS,
   DEFAULT_PASSING_THRESHOLD,
-  FIELD_IDS,
   SETTINGS_TABS,
 } from "../utils/constants.js";
 import { validateSettingsDraft } from "../utils/validation.js";
@@ -97,12 +95,6 @@ export function TeacherSettingsView() {
     return () => mediaQuery.removeEventListener("change", handler);
   }, [preferences.theme]);
 
-  const toggleProjectorMode = () => {
-    handlePreferencesChange({
-      ...preferences,
-      projectorMode: !preferences.projectorMode,
-    });
-  };
 
   const loadAuditEvents = useCallback(async () => {
     setAuditLoading(true);
@@ -346,22 +338,6 @@ export function TeacherSettingsView() {
           </p>
         </div>
 
-        <div className="shrink-0 flex items-center gap-2 sm:pt-1">
-          <button
-            id={FIELD_IDS.PROJECTOR_MODE_TOGGLE}
-            type="button"
-            onClick={toggleProjectorMode}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border shadow-xs ${
-              isProjectorMode
-                ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
-                : "bg-card text-foreground border-border hover:bg-muted"
-            }`}
-            title="Enlarge display for classroom TVs, projectors, or smart screens"
-          >
-            <Tv className="size-4" aria-hidden="true" />
-            <span>{isProjectorMode ? "Big Screen: ON" : "Big Screen / TV Mode"}</span>
-          </button>
-        </div>
       </header>
 
       {/* Global Fetch Error */}

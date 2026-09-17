@@ -209,21 +209,11 @@ export function ProfileAccountTab({
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* 1. Teacher Display Profile Card */}
       <div className="bg-card p-6 sm:p-8 rounded-xl border border-border shadow-xs space-y-5 transition-colors">
-        <div className="flex items-center gap-3 border-b border-border pb-4">
-          <div className="size-12 rounded-xl bg-primary/10 border border-primary/20 text-primary font-bold text-base flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
-            {avatar ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={avatar} alt={displayName} className="size-full object-cover" />
-            ) : (
-              initials
-            )}
-          </div>
-          <div>
-            <h2 className="font-display text-lg font-semibold text-foreground">Teacher Profile</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Customize your profile photo, display title, and account details.
-            </p>
-          </div>
+        <div className="border-b border-border pb-4">
+          <h2 className="font-display text-lg font-semibold text-foreground">Teacher Profile</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Customize your profile photo, display title, and account details.
+          </p>
         </div>
 
         {/* Profile Photo Section */}
