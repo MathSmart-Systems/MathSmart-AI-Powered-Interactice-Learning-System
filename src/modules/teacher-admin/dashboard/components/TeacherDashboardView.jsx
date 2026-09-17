@@ -14,6 +14,9 @@ export function TeacherDashboardView({ initialModel }) {
   const [selectedSectionId, setSelectedSectionId] = useState(initialModel.selectedSectionId || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const MAX_RETRIES = 3;
 
   const handleSectionChange = async (newSectionId) => {
     setSelectedSectionId(newSectionId);
@@ -34,11 +37,19 @@ export function TeacherDashboardView({ initialModel }) {
   };
 
   const handleRetry = () => {
+    if (retryCount >= MAX_RETRIES) return;
+    setRetryCount((c) => c + 1);
     handleSectionChange(selectedSectionId);
   };
 
   if (error) {
-    return <DashboardErrorState error={error} onRetry={handleRetry} />;
+    return (
+      <DashboardErrorState
+        error={error}
+        onRetry={retryCount < MAX_RETRIES ? handleRetry : undefined}
+        retriesExhausted={retryCount >= MAX_RETRIES}
+      />
+    );
   }
 
   return (

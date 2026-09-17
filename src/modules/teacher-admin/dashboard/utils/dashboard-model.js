@@ -148,7 +148,9 @@ export function normalizeCompetencies(rawCompetencies = []) {
   return rawCompetencies.map((comp) => {
     const learnersTracked = formatNumber(comp.learners_tracked);
     const rawAvg = comp.average_current_score;
-    const isSuppressed = rawAvg === null && learnersTracked > 0;
+    // Use the backend's explicit suppression flag — it is the authoritative source
+    // (backend: service.suppressed() withholds averages for cohorts < 5 learners).
+    const isSuppressed = Boolean(comp.suppressed);
     const averageScore = rawAvg !== null && rawAvg !== undefined ? Number(rawAvg) : null;
 
     return {

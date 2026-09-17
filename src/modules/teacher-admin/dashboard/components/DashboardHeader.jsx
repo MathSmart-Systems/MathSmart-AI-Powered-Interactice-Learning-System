@@ -13,7 +13,9 @@ export function DashboardHeader({
   isRefreshing = false,
 }) {
   const { totals, sections } = model;
-  const interventionCount = totals?.needsSupportCount || totals?.openInterventionCount || 0;
+  // openInterventionCount = actual recorded intervention records in DB.
+  // needsSupportCount = mastery-band flag (different meaning — not shown on this button).
+  const interventionCount = totals?.openInterventionCount ?? 0;
 
   return (
     <div className="bg-card rounded-2xl p-6 sm:p-8 border border-border shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6 transition-colors">

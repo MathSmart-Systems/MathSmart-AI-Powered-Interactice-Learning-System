@@ -125,7 +125,8 @@ test("normalizeCompetencies formats scores and respects small cohort privacy sup
       mastered_count: 0,
       developing_count: 1,
       needs_improvement_count: 1,
-      average_current_score: null, // suppressed
+      average_current_score: null, // withheld by backend (cohort < 5)
+      suppressed: true,            // backend sets this flag explicitly
     },
   ];
 

@@ -100,6 +100,10 @@ export async function fetchDashboardClient({
     totals: dashboardData.totals || {},
     competencies: dashboardData.competencies || [],
     priorityLearners: dashboardData.priority_learners || [],
+    // existingSections is a page-load snapshot from the server render.
+    // It is intentionally reused here to avoid a second GET /teacher-admin/classes
+    // on every section filter change. If real-time section list updates are needed,
+    // re-fetch /teacher-admin/classes inside this function and pass the result instead.
     sections: existingSections,
     selectedSectionId: sectionId,
   });

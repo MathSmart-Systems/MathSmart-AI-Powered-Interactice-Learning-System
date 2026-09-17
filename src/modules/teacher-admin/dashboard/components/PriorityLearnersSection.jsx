@@ -123,6 +123,9 @@ export function PriorityLearnersSection({ learners }) {
                 </div>
 
                 <div className="flex items-center gap-2 pt-2">
+                  {/* View Student: links by name search until /teacher/students/[studentId]
+                      has a page.jsx — at that point switch to:
+                      href={`${TEACHER_ROUTES.STUDENTS}/${learner.studentId}`} */}
                   <Link
                     id={`${FIELD_IDS.VIEW_STUDENT_BTN_PREFIX}${learner.studentId}`}
                     href={`${TEACHER_ROUTES.STUDENTS}?search=${encodeURIComponent(learner.fullName)}`}

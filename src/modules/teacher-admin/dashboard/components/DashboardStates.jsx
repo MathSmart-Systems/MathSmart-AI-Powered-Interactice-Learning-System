@@ -94,7 +94,7 @@ export function DashboardEmptyState({ sectionName = null }) {
   );
 }
 
-export function DashboardErrorState({ error, onRetry }) {
+export function DashboardErrorState({ error, onRetry, retriesExhausted = false }) {
   return (
     <div
       role="alert"
@@ -111,7 +111,11 @@ export function DashboardErrorState({ error, onRetry }) {
           {error || "Unable to retrieve class monitoring data. Please check your connection."}
         </p>
       </div>
-      {onRetry && (
+      {retriesExhausted ? (
+        <p className="text-xs text-muted-foreground">
+          Multiple attempts failed. Please refresh the page or contact your system administrator.
+        </p>
+      ) : onRetry ? (
         <button
           id={FIELD_IDS.RETRY_BTN}
           type="button"
@@ -121,7 +125,7 @@ export function DashboardErrorState({ error, onRetry }) {
           <RefreshCw className="size-3.5" />
           <span>Try Again</span>
         </button>
-      )}
+      ) : null}
     </div>
   );
 }
