@@ -80,6 +80,9 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
   const [status, setStatus] = useState(() =>
     module?.status === "published" ? "published" : "draft",
   );
+  const [competencyId, setCompetencyId] = useState(() =>
+    isEdit ? (module.competencyId ?? "") : "",
+  );
 
   const formId = useId();
   const competencyError = state.fieldErrors?.competency_id ?? null;
@@ -90,6 +93,13 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
   const explanationError = state.fieldErrors?.short_explanation ?? null;
   const rulesError = state.fieldErrors?.rules ?? null;
   const examplesError = state.fieldErrors?.worked_examples ?? null;
+
+  const selectedCompetency =
+    competencies.find((competency) => competency.id === competencyId) ?? null;
+  const publishingToUnpublishedCompetency =
+    status === "published" &&
+    selectedCompetency !== null &&
+    selectedCompetency.status !== "published";
 
   useEffect(() => {
     if (state.success) {
@@ -112,7 +122,7 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
           </DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="flex flex-col gap-5">
+        <form action={formAction} className="flex flex-col gap-5 px-6 py-5">
           {isEdit ? <input type="hidden" name="id" value={module.id} /> : null}
 
           {state.formError ? (
@@ -135,7 +145,8 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
               <select
                 id={`${formId}-competency`}
                 name="competency_id"
-                defaultValue={isEdit ? (module.competencyId ?? "") : ""}
+                value={competencyId}
+                onChange={(event) => setCompetencyId(event.target.value)}
                 required
                 aria-invalid={competencyError ? true : undefined}
                 className={SELECT_CLASS}
@@ -167,6 +178,19 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
               </select>
             </Field>
           </div>
+
+          {publishingToUnpublishedCompetency ? (
+            <p
+              role="alert"
+              className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
+              <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Learners can only open a published module whose competency is also published.
+                Publish this competency on the Competencies screen before publishing the module.
+              </span>
+            </p>
+          ) : null}
 
           <Field
             id={`${formId}-title`}

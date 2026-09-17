@@ -6,6 +6,7 @@ import { listCompetencies, listModules } from "../services/learning-modules-api"
 
 import { LearningModulesClient } from "./LearningModulesClient";
 import { LearningModulesServiceError } from "./LearningModulesStates";
+import { moduleVisibilityWarning } from "../utils/module-visibility.js";
 import { formatUpdated } from "../utils/format.js";
 import { learningModulesUrl } from "../utils/urls.js";
 
@@ -25,6 +26,7 @@ function toCompetency(row) {
     id: typeof row?.competency_id === "string" ? row.competency_id : null,
     code: typeof row?.code === "string" ? row.code : null,
     name: typeof row?.name === "string" ? row.name : null,
+    status: typeof row?.status === "string" ? row.status : null,
   };
 }
 
@@ -89,7 +91,11 @@ export async function LearningModulesView({
       const entry = toCompetency(row);
       if (entry.id && entry.id !== "") {
         competencyByCode.set(entry.id, entry);
-        competencyOptions.push({ id: entry.id, label: competencyLabel(competencyByCode, entry.id) });
+        competencyOptions.push({
+          id: entry.id,
+          label: competencyLabel(competencyByCode, entry.id),
+          status: entry.status,
+        });
       }
     }
   }
@@ -116,6 +122,7 @@ export async function LearningModulesView({
 
 function toModuleRow(row, competencyByCode) {
   const competencyId = typeof row?.competency_id === "string" ? row.competency_id : null;
+  const competency = competencyByCode.get(competencyId) ?? null;
   const rules = Array.isArray(row?.rules) ? row.rules : [];
   const workedExamples = Array.isArray(row?.worked_examples) ? row.worked_examples : [];
   const status = typeof row?.status === "string" && STATUS_LABELS[row.status] ? row.status : "draft";
@@ -133,7 +140,12 @@ function toModuleRow(row, competencyByCode) {
     status,
     version: typeof row?.version === "number" ? row.version : null,
     statusLabel: STATUS_LABELS[row?.status] ?? "Draft",
+    competencyStatus: competency?.status ?? null,
     competency: competencyLabel(competencyByCode, competencyId),
+    visibilityWarning: moduleVisibilityWarning({
+      moduleStatus: status,
+      competencyStatus: competency?.status ?? null,
+    }),
     rulesCount: rules.length,
     workedExamplesCount: workedExamples.length,
     updatedLabel: formatUpdated(row?.updated_at),
