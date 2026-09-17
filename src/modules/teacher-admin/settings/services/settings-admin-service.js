@@ -83,3 +83,85 @@ export async function fetchSettingsAuditEvents({ token = null, pageSize = 10 } =
     { method: "GET", token }
   );
 }
+
+/**
+ * Fetches the authenticated teacher's profile and institutional context.
+ *
+ * @param {object} [options]
+ * @param {string|null} [options.token]
+ * @returns {Promise<object>}
+ */
+export async function fetchOwnProfile({ token = null } = {}) {
+  return client().request("/auth/me", { method: "GET", token });
+}
+
+/**
+ * Updates the authenticated teacher's display name.
+ *
+ * @param {string} fullName
+ * @param {object} [options]
+ * @param {string|null} [options.token]
+ * @returns {Promise<object>}
+ */
+export async function updateOwnProfile(fullName, { token = null } = {}) {
+  return client().request("/auth/me", {
+    method: "PATCH",
+    body: { full_name: fullName },
+    token,
+  });
+}
+
+/**
+ * Updates the user's password directly through Supabase Auth.
+ *
+ * @param {string} newPassword
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+export async function updateOwnPassword(newPassword) {
+  try {
+    const supabase = createClient();
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (cause) {
+    return { ok: false, error: cause?.message || "Failed to update password." };
+  }
+}
+
+const PREFERENCES_KEY = "mathsmart.teacher_preferences";
+
+/**
+ * Reads saved display preferences from localStorage.
+ *
+ * @param {object} [fallback]
+ * @returns {object}
+ */
+export function loadDisplayPreferences(fallback = {}) {
+  if (typeof window === "undefined") {
+    return { ...fallback };
+  }
+  try {
+    const raw = window.localStorage.getItem(PREFERENCES_KEY);
+    if (!raw) return { ...fallback };
+    return { ...fallback, ...JSON.parse(raw) };
+  } catch {
+    return { ...fallback };
+  }
+}
+
+/**
+ * Saves display preferences to localStorage.
+ *
+ * @param {object} prefs
+ */
+export function saveDisplayPreferences(prefs) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
+  } catch {
+    // Safe fallback
+  }
+}
+

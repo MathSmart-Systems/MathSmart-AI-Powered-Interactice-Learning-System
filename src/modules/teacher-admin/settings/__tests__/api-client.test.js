@@ -98,7 +98,71 @@ describe("settings api client", () => {
     assert.deepEqual(result.data, mockEvents);
   });
 
+  it("sends authenticated GET /auth/me for teacher profile", async () => {
+    const mockProfile = {
+      user_id: "user-123",
+      role: "teacher_admin",
+      full_name: "Maria Santos",
+      email: "teacher.maria@deped.gov.ph",
+      school_name: "San Jose Elementary School",
+      division_name: "DepEd Division of Rizal",
+    };
+
+    const mockFetch = async (url, options) => {
+      assert.equal(url, `${BASE}/auth/me`);
+      assert.equal(options.method, "GET");
+      assert.equal(options.headers.Authorization, "Bearer valid-token");
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: mockProfile }),
+        headers: new Map(),
+      };
+    };
+
+    const client = createApiClient({
+      baseUrl: BASE,
+      getAccessToken: async () => "valid-token",
+      fetchImpl: mockFetch,
+    });
+
+    const result = await client.request("/auth/me");
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.data, mockProfile);
+  });
+
+  it("sends PATCH /auth/me to update display name", async () => {
+    const mockFetch = async (url, options) => {
+      assert.equal(url, `${BASE}/auth/me`);
+      assert.equal(options.method, "PATCH");
+      assert.equal(options.headers.Authorization, "Bearer valid-token");
+      assert.deepEqual(JSON.parse(options.body), { full_name: "Maria C. Santos" });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: { full_name: "Maria C. Santos" } }),
+        headers: new Map(),
+      };
+    };
+
+    const client = createApiClient({
+      baseUrl: BASE,
+      getAccessToken: async () => "valid-token",
+      fetchImpl: mockFetch,
+    });
+
+    const result = await client.request("/auth/me", {
+      method: "PATCH",
+      body: { full_name: "Maria C. Santos" },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.equal(result.data.full_name, "Maria C. Santos");
+  });
+
   it("handles validation failure envelope on PATCH", async () => {
+
 
     const mockFetch = async () => ({
       ok: false,
