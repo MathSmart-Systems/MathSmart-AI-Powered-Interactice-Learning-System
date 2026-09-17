@@ -48,6 +48,23 @@ export function applyTheme(theme = "light") {
 }
 
 /**
+ * Applies or removes the compact density class on documentElement.
+ *
+ * @param {string} [density]
+ */
+export function applyDensity(density = "comfortable") {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+  const root = document.documentElement;
+  if (density === "compact") {
+    root.classList.add("density-compact");
+  } else {
+    root.classList.remove("density-compact");
+  }
+}
+
+/**
  * Saves display preferences to localStorage and updates DOM styling.
  *
  * @param {object} prefs
@@ -62,12 +79,19 @@ export function saveDisplayPreferences(prefs) {
   if (prefs?.theme) {
     applyTheme(prefs.theme);
   }
-  // Notify TeacherThemeListener so projector mode takes effect immediately
+  if (prefs?.density) {
+    applyDensity(prefs.density);
+  }
+  // Notify TeacherThemeListener so projector mode and density take effect immediately
   // across all teacher pages without requiring a reload.
   try {
     window.dispatchEvent(
       new CustomEvent("mathsmart:theme-change", {
-        detail: { theme: prefs?.theme, projectorMode: prefs?.projectorMode },
+        detail: {
+          theme: prefs?.theme,
+          projectorMode: prefs?.projectorMode,
+          density: prefs?.density,
+        },
       })
     );
   } catch {

@@ -7,6 +7,7 @@ import { describe, it, beforeEach } from "node:test";
 
 import { PRESET_AVATARS } from "../utils/constants.js";
 import {
+  applyDensity,
   loadDisplayPreferences,
   loadTeacherAvatar,
   saveDisplayPreferences,
@@ -98,9 +99,35 @@ describe("display preferences storage", () => {
     assert.deepEqual(loadDisplayPreferences(fallback), fallback);
   });
 
-  it("saves and reloads updated preferences", () => {
-    const prefs = { theme: "dark", projectorMode: true, soundEffects: false };
+  it("saves and reloads updated preferences including density", () => {
+    const prefs = {
+      theme: "dark",
+      projectorMode: true,
+      soundEffects: false,
+      density: "compact",
+    };
     saveDisplayPreferences(prefs);
     assert.deepEqual(loadDisplayPreferences(), prefs);
+  });
+
+  it("applies density-compact class correctly via applyDensity", () => {
+    const classes = new Set();
+    globalThis.document = {
+      documentElement: {
+        classList: {
+          add: (cls) => classes.add(cls),
+          remove: (cls) => classes.delete(cls),
+          contains: (cls) => classes.has(cls),
+        },
+      },
+    };
+
+    applyDensity("compact");
+    assert.equal(classes.has("density-compact"), true);
+
+    applyDensity("comfortable");
+    assert.equal(classes.has("density-compact"), false);
+
+    delete globalThis.document;
   });
 });

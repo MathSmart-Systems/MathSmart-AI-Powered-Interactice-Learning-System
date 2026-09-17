@@ -45,7 +45,9 @@ export function TeacherSettingsView() {
   const [fieldErrors, setFieldErrors] = useState({});
 
   // Display Preferences
-  const [preferences, setPreferences] = useState(DEFAULT_DISPLAY_PREFERENCES);
+  const [preferences, setPreferences] = useState(() =>
+    loadDisplayPreferences(DEFAULT_DISPLAY_PREFERENCES)
+  );
 
   // Teacher Profile Context
   const [userEmail, setUserEmail] = useState(null);
