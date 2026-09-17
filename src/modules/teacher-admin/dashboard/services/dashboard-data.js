@@ -10,6 +10,11 @@ import { DASHBOARD_STATE } from "../utils/constants.js";
 import { buildDashboardModel } from "../utils/dashboard-model.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_READ_ATTEMPTS = 2;
+
+function isTransientFailure(status) {
+  return status === null || status === 408 || status === 429 || status >= 500;
+}
 
 function apiBaseUrl() {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -28,29 +33,33 @@ async function serverAccessToken() {
 }
 
 async function readFromApi(path, token, base) {
-  let response;
-  try {
-    response = await fetch(`${base}${path}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch {
-    return { ok: false, status: null };
-  }
+  for (let attempt = 0; attempt < MAX_READ_ATTEMPTS; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(`${base}${path}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch {
+      if (attempt + 1 < MAX_READ_ATTEMPTS) continue;
+      return { ok: false, status: null };
+    }
 
-  if (!response.ok) {
-    return { ok: false, status: response.status };
-  }
+    if (!response.ok) {
+      if (attempt + 1 < MAX_READ_ATTEMPTS && isTransientFailure(response.status)) continue;
+      return { ok: false, status: response.status };
+    }
 
-  try {
-    const body = await response.json();
-    return { ok: true, data: body?.data ?? null };
-  } catch {
-    return { ok: false, status: response.status };
+    try {
+      const body = await response.json();
+      return { ok: true, data: body?.data ?? null };
+    } catch {
+      return { ok: false, status: response.status };
+    }
   }
 }
 
@@ -116,5 +125,6 @@ export async function readDashboardData({ gradeId = null, sectionId = null } = {
   return {
     state: model.hasData ? DASHBOARD_STATE.READY : DASHBOARD_STATE.EMPTY,
     model,
+    classesUnavailable: !classesRes.ok,
   };
 }

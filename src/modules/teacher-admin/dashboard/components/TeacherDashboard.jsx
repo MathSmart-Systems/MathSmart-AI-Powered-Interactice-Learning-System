@@ -12,5 +12,10 @@ export async function TeacherDashboard() {
     return <DashboardErrorState error={result.error} />;
   }
 
-  return <TeacherDashboardView initialModel={result.model} />;
+  return (
+    <TeacherDashboardView
+      initialModel={result.model}
+      classesUnavailable={result.classesUnavailable}
+    />
+  );
 }

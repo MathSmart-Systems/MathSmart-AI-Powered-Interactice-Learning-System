@@ -108,10 +108,6 @@ export function normalizePriorityLearners(rawLearners = []) {
     const diagnostic = rawDiagnostic !== null && rawDiagnostic !== undefined ? Number(rawDiagnostic) : null;
 
     const activeInterventions = formatNumber(learner.active_intervention_count);
-    const severity =
-      activeInterventions > 0 || (mastery !== null && mastery < 50)
-        ? "HIGH"
-        : "MEDIUM";
 
     return {
       studentId: String(learner.student_id || ""),
@@ -127,7 +123,6 @@ export function normalizePriorityLearners(rawLearners = []) {
       overallMasteryFormatted: formatPercentage(mastery),
       monitoringStatus: String(learner.monitoring_status || "needs_intervention"),
       activeInterventionCount: activeInterventions,
-      severity,
       attemptSummary:
         activeInterventions > 0
           ? `${activeInterventions} active intervention${activeInterventions > 1 ? "s" : ""}`

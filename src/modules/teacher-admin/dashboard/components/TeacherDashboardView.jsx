@@ -9,7 +9,7 @@ import { DashboardMetricCards } from "./DashboardMetricCards.jsx";
 import { PriorityLearnersSection } from "./PriorityLearnersSection.jsx";
 import { CompetencyOverviewSection } from "./CompetencyOverviewSection.jsx";
 
-export function TeacherDashboardView({ initialModel }) {
+export function TeacherDashboardView({ initialModel, classesUnavailable = false }) {
   const [model, setModel] = useState(initialModel);
   const [selectedSectionId, setSelectedSectionId] = useState(initialModel.selectedSectionId || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -64,6 +64,7 @@ export function TeacherDashboardView({ initialModel }) {
         selectedSectionId={selectedSectionId}
         onSectionChange={handleSectionChange}
         isRefreshing={isRefreshing}
+        classesUnavailable={classesUnavailable}
       />
 
       {/* 2. Primary KPI Metric Cards (5 columns) */}

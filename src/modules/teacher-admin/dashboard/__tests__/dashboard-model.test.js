@@ -70,7 +70,7 @@ test("normalizeTotals maps raw API totals to formatted view properties", () => {
   assert.equal(totals.openInterventionCount, 5);
 });
 
-test("normalizePriorityLearners extracts severity, initials, and section details", () => {
+test("normalizePriorityLearners preserves canonical status, intervention count, and identity", () => {
   const rawLearners = [
     {
       student_id: "stu-001",
@@ -96,11 +96,16 @@ test("normalizePriorityLearners extracts severity, initials, and section details
 
   const learners = normalizePriorityLearners(rawLearners);
   assert.equal(learners.length, 2);
+  assert.equal(learners[0].studentId, "stu-001");
   assert.equal(learners[0].initials, "JC");
-  assert.equal(learners[0].severity, "HIGH");
+  assert.equal(learners[0].monitoringStatus, "needs_intervention");
+  assert.equal(learners[0].activeInterventionCount, 1);
+  assert.equal("severity" in learners[0], false);
   assert.equal(learners[0].attemptSummary, "1 active intervention");
   assert.equal(learners[1].initials, "MR");
-  assert.equal(learners[1].severity, "MEDIUM");
+  assert.equal(learners[1].monitoringStatus, "active");
+  assert.equal(learners[1].activeInterventionCount, 0);
+  assert.equal("severity" in learners[1], false);
 });
 
 test("normalizeCompetencies formats scores and respects small cohort privacy suppression", () => {

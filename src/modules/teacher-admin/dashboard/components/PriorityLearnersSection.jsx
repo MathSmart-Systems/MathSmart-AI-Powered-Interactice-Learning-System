@@ -4,7 +4,16 @@ import React from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, ShieldAlert } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+
 import { FIELD_IDS, TEACHER_ROUTES } from "../utils/constants.js";
+
+function formatStatus(status) {
+  return status
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 export function PriorityLearnersSection({ learners }) {
   const hasLearners = Array.isArray(learners) && learners.length > 0;
@@ -48,17 +57,10 @@ export function PriorityLearnersSection({ learners }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {learners.map((learner) => {
-            const isHighSeverity = learner.severity === "HIGH";
-
-            return (
+          {learners.map((learner) => (
               <div
                 key={learner.studentId || learner.learnerId}
-                className={`p-5 rounded-xl border flex flex-col justify-between space-y-4 transition-all ${
-                  isHighSeverity
-                    ? "border-destructive/30 bg-destructive/5 hover:border-destructive/50"
-                    : "border-border bg-card hover:border-muted-foreground/30"
-                }`}
+                className="p-5 rounded-xl border border-border bg-card hover:border-muted-foreground/30 flex flex-col justify-between space-y-4 transition-all"
               >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
@@ -76,15 +78,14 @@ export function PriorityLearnersSection({ learners }) {
                       </div>
                     </div>
 
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${
-                        isHighSeverity
-                          ? "bg-destructive text-white border-destructive"
-                          : "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200"
-                      }`}
-                    >
-                      {learner.severity} PRIORITY
-                    </span>
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      <Badge variant="outline">
+                        {formatStatus(learner.monitoringStatus)}
+                      </Badge>
+                      <Badge variant={learner.activeInterventionCount > 0 ? "destructive" : "secondary"}>
+                        {learner.activeInterventionCount} active
+                      </Badge>
+                    </div>
                   </div>
 
                   <div className="bg-background/80 p-3.5 rounded-lg border border-border space-y-2 text-xs">
@@ -101,11 +102,7 @@ export function PriorityLearnersSection({ learners }) {
                       <span className="font-semibold text-muted-foreground">
                         Current Mastery:
                       </span>
-                      <span
-                        className={`font-bold font-mono-math ${
-                          isHighSeverity ? "text-destructive" : "text-amber-600 dark:text-amber-400"
-                        }`}
-                      >
+                      <span className="font-bold font-mono-math text-foreground">
                         {learner.overallMasteryFormatted}
                       </span>
                     </div>
@@ -123,12 +120,9 @@ export function PriorityLearnersSection({ learners }) {
                 </div>
 
                 <div className="flex items-center gap-2 pt-2">
-                  {/* View Student: links by name search until /teacher/students/[studentId]
-                      has a page.jsx — at that point switch to:
-                      href={`${TEACHER_ROUTES.STUDENTS}/${learner.studentId}`} */}
                   <Link
                     id={`${FIELD_IDS.VIEW_STUDENT_BTN_PREFIX}${learner.studentId}`}
-                    href={`${TEACHER_ROUTES.STUDENTS}?search=${encodeURIComponent(learner.fullName)}`}
+                    href={`${TEACHER_ROUTES.STUDENTS}?student_id=${learner.studentId}`}
                     className="flex-1 py-2 px-3 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground text-center transition-colors cursor-pointer"
                   >
                     View Student
@@ -142,8 +136,7 @@ export function PriorityLearnersSection({ learners }) {
                   </Link>
                 </div>
               </div>
-            );
-          })}
+          ))}
         </div>
       )}
     </div>
