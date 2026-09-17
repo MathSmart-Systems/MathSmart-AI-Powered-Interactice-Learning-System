@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import {
   archiveModule,
   createModule,
+  listCompetencies,
   restoreModule,
   updateModule,
 } from "./learning-modules-api";
@@ -21,6 +22,27 @@ function failure(formError, fieldErrors = {}) {
 }
 
 /**
+ * True when the module's chosen competency is not currently published, so the
+ * module would be invisible to learners the moment it is published too. The
+ * database only shows a learner a module once its competency is published; the
+ * form has to refuse the same way. A degraded competency read cannot confirm a
+ * hidden state, so it is treated as publishable rather than guessed at.
+ */
+async function competencyHidesModule(competencyId) {
+  const result = await listCompetencies();
+
+  if (!result.ok) {
+    return false;
+  }
+
+  const competency = (Array.isArray(result.items) ? result.items : []).find(
+    (item) => String(item?.competency_id) === String(competencyId),
+  );
+
+  return Boolean(competency && competency.status !== "published");
+}
+
+/**
  * Authors a module (draft or published) and refreshes the list so the new row
  * appears on the page. Validation mirrors the API contract; anything the
  * service refuses reaches the form as a field or form-level message.
@@ -31,6 +53,13 @@ export async function createModuleAction(_previousState, formData) {
 
   if (Object.keys(fieldErrors).length > 0) {
     return failure("Check the highlighted fields before saving.", fieldErrors);
+  }
+
+  if (values.status === "published" && (await competencyHidesModule(values.competency_id))) {
+    return failure("Publish the competency before publishing the module.", {
+      competency_id:
+        "Learners can only open this module once its competency is published.",
+    });
   }
 
   const result = await createModule(modulePayload(values));
@@ -59,6 +88,13 @@ export async function updateModuleAction(_previousState, formData) {
 
   if (Object.keys(fieldErrors).length > 0) {
     return failure("Check the highlighted fields before saving.", fieldErrors);
+  }
+
+  if (values.status === "published" && (await competencyHidesModule(values.competency_id))) {
+    return failure("Publish the competency before publishing the module.", {
+      competency_id:
+        "Learners can only open this module once its competency is published.",
+    });
   }
 
   const result = await updateModule(values.id, modulePayload(values));

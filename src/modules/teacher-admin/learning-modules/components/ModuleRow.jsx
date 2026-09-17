@@ -1,3 +1,5 @@
+import { TriangleAlert } from "lucide-react";
+
 import { ModuleBadges, StatusBadge } from "./ModuleBadges";
 
 /**
@@ -46,6 +48,16 @@ export function ModuleRow({ module, actions }) {
 
           {meta ? <p className="text-sm text-muted-foreground">{meta}</p> : null}
         </div>
+
+        {module.visibilityWarning ? (
+          <p
+            role="note"
+            className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>{module.visibilityWarning}</span>
+          </p>
+        ) : null}
       </div>
     </li>
   );
