@@ -25,7 +25,7 @@ const describe = hasAccount(STUDENT_ACCOUNT) ? test.describe : test.describe.ski
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 /** Every destination the dashboard is allowed to link to. */
-const VALID_ROUTES = new Set(STUDENT_ROUTES);
+const VALID_ROUTES = new Set([...STUDENT_ROUTES, "/student/assessments/diagnostic"]);
 
 /** The wording the dashboard is allowed to use for a diagnostic. */
 const DIAGNOSTIC_LABELS = ["Not started", "In progress", "Completed", "Not available"];

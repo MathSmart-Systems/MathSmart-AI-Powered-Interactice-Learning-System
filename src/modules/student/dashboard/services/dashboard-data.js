@@ -80,15 +80,6 @@ async function readFromApi(path, token, base) {
 }
 
 /**
- * A learner whose account exists but whose learner record does not. The API
- * says so with 404 from `/students/me` and 403 from `/progress/me`, because
- * naming a learner record you do not have is a refusal there, not a gap.
- */
-function isMissingProfile(result) {
-  return result.status === 404 || result.status === 403;
-}
-
-/**
  * Reads the signed-in learner's dashboard.
  *
  * @returns {Promise<{state: string, model?: object, reason?: string}>}
@@ -112,7 +103,7 @@ export async function readDashboard() {
     readFromApi("/learning-path/me", token, base),
   ]);
 
-  if (isMissingProfile(learner) || isMissingProfile(progress)) {
+  if (learner.status === 404) {
     return { state: DASHBOARD_STATE.NO_PROFILE };
   }
 

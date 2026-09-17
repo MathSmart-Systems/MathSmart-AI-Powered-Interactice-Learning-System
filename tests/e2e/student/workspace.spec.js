@@ -10,6 +10,11 @@ import {
 
 const describe = hasAccount(STUDENT_ACCOUNT) ? test.describe : test.describe.skip;
 
+const IMPLEMENTED_HEADINGS = new Map([
+  ["/student/assessments", "Assessments"],
+  ["/student/profile", "Your profile"],
+]);
+
 describe("student workspace", () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page, STUDENT_ACCOUNT);
@@ -32,10 +37,13 @@ describe("student workspace", () => {
       await page.goto(route);
       await expect(page).toHaveURL(new RegExp(`${route}$`));
 
-      // The dashboard is built; the rest are still development placeholders.
       if (route === "/student/dashboard") {
         await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
         await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+      } else if (IMPLEMENTED_HEADINGS.has(route)) {
+        await expect(
+          page.getByRole("heading", { name: IMPLEMENTED_HEADINGS.get(route), level: 1 }),
+        ).toBeVisible();
       } else {
         await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
       }
