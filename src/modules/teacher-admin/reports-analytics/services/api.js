@@ -1,11 +1,11 @@
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { secureApiBaseUrl } from "@/modules/shared/utils/api-url";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
 async function getAccessToken() {

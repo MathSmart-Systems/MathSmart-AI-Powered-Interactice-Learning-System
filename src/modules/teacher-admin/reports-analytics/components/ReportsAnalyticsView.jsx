@@ -51,9 +51,14 @@ export function ReportsAnalyticsView({ initialDashboard, initialAnalytics, initi
         fetchAnalytics({ sectionId }),
       ]);
 
-      if (dashRes.ok) setDashboard(dashRes.data);
-      if (anaRes.ok) setAnalytics(anaRes.data);
-      if (!dashRes.ok && !anaRes.ok) setPageError("Could not refresh report data.");
+      if (dashRes.ok && anaRes.ok) {
+        setDashboard(dashRes.data);
+        setAnalytics(anaRes.data);
+      } else if (!dashRes.ok && !anaRes.ok) {
+        setPageError("Could not refresh report data.");
+      } else {
+        setPageError("Some report data could not be refreshed. Showing the previous report.");
+      }
     } catch {
       setPageError("Could not refresh report data.");
     } finally {

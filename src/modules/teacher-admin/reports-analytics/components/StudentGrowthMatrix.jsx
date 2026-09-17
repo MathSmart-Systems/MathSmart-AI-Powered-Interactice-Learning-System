@@ -61,11 +61,13 @@ export function StudentGrowthMatrix({ dashboard }) {
                   <td className="px-4 py-3 text-center">
                     <span
                       className={
-                        row.overall_mastery != null && row.overall_mastery >= 80
-                          ? "font-mono font-bold text-xs text-emerald-700"
-                          : row.overall_mastery != null && row.overall_mastery >= 50
-                            ? "font-mono font-bold text-xs text-amber-700"
-                            : "font-mono font-bold text-xs text-rose-700"
+                        row.overall_mastery == null
+                          ? "font-mono font-bold text-xs text-muted-foreground"
+                          : row.overall_mastery >= 80
+                            ? "font-mono font-bold text-xs text-emerald-700"
+                            : row.overall_mastery >= 50
+                              ? "font-mono font-bold text-xs text-amber-700"
+                              : "font-mono font-bold text-xs text-rose-700"
                       }
                     >
                       {row.overall_mastery != null ? `${row.overall_mastery}%` : "—"}

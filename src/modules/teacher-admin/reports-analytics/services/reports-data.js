@@ -1,11 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { secureApiBaseUrl } from "@/modules/shared/utils/api-url";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
 async function accessToken() {
@@ -67,6 +67,6 @@ export async function readReportsData({ gradeId = null, sectionId = null } = {})
     dashboard: dashboardRes.ok ? dashboardRes.data : null,
     analytics: analyticsRes.ok ? analyticsRes.data : null,
     sections: sectionsRes.ok ? sectionsRes.data : [],
-    error: !dashboardRes.ok && !analyticsRes.ok ? "unavailable" : undefined,
+    error: !dashboardRes.ok || !analyticsRes.ok || !sectionsRes.ok ? "unavailable" : undefined,
   };
 }
