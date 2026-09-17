@@ -1,7 +1,7 @@
+import React from "react";
 import { Minus, TrendingDown, TrendingUp } from "lucide-react";
 
 import { formatScore } from "../utils/format";
-
 import { BandGlyph } from "./BandGlyph";
 
 const ICON_FOR_DIRECTION = {
@@ -11,56 +11,40 @@ const ICON_FOR_DIRECTION = {
   unknown: Minus,
 };
 
-/**
- * One competency, measured twice.
- *
- * The rule under each row is the same idea as the big plot at a smaller scale:
- * the filled length is where the learner stands now, and the notch is where the
- * diagnostic put them. A drop is never marked in the marking-pen red — a score
- * that moved the wrong way is information, not a fault.
- */
 function CompetencyRow({ competency }) {
   const Icon = ICON_FOR_DIRECTION[competency.growth.direction] ?? Minus;
   const current = formatScore(competency.currentScore);
   const diagnostic = formatScore(competency.diagnosticScore);
 
   return (
-    <li className="flex flex-col gap-3 border-t border-border px-5 py-4 first:border-t-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <p className="min-w-0 font-medium text-foreground">{competency.name}</p>
-        <p className="font-display text-lg font-semibold tracking-tight text-foreground">
+    <li className="flex flex-col gap-2.5 p-4 rounded-xl bg-muted/20 border border-border">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="min-w-0 font-medium text-foreground text-xs sm:text-sm">{competency.name}</p>
+        <p className="font-display text-base font-bold tracking-tight text-foreground">
           {current ?? "Not scored yet"}
         </p>
       </div>
 
       {competency.currentScore === null ? null : (
-        <div aria-hidden="true" className="relative h-2.5 border border-input bg-secondary">
+        <div aria-hidden="true" className="relative h-2 w-full rounded-full bg-muted overflow-hidden">
           <div
-            className="h-full bg-primary"
+            className="h-full bg-primary rounded-full transition-all duration-500"
             style={{ width: `${Math.min(Math.max(competency.currentScore, 0), 100)}%` }}
           />
-          {competency.diagnosticScore === null ? null : (
-            <span
-              className="absolute top-[-3px] bottom-[-3px] w-px bg-foreground"
-              style={{
-                left: `${Math.min(Math.max(competency.diagnosticScore, 0), 100)}%`,
-              }}
-            />
-          )}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
-        <span className="inline-flex items-center gap-2 text-foreground">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        <span className="inline-flex items-center gap-1.5 text-foreground font-medium">
           <BandGlyph fill={competency.band.fill} />
           {competency.band.label}
         </span>
-        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-          <Icon aria-hidden="true" className="size-4" />
+        <span className="inline-flex items-center gap-1 text-muted-foreground">
+          <Icon aria-hidden="true" className="size-3.5" />
           {competency.growth.text}
         </span>
         {diagnostic ? (
-          <span className="text-muted-foreground">Diagnostic {diagnostic}</span>
+          <span className="text-muted-foreground">Baseline: {diagnostic}</span>
         ) : null}
       </div>
     </li>
@@ -69,7 +53,7 @@ function CompetencyRow({ competency }) {
 
 export function CompetencyProgressList({ competencies }) {
   return (
-    <ul className="flex flex-col border border-border bg-card">
+    <ul className="space-y-3">
       {competencies.map((competency, index) => (
         <CompetencyRow key={competency.id ?? index} competency={competency} />
       ))}

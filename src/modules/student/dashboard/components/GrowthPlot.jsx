@@ -197,7 +197,7 @@ export function GrowthPlot({ diagnosticScore, currentScore, growthValue, growth 
         </text>
       </svg>
 
-      <dl className="grid gap-px overflow-hidden border border-border bg-border">
+      <dl className="grid gap-px overflow-hidden rounded-xl border border-border bg-border">
         <Figure term="Diagnostic score">
           <Score value={diagnosticScore} />
         </Figure>

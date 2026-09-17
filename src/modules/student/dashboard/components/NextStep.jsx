@@ -1,19 +1,9 @@
+import React from "react";
 import Link from "next/link";
-import { CircleCheck, Clock3, Compass } from "lucide-react";
+import { ArrowRight, CircleCheck, Clock3, Compass, PlayCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-
 import { formatMinutes } from "../utils/format";
-
-/*
- * The one thing on this page that is louder than everything else.
- *
- * It is the deep-teal workspace panel from the login screen, carrying the same
- * graph-paper ruling and the same plotted point, because the answer to "what do
- * I do next" is the product's whole proposition. Its call to action is chalk
- * white on teal: the highest-contrast surface available here, which is what
- * makes it unmistakably the first thing to press.
- */
 
 const ICON_FOR_KIND = {
   diagnostic: Compass,
@@ -22,6 +12,11 @@ const ICON_FOR_KIND = {
   no_path: Clock3,
 };
 
+/**
+ * Primary Next Step Action Card conforming to the MathSmart UI/UX reference.
+ * Highlights the learner's recommended competency or immediate diagnostic action
+ * with an engaging gradient surface, progress metadata, and clear primary CTA.
+ */
 export function NextStep({ action, headingId }) {
   const Icon = ICON_FOR_KIND[action.kind] ?? Compass;
   const minutes = formatMinutes(action.meta?.minutes);
@@ -29,62 +24,58 @@ export function NextStep({ action, headingId }) {
   return (
     <section
       aria-labelledby={headingId}
-      className="on-shell relative overflow-hidden border border-shell-border bg-shell text-shell-foreground"
+      className="relative rounded-2xl p-6 sm:p-8 text-white shadow-md overflow-hidden border border-border/20 bg-gradient-to-br from-primary via-primary/95 to-shell"
     >
-      {/*
-       * The graph-paper ruling carries the identity on its own here. An axis
-       * pair was tried alongside it and taken out again: the plot further down
-       * the page is where a plotted point means something.
-       */}
-      <div aria-hidden="true" className="grid-paper absolute inset-0 opacity-70" />
+      <div aria-hidden="true" className="grid-paper absolute inset-0 opacity-20 pointer-events-none" />
 
-      <div className="relative flex flex-col gap-5 px-6 py-7 sm:px-8 sm:py-9">
-        <p className="flex items-center gap-2 text-sm font-medium text-shell-accent">
-          <Icon aria-hidden="true" className="size-4" />
-          {action.eyebrow}
-        </p>
+      <div className="relative z-10 max-w-2xl space-y-4">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-white/90 text-xs font-medium backdrop-blur-xs border border-white/15">
+          <Icon className="size-3.5 text-amber-300" aria-hidden="true" />
+          <span>{action.eyebrow}</span>
+        </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="space-y-2">
           <h2
             id={headingId}
-            className="max-w-[22ch] font-display text-3xl leading-tight font-semibold tracking-tight text-white sm:text-4xl"
+            className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-white"
           >
             {action.title}
           </h2>
-          <p className="max-w-prose text-sm leading-relaxed text-shell-foreground sm:text-base">
+          <p className="text-white/90 text-sm leading-relaxed max-w-xl">
             {action.description}
           </p>
         </div>
 
         {action.meta ? (
-          <dl className="flex flex-col gap-1.5 border-l-2 border-shell-accent/60 pl-4 text-sm">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/80 pt-1 border-t border-white/10">
             {action.meta.competency ? (
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-shell-muted">Competency</dt>
-                <dd className="text-shell-foreground">{action.meta.competency}</dd>
-              </div>
+              <span>
+                <strong className="text-white font-semibold">Competency:</strong> {action.meta.competency}
+              </span>
             ) : null}
             {action.meta.statusLabel ? (
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-shell-muted">Status</dt>
-                <dd className="text-shell-foreground">{action.meta.statusLabel}</dd>
-              </div>
+              <span>
+                <strong className="text-white font-semibold">Status:</strong> {action.meta.statusLabel}
+              </span>
             ) : null}
             {minutes ? (
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-shell-muted">Time needed</dt>
-                <dd className="text-shell-foreground">{minutes}</dd>
-              </div>
+              <span>
+                <strong className="text-white font-semibold">Time needed:</strong> {minutes}
+              </span>
             ) : null}
-          </dl>
+          </div>
         ) : null}
 
-        <div className="pt-1">
+        <div className="pt-2 flex flex-wrap items-center gap-3">
           <Button
             asChild
-            className="h-12 w-full bg-background px-6 text-base font-semibold text-shell hover:bg-white sm:w-auto"
+            className="h-11 inline-flex items-center gap-2 px-6 rounded-xl bg-white text-slate-900 font-bold text-sm shadow-sm hover:bg-white/90 transition-all cursor-pointer"
           >
-            <Link href={action.href}>{action.cta}</Link>
+            <Link href={action.href}>
+              <PlayCircle className="size-4 text-primary shrink-0" aria-hidden="true" />
+              <span>{action.cta}</span>
+              <ArrowRight className="size-4 text-primary ml-1 shrink-0" aria-hidden="true" />
+            </Link>
           </Button>
         </div>
       </div>

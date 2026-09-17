@@ -1,3 +1,4 @@
+import React from "react";
 import { Circle, CircleCheck, CircleDot, Lock } from "lucide-react";
 
 import { formatMinutes } from "../utils/format";
@@ -10,52 +11,81 @@ const ICON_FOR_STATUS = {
 };
 
 /**
- * The learning path, in the order the API put it in.
- *
- * This is a genuine sequence, so it is a numbered list and the numbers mean the
- * priority the backend assigned — not decoration. Each step carries the reason
- * it is on the path, because a learner deserves to know why they were sent
- * there, and the status is written out next to its icon.
+ * Sequential learning journey roadmap conforming to the MathSmart UI/UX reference.
+ * Renders individual steps as clean status cards with progress badges.
  */
 export function LearningPathPreview({ items }) {
   return (
-    <ol className="flex flex-col border border-border bg-card">
+    <ol className="space-y-3">
       {items.map((item, index) => {
         const Icon = ICON_FOR_STATUS[item.status] ?? Circle;
         const minutes = formatMinutes(item.estimatedMinutes);
+        const isCompleted = item.status === "completed";
+        const isInProgress = item.status === "in_progress";
 
         return (
           <li
             key={item.id ?? index}
-            className="flex gap-4 border-t border-border px-5 py-4 first:border-t-0"
+            className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl gap-3 transition-colors ${
+              isInProgress
+                ? "bg-primary/5 border-2 border-primary/40 shadow-xs"
+                : isCompleted
+                ? "bg-muted/30 border border-border"
+                : "bg-muted/15 border border-border/70"
+            }`}
           >
-            <span
-              aria-hidden="true"
-              className="mt-0.5 flex size-7 shrink-0 items-center justify-center border border-input font-display text-sm font-semibold text-foreground"
-            >
-              {item.priority ?? index + 1}
-            </span>
+            <div className="flex items-start gap-3 min-w-0">
+              <div
+                aria-hidden="true"
+                className={`size-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 sm:mt-0 ${
+                  isCompleted
+                    ? "bg-primary/15 text-primary"
+                    : isInProgress
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {isCompleted ? "✓" : isInProgress ? "●" : (item.priority ?? index + 1)}
+              </div>
 
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <p className="font-medium text-foreground">{item.moduleTitle}</p>
+              <div className="min-w-0 flex flex-col gap-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-xs font-bold text-foreground">
+                    {item.moduleTitle}
+                  </h3>
+                  {isInProgress && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary">
+                      CURRENT
+                    </span>
+                  )}
+                </div>
 
-              {item.competencyName ? (
-                <p className="text-sm text-muted-foreground">{item.competencyName}</p>
-              ) : null}
+                {item.competencyName ? (
+                  <p className="text-[11px] text-muted-foreground">{item.competencyName}</p>
+                ) : null}
 
-              {item.reason ? (
-                <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-                  {item.reason}
-                </p>
-              ) : null}
+                {item.reason ? (
+                  <p className="text-[11px] text-muted-foreground/80 leading-normal">
+                    {item.reason}
+                  </p>
+                ) : null}
+              </div>
+            </div>
 
-              <p className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-sm">
-                <span className="inline-flex items-center gap-1.5 text-foreground">
-                  <Icon aria-hidden="true" className="size-4 text-primary" />
-                  {item.statusLabel}
-                </span>
-                {minutes ? <span className="text-muted-foreground">{minutes}</span> : null}
-              </p>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0 text-xs">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium text-[11px] ${
+                  isCompleted
+                    ? "bg-primary/10 text-primary"
+                    : isInProgress
+                    ? "bg-primary text-primary-foreground font-semibold"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                <Icon aria-hidden="true" className="size-3" />
+                {item.statusLabel}
+              </span>
+              {minutes ? <span className="text-[11px] text-muted-foreground">{minutes}</span> : null}
             </div>
           </li>
         );
