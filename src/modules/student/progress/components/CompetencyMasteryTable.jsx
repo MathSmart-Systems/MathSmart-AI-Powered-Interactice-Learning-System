@@ -25,9 +25,6 @@ export function CompetencyMasteryTable({ competencies = [] }) {
             targeted interventions
           </p>
         </div>
-        <div className="text-[11px] font-semibold text-primary bg-primary/8 border border-primary/20 px-2.5 py-1 rounded-lg">
-          Standard: Grade 6 Mathematics (DepEd MATATAG)
-        </div>
       </div>
 
       {/* Data Table */}
