@@ -3,7 +3,11 @@
  */
 
 export { TeacherSettingsView } from "./components/TeacherSettingsView.jsx";
-export { fetchSettings, updateSettings } from "./services/settings-admin-service.js";
+export {
+  fetchSettings,
+  updateSettings,
+  fetchSettingsAuditEvents,
+} from "./services/settings-admin-service.js";
 export { createApiClient, CLIENT_FAILURE, readErrorEnvelope } from "./services/api-client.js";
 export { validateSettingsDraft } from "./utils/validation.js";
 export {
@@ -14,4 +18,7 @@ export {
   MIN_INTERVENTION_ATTEMPTS,
   MAX_INTERVENTION_ATTEMPTS,
   DEFAULT_INTERVENTION_ATTEMPTS,
+  DEFAULT_GROQ_FEATURE_ENABLED,
+  DEFAULT_DAILY_ALERTS_ENABLED,
 } from "./utils/constants.js";
+

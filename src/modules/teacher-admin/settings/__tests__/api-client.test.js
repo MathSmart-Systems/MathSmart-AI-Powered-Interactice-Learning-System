@@ -61,7 +61,45 @@ describe("settings api client", () => {
     assert.deepEqual(result.data, mockData);
   });
 
+  it("sends audit events query request with action filter", async () => {
+    const mockEvents = [
+      {
+        id: "evt-1",
+        action: "settings.updated",
+        actor_role: "teacher_admin",
+        details: { updated_keys: ["thresholds.activity_pass_percentage"] },
+        occurred_at: "2026-09-17T12:00:00Z",
+      },
+    ];
+
+    const mockFetch = async (url, options) => {
+      assert.equal(url, `${BASE}/teacher-admin/audit-events?action=settings.updated&page_size=5`);
+      assert.equal(options.method, "GET");
+      assert.equal(options.headers.Authorization, "Bearer valid-token");
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: mockEvents, meta: { page: 1, page_size: 5 } }),
+        headers: new Map(),
+      };
+    };
+
+    const client = createApiClient({
+      baseUrl: BASE,
+      getAccessToken: async () => "valid-token",
+      fetchImpl: mockFetch,
+    });
+
+    const result = await client.request(
+      "/teacher-admin/audit-events?action=settings.updated&page_size=5"
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.data, mockEvents);
+  });
+
   it("handles validation failure envelope on PATCH", async () => {
+
     const mockFetch = async () => ({
       ok: false,
       status: 422,

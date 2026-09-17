@@ -68,3 +68,18 @@ export async function updateSettings(settingsMap, { token = null } = {}) {
     token,
   });
 }
+
+/**
+ * Fetches recent audit events for settings updates.
+ *
+ * @param {object} [options]
+ * @param {string|null} [options.token]
+ * @param {number} [options.pageSize]
+ * @returns {Promise<object>}
+ */
+export async function fetchSettingsAuditEvents({ token = null, pageSize = 10 } = {}) {
+  return client().request(
+    `/teacher-admin/audit-events?action=settings.updated&page_size=${encodeURIComponent(pageSize)}`,
+    { method: "GET", token }
+  );
+}
