@@ -856,6 +856,94 @@ def test_a_setting_can_be_updated():
     assert response.status_code == 200
 
 
+def test_settings_report_sanitized_model_identifier():
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from modules.shared.testing import (
+        FakeDatabase,
+        FakeSessionGateway,
+        FakeVerifier,
+        fake_settings,
+    )
+
+    settings = fake_settings()
+    settings.groq_enabled = True
+    settings.groq_model = "llama-3.3-70b-versatile"
+
+    app = create_app(
+        settings=settings,
+        token_verifier=FakeVerifier(),
+        database=FakeDatabase(admin_connection()),
+        session_gateway=FakeSessionGateway(),
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/api/v1/teacher-admin/settings", headers=ADVISER_HEADERS)
+    assert response.status_code == 200
+    groq_data = response.json()["data"]["groq"]
+    assert groq_data["model"] == "llama-3.3-70b-versatile"
+    assert groq_data["environment_enabled"] is True
+    assert groq_data["model_is_editable"] is False
+
+
+def test_settings_reject_out_of_bounds_values():
+    client = build_client(admin_connection())
+
+    # Below 60%
+    r1 = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"thresholds.activity_pass_percentage": 50}},
+        headers=ADVISER_HEADERS,
+    )
+    assert r1.status_code == 422
+
+    # Above 90%
+    r2 = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"thresholds.activity_pass_percentage": 95}},
+        headers=ADVISER_HEADERS,
+    )
+    assert r2.status_code == 422
+
+    # Intervention trigger below 1
+    r3 = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"intervention.unsuccessful_attempts": 0}},
+        headers=ADVISER_HEADERS,
+    )
+    assert r3.status_code == 422
+
+    # Intervention trigger above 5
+    r4 = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"intervention.unsuccessful_attempts": 6}},
+        headers=ADVISER_HEADERS,
+    )
+    assert r4.status_code == 422
+
+    # Boolean flags must be bool
+    r5 = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"features.groq_enabled": "yes"}},
+        headers=ADVISER_HEADERS,
+    )
+    assert r5.status_code == 422
+
+
+def test_settings_update_is_audited():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"thresholds.activity_pass_percentage": 85}},
+        headers=ADVISER_HEADERS,
+    )
+    assert response.status_code == 200
+    audited = [call for call in connection.calls if "app.record_audit_event" in call[0]]
+    assert audited
+    assert "settings.updated" in audited[0][1]
+
+
 def test_audit_events_can_be_searched():
     client = build_client(admin_connection())
 

@@ -15,7 +15,7 @@ import json
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query, Request, Response
 
 from app.dependencies import ActorDb, CurrentActor, SensitiveActor, TeacherAdmin
 from middleware.errors import ApiError
@@ -734,7 +734,9 @@ async def archive_user(
 
 
 @router.get("/teacher-admin/settings")
-async def read_settings(_actor: TeacherAdmin, connection: ActorDb) -> dict[str, Any]:
+async def read_settings(
+    _actor: TeacherAdmin, connection: ActorDb, request: Request
+) -> dict[str, Any]:
     """The effective configuration.
 
     What is absent is the point: there is no credential here and no editable
@@ -750,6 +752,13 @@ async def read_settings(_actor: TeacherAdmin, connection: ActorDb) -> dict[str, 
         for row in await repository.settings(connection)
     }
     effective = {**SETTING_DEFAULTS, **stored}
+
+    app_settings = getattr(request.app.state, "settings", None)
+    env_groq_enabled = bool(getattr(app_settings, "groq_enabled", False))
+    groq_model = getattr(app_settings, "groq_model", None)
+    policy_enabled = bool(
+        effective.get("features.groq_enabled", effective.get("features.groq_feedback_enabled", False))
+    )
 
     return {
         "data": {
@@ -772,9 +781,12 @@ async def read_settings(_actor: TeacherAdmin, connection: ActorDb) -> dict[str, 
                 if key.startswith("features.")
             },
             "groq": {
-                "enabled": bool(effective.get("features.groq_enabled", False)),
+                "enabled": policy_enabled and env_groq_enabled,
+                "model": groq_model,
                 "model_is_editable": False,
                 "model_source": "server environment",
+                "environment_enabled": env_groq_enabled,
+                "policy_enabled": policy_enabled,
             },
         }
     }
@@ -797,6 +809,14 @@ async def update_settings(
         await repository.upsert_setting(
             connection, key=key, value=json.dumps(value), updated_by=actor.user_id
         )
+    await repository.record_audit_event(
+        connection,
+        action="settings.updated",
+        target_type="system_settings",
+        target_id=None,
+        request_id=current_request_id(),
+        details={"updated": sorted(body.settings)},
+    )
     return {"data": {"updated": sorted(body.settings)}}
 
 

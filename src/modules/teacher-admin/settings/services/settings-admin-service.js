@@ -1,0 +1,70 @@
+/**
+ * Settings administration service for the browser.
+ *
+ * Runs with the signed-in teacher's Supabase access token.
+ */
+
+import { createClient } from "@/lib/supabase/client";
+
+import { createApiClient } from "./api-client.js";
+
+/**
+ * Resolves the configured API base URL without trailing slashes.
+ *
+ * @returns {string | null}
+ */
+function apiBaseUrl() {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+}
+
+/**
+ * The signed-in teacher's own access token.
+ *
+ * @returns {Promise<string | null>}
+ */
+async function accessToken() {
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.getSession();
+    return error ? null : (data?.session?.access_token ?? null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Instantiates the settings API client.
+ *
+ * @returns {object}
+ */
+function client() {
+  return createApiClient({ baseUrl: apiBaseUrl(), getAccessToken: accessToken });
+}
+
+/**
+ * Fetches the current effective settings.
+ *
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
+export async function fetchSettings({ token = null } = {}) {
+  return client().request("/teacher-admin/settings", { method: "GET", token });
+}
+
+/**
+ * Updates system settings.
+ *
+ * @param {Record<string, any>} settingsMap
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
+export async function updateSettings(settingsMap, { token = null } = {}) {
+  return client().request("/teacher-admin/settings", {
+    method: "PATCH",
+    body: { settings: settingsMap },
+    token,
+  });
+}

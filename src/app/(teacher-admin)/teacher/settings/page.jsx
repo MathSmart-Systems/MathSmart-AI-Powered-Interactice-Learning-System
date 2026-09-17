@@ -1,10 +1,7 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { TEACHER_ADMIN_WORKSPACE } from "@/modules/teacher-admin";
+import { TeacherSettingsView } from "@/modules/teacher-admin/settings";
 
 export const metadata = { title: "Settings | MathSmart" };
 
 export default function TeacherSettingsPage() {
-  return (
-    <WorkspacePlaceholder title="Settings" workspaceName={TEACHER_ADMIN_WORKSPACE.name} />
-  );
+  return <TeacherSettingsView />;
 }
