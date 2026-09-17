@@ -72,7 +72,8 @@ export function LearningModulesClient({
         <p className="max-w-2xl border-l-[3px] border-primary bg-card px-5 py-4 text-sm leading-relaxed text-muted-foreground">
           A module is a step on the learning path: an objective, a short explanation, the core
           rules it teaches, and worked examples. Publishing puts it in front of learners, so a
-          published module needs at least one complete rule and one worked example.
+          published module needs at least one complete rule and one worked example — and its
+          competency must be published too, or learners have no way to open it.
         </p>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">

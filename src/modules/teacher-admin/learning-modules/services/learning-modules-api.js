@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { secureApiBaseUrl } from "../utils/api-url.js";
+import { readAllCompetencies } from "./competency-pagination.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -150,13 +151,9 @@ export async function listModules({
 
 /** Every competency the author dialog and the row labels need. */
 export async function listCompetencies() {
-  const result = await apiRequest("/teacher-admin/competencies?page_size=200");
-
-  if (!result.ok) {
-    return result;
-  }
-
-  return { ...result, items: Array.isArray(result.data) ? result.data : [] };
+  return readAllCompetencies((page, pageSize) =>
+    apiRequest(`/teacher-admin/competencies?page=${page}&page_size=${pageSize}`),
+  );
 }
 
 /** One module's full readable content, for the edit dialog. */

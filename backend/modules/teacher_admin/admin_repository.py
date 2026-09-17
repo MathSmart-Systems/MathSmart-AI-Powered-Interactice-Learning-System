@@ -252,6 +252,22 @@ def archive_sql(resource: Resource) -> str:
     )
 
 
+_MODULE_WRITE_STATE_SQL = """
+select learning_modules.competency_id, learning_modules.status
+from app.learning_modules
+where learning_modules.module_id = $1
+for update
+"""
+
+_PUBLISHED_COMPETENCY_LOCK_SQL = """
+select competencies.competency_id
+from app.competencies
+where competencies.competency_id = $1
+  and competencies.status = 'published'
+for share
+"""
+
+
 def deactivate_sql(resource: Resource) -> str:
     """Grades and sections have no publication status, so they are deactivated."""
     return (
@@ -440,6 +456,21 @@ async def module_listing_total(
 
 async def read(connection: ActorConnection, resource: Resource, key: UUID) -> Any:
     return await connection.fetchrow(read_sql(resource), key)
+
+
+async def module_write_state(connection: ActorConnection, module_id: UUID) -> Any:
+    """Lock a module so its effective publication state cannot change mid-write."""
+    return await connection.fetchrow(_MODULE_WRITE_STATE_SQL, module_id)
+
+
+async def lock_published_competency(
+    connection: ActorConnection, competency_id: UUID
+) -> bool:
+    """Lock and confirm the parent competency for a published-module write."""
+    return (
+        await connection.fetchrow(_PUBLISHED_COMPETENCY_LOCK_SQL, competency_id)
+        is not None
+    )
 
 
 async def create(
