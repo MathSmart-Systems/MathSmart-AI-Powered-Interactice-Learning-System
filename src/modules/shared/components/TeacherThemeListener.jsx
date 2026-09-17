@@ -6,12 +6,12 @@ const TEACHER_PREFS_KEY = "mathsmart.teacher_preferences";
 const THEME_KEY = "mathsmart_theme";
 
 /**
- * Reads the active theme preference from localStorage or defaults to system.
+ * Reads the teacher theme preference from localStorage or defaults to light.
  *
  * @returns {"light" | "dark" | "system"}
  */
-export function resolveTheme() {
-  if (typeof window === "undefined") return "system";
+export function resolveTeacherTheme() {
+  if (typeof window === "undefined") return "light";
   try {
     const rawPrefs = window.localStorage.getItem(TEACHER_PREFS_KEY);
     if (rawPrefs) {
@@ -23,17 +23,17 @@ export function resolveTheme() {
   } catch {
     // Graceful fallback
   }
-  return "system";
+  return "light";
 }
 
 /**
- * Applies the dark class to <html> based on theme setting and system preference.
+ * Applies or removes the dark class on documentElement for teacher modules.
  *
  * @param {"light" | "dark" | "system"} [targetTheme]
  */
-export function applyGlobalTheme(targetTheme) {
+export function applyTeacherTheme(targetTheme) {
   if (typeof window === "undefined" || typeof document === "undefined") return;
-  const theme = targetTheme || resolveTheme();
+  const theme = targetTheme || resolveTeacherTheme();
   const isDark =
     theme === "dark" ||
     (theme === "system" &&
@@ -48,12 +48,13 @@ export function applyGlobalTheme(targetTheme) {
 }
 
 /**
- * Global component that synchronizes theme across all workspaces (Student & Teacher),
- * handling OS color-scheme updates and cross-tab storage changes.
+ * Teacher-only theme listener:
+ * Activates dark mode strictly while the teacher workspace is mounted.
+ * Automatically cleans up by removing dark mode whenever navigating away.
  */
-export function GlobalThemeListener() {
+export function TeacherThemeListener() {
   useEffect(() => {
-    applyGlobalTheme();
+    applyTeacherTheme();
 
     const mediaQuery =
       typeof window.matchMedia === "function"
@@ -61,20 +62,20 @@ export function GlobalThemeListener() {
         : null;
 
     const handleMediaChange = () => {
-      const currentTheme = resolveTheme();
+      const currentTheme = resolveTeacherTheme();
       if (currentTheme === "system") {
-        applyGlobalTheme("system");
+        applyTeacherTheme("system");
       }
     };
 
     const handleStorageChange = (e) => {
       if (e.key === TEACHER_PREFS_KEY || e.key === THEME_KEY) {
-        applyGlobalTheme();
+        applyTeacherTheme();
       }
     };
 
     const handleCustomThemeChange = (e) => {
-      applyGlobalTheme(e.detail?.theme);
+      applyTeacherTheme(e.detail?.theme);
     };
 
     if (mediaQuery?.addEventListener) {
@@ -87,6 +88,7 @@ export function GlobalThemeListener() {
     window.addEventListener("mathsmart:theme-change", handleCustomThemeChange);
 
     return () => {
+      document.documentElement.classList.remove("dark");
       if (mediaQuery?.removeEventListener) {
         mediaQuery.removeEventListener("change", handleMediaChange);
       } else if (mediaQuery?.removeListener) {
