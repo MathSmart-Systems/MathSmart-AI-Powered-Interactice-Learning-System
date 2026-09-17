@@ -1,10 +1,18 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { TEACHER_ADMIN_WORKSPACE } from "@/modules/teacher-admin";
+import { readReportsData, ReportsAnalyticsView } from "@/modules/teacher-admin/reports-analytics";
 
 export const metadata = { title: "Reports and Analytics | MathSmart" };
 
-export default function TeacherReportsAnalyticsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function TeacherReportsAnalyticsPage() {
+  const { dashboard, analytics, sections, error } = await readReportsData();
+
   return (
-    <WorkspacePlaceholder title="Reports and Analytics" workspaceName={TEACHER_ADMIN_WORKSPACE.name} />
+    <ReportsAnalyticsView
+      initialDashboard={dashboard}
+      initialAnalytics={analytics}
+      initialSections={sections}
+      initialError={error}
+    />
   );
 }
