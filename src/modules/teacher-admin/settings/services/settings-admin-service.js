@@ -131,6 +131,7 @@ export async function updateOwnPassword(newPassword) {
 }
 
 export {
+  applyDensity,
   applyTheme,
   loadDisplayPreferences,
   loadTeacherAvatar,

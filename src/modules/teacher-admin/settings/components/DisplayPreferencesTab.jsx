@@ -290,6 +290,63 @@ export function DisplayPreferencesTab({
             )}
           </button>
         </div>
+
+        {/* Live Density Preview */}
+        <div className="rounded-lg border border-border bg-muted/20 p-3.5 space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="font-semibold uppercase tracking-wider">Live Preview</span>
+            <span className="font-mono">
+              Active: <span className="text-foreground font-semibold capitalize">{density}</span>
+            </span>
+          </div>
+          <div className="rounded border border-border bg-card overflow-hidden">
+            <table className="w-full text-left text-xs transition-all duration-200">
+              <thead className="border-b border-border bg-muted/40 text-muted-foreground text-[11px]">
+                <tr>
+                  <th className={`px-3 font-medium transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    Student Name
+                  </th>
+                  <th className={`px-3 font-medium transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    Section
+                  </th>
+                  <th className={`px-3 font-medium text-right transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                <tr className="transition-all duration-200">
+                  <td className={`px-3 transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    <span className="font-medium text-foreground block">Dela Cruz, Juan</span>
+                    <span className="text-[10px] text-muted-foreground block font-mono">LRN-108234</span>
+                  </td>
+                  <td className={`px-3 text-muted-foreground transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    Grade 6 - Rizal
+                  </td>
+                  <td className={`px-3 text-right transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20">
+                      Mastered
+                    </span>
+                  </td>
+                </tr>
+                <tr className="transition-all duration-200">
+                  <td className={`px-3 transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    <span className="font-medium text-foreground block">Santos, Maria</span>
+                    <span className="text-[10px] text-muted-foreground block font-mono">LRN-108235</span>
+                  </td>
+                  <td className={`px-3 text-muted-foreground transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    Grade 6 - Bonifacio
+                  </td>
+                  <td className={`px-3 text-right transition-all duration-200 ${density === "compact" ? "py-1.5" : "py-2.5"}`}>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
+                      Needs Support
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -27,12 +27,13 @@ export function resolveTeacherTheme() {
 }
 
 /**
- * Applies or removes the dark and projector-mode classes on documentElement for teacher modules.
+ * Applies or removes the dark, projector-mode, and density-compact classes on documentElement for teacher modules.
  *
  * @param {"light" | "dark" | "system"} [targetTheme]
  * @param {boolean} [targetProjectorMode]
+ * @param {"comfortable" | "compact"} [targetDensity]
  */
-export function applyTeacherTheme(targetTheme, targetProjectorMode) {
+export function applyTeacherTheme(targetTheme, targetProjectorMode, targetDensity) {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   const theme = targetTheme || resolveTeacherTheme();
   const isDark =
@@ -48,12 +49,18 @@ export function applyTeacherTheme(targetTheme, targetProjectorMode) {
   }
 
   let projectorMode = targetProjectorMode;
-  if (projectorMode === undefined) {
+  let density = targetDensity;
+  if (projectorMode === undefined || density === undefined) {
     try {
       const rawPrefs = window.localStorage.getItem(TEACHER_PREFS_KEY);
       if (rawPrefs) {
         const parsed = JSON.parse(rawPrefs);
-        projectorMode = parsed?.projectorMode;
+        if (projectorMode === undefined) {
+          projectorMode = parsed?.projectorMode;
+        }
+        if (density === undefined) {
+          density = parsed?.density;
+        }
       }
     } catch {
       // Graceful fallback
@@ -65,12 +72,18 @@ export function applyTeacherTheme(targetTheme, targetProjectorMode) {
   } else {
     document.documentElement.classList.remove("projector-mode");
   }
+
+  if (density === "compact") {
+    document.documentElement.classList.add("density-compact");
+  } else {
+    document.documentElement.classList.remove("density-compact");
+  }
 }
 
 /**
  * Teacher-only theme listener:
- * Activates dark mode and projector mode strictly while the teacher workspace is mounted.
- * Automatically cleans up by removing dark mode and projector mode whenever navigating away.
+ * Activates dark mode, projector mode, and table density strictly while the teacher workspace is mounted.
+ * Automatically cleans up by removing dark mode, projector mode, and compact density whenever navigating away.
  */
 export function TeacherThemeListener() {
   useEffect(() => {
@@ -95,7 +108,7 @@ export function TeacherThemeListener() {
     };
 
     const handleCustomThemeChange = (e) => {
-      applyTeacherTheme(e.detail?.theme, e.detail?.projectorMode);
+      applyTeacherTheme(e.detail?.theme, e.detail?.projectorMode, e.detail?.density);
     };
 
     if (mediaQuery?.addEventListener) {
@@ -110,6 +123,7 @@ export function TeacherThemeListener() {
     return () => {
       document.documentElement.classList.remove("dark");
       document.documentElement.classList.remove("projector-mode");
+      document.documentElement.classList.remove("density-compact");
       if (mediaQuery?.removeEventListener) {
         mediaQuery.removeEventListener("change", handleMediaChange);
       } else if (mediaQuery?.removeListener) {

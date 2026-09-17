@@ -482,3 +482,28 @@
   font-size: 0.9375rem !important;
 }
 
+/*
+ * Compact Table Density Mode
+ *
+ * Applied via `.density-compact` class on <html> by TeacherThemeListener
+ * when the teacher selects Compact View in Settings > Display.
+ *
+ * Tightens vertical table padding across Student Roster, Reports & Analytics,
+ * and tabular views. Does not override .projector-mode if projector mode is on.
+ */
+html.density-compact:not(.projector-mode) table td,
+html.density-compact:not(.projector-mode) table th {
+  padding-top: 0.375rem !important;
+  padding-bottom: 0.375rem !important;
+}
+
+html.density-compact:not(.projector-mode) table tbody tr {
+  height: 2.25rem;
+}
+
+html.density-compact:not(.projector-mode) table td .size-8 {
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+}
+
+

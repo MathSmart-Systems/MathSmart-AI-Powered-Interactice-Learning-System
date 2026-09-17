@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Search, Users } from "lucide-react";
 
 const PREFS_KEY = "mathsmart.teacher_preferences";
@@ -64,9 +64,21 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
   const [rosterTruncated, setRosterTruncated] = useState(Boolean(initialTruncated));
   const [pageError, setPageError] = useState(null);
 
-  // Read density preference once on mount — avoids re-renders.
-  // A page refresh picks up any change the teacher saved in Settings > Display.
-  const [density] = useState(() => readDensity());
+  // Density preference: read on mount and listen for live changes from Settings > Display.
+  const [density, setDensity] = useState(() => readDensity());
+
+  useEffect(() => {
+    const handleDensityChange = (e) => {
+      if (e.detail?.density) {
+        setDensity(e.detail.density);
+      } else {
+        setDensity(readDensity());
+      }
+    };
+    window.addEventListener("mathsmart:theme-change", handleDensityChange);
+    return () => window.removeEventListener("mathsmart:theme-change", handleDensityChange);
+  }, []);
+
   const rowPadding = density === "compact" ? "px-4 py-2" : "px-4 py-3";
   const headPadding = density === "compact" ? "px-4 py-2" : "px-4 py-3";
 
