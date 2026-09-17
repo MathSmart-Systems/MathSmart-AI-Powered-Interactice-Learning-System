@@ -6,14 +6,16 @@ import { formatDate } from "../utils/format.js";
 import { learningModulesUrl } from "../utils/urls.js";
 
 describe("secureApiBaseUrl", () => {
-  it("accepts HTTPS and the explicit HTTP localhost development URL", () => {
+  it("accepts HTTPS for approved API hosts and explicit HTTP loopback URLs", () => {
     assert.equal(secureApiBaseUrl("https://api.mathsmart.test/api/v1/"), "https://api.mathsmart.test/api/v1");
     assert.equal(secureApiBaseUrl("http://localhost:8000/api/v1"), "http://localhost:8000/api/v1");
+    assert.equal(secureApiBaseUrl("http://127.0.0.1:8000/api/v1/"), "http://127.0.0.1:8000/api/v1");
   });
 
-  it("rejects insecure remote and invalid URLs", () => {
+  it("rejects unapproved, insecure remote, and invalid URLs", () => {
+    assert.equal(secureApiBaseUrl("https://api.mathsmart.test.attacker.example/api/v1"), null);
+    assert.equal(secureApiBaseUrl("https://attacker.example/api/v1"), null);
     assert.equal(secureApiBaseUrl("http://api.mathsmart.test/api/v1"), null);
-    assert.equal(secureApiBaseUrl("http://127.0.0.1:8000/api/v1"), null);
     assert.equal(secureApiBaseUrl("not a URL"), null);
   });
 });
