@@ -139,7 +139,7 @@ def test_a_disabled_groq_is_the_same_503():
 
 
 def test_groq_gated_by_database_stored_setting():
-    """Fails with 503 if DB setting features.groq_advisory is false even when server GROQ_ENABLED is true."""
+    """Fails with 503 if DB setting is false even when server GROQ_ENABLED is true."""
     client = ai_client(groq_advisory_enabled=False, server_groq_enabled=True)
 
     response = client.post(
