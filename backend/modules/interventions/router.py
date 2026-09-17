@@ -67,6 +67,12 @@ def _summary_fields(row: Any) -> dict[str, Any]:
         "severity": str(row["severity"]),
         "status": str(row["status"]),
         "intervention_type": str(row["intervention_type"]),
+        "evidence": {
+            "diagnostic_score": _number(row["diagnostic_score"]),
+            "current_score": _number(row["current_score"]),
+            "attempt_count": row["attempt_count"] or 0,
+            "unsuccessful_attempts": row["unsuccessful_attempts"] or 0,
+        },
         "recorded_by": row["recorded_by"],
         "recorded_at": row["recorded_at"],
         "created_at": row["created_at"],
@@ -77,12 +83,6 @@ def _summary_fields(row: Any) -> dict[str, Any]:
 def _detail(row: Any) -> InterventionDetail:
     return InterventionDetail(
         **_summary_fields(row),
-        evidence={
-            "diagnostic_score": _number(row["diagnostic_score"]),
-            "current_score": _number(row["current_score"]),
-            "attempt_count": row["attempt_count"] or 0,
-            "unsuccessful_attempts": row["unsuccessful_attempts"] or 0,
-        },
         incorrect_patterns=_json_list(row["incorrect_patterns"]),
         modules_attempted=_json_list(row["modules_attempted"]),
         educator_notes=row["educator_notes"],
