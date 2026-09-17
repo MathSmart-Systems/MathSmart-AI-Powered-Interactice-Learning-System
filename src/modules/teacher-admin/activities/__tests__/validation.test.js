@@ -32,6 +32,16 @@ describe("validateActivityDraft", () => {
     assert.deepEqual(errors, {});
   });
 
+  it("accepts default and stored classroom threshold values for new activity drafts", () => {
+    for (const threshold of [60, 70, 75, 80, 85, 90]) {
+      const { isValid } = validateActivityDraft({
+        ...VALID_DRAFT,
+        mastery_threshold: threshold,
+      });
+      assert.equal(isValid, true, `Expected threshold ${threshold} to be valid`);
+    }
+  });
+
   it("refuses a missing or too-short title", () => {
     assert.equal(validateActivityDraft({ ...VALID_DRAFT, title: "" }).isValid, false);
     assert.equal(validateActivityDraft({ ...VALID_DRAFT, title: "A" }).isValid, false);

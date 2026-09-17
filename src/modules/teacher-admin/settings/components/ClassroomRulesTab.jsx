@@ -2,7 +2,6 @@
 
 import React from "react";
 import {
-  Bell,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -31,14 +30,13 @@ import {
 function formatSettingKey(key) {
   switch (key) {
     case "thresholds.activity_pass_percentage":
-      return "Passing Score Target";
+      return "Default Activity Pass Threshold";
     case "intervention.unsuccessful_attempts":
       return "Intervention Alert Trigger";
+    case "features.groq_advisory":
     case "features.groq_enabled":
     case "features.groq_feedback_enabled":
       return "AI Student Hints";
-    case "notifications.daily_digest":
-      return "Morning Alert Digest";
     default:
       return key.replace(/^[a-z_]+\./, "").replace(/_/g, " ");
   }
@@ -69,9 +67,8 @@ export function ClassroomRulesTab({
   setAutoInterventionAttempts,
   groqFeatureEnabled,
   setGroqFeatureEnabled,
-  dailyAlertsEnabled,
-  setDailyAlertsEnabled,
   groqEnvEnabled,
+  groqModel,
   fieldErrors,
   setFieldErrors,
   saving,
@@ -95,9 +92,9 @@ export function ClassroomRulesTab({
         <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100 flex items-start gap-2.5">
           <Target className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
           <div>
-            <span className="text-xs font-bold text-indigo-950 block">Activities Screen</span>
+            <span className="text-xs font-bold text-indigo-950 block">Activities Baseline</span>
             <span className="text-[11px] text-slate-600">
-              Uses your <strong>Passing Score</strong> for daily math activities.
+              Pre-fills new activities with <strong>{passingThreshold}% pass threshold</strong>.
             </span>
           </div>
         </div>
@@ -187,9 +184,9 @@ export function ClassroomRulesTab({
                     htmlFor={FIELD_IDS.PASSING_THRESHOLD}
                     className="text-xs font-bold text-slate-900 block"
                   >
-                    Default Activity Passing Score
+                    Default Activity Pass Threshold
                   </label>
-                  <span className="text-[11px] text-slate-500">Classroom baseline (DepEd standard: 75%)</span>
+                  <span className="text-[11px] text-slate-500">Default for newly created activities (DepEd: 75%)</span>
                 </div>
                 <div className="text-right">
                   <span className="text-xl font-extrabold text-indigo-600 font-mono">
@@ -217,11 +214,11 @@ export function ClassroomRulesTab({
 
               <div className="pt-2 border-t border-slate-200 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                  How classroom scores are graded:
+                  How newly authored activities are evaluated:
                 </span>
                 <div className="grid grid-cols-2 gap-1.5 text-center text-[10px] font-bold">
                   <div className="p-1 rounded bg-rose-100 text-rose-800">
-                    Below {passingThreshold}%<br />Needs Help
+                    Below {passingThreshold}%<br />Needs Practice
                   </div>
                   <div className="p-1 rounded bg-emerald-100 text-emerald-800 ring-2 ring-indigo-500/30">
                     {passingThreshold}%–100%<br />Passing Zone / Mastered
@@ -230,7 +227,7 @@ export function ClassroomRulesTab({
               </div>
 
               <p className="text-[11px] text-slate-500 leading-snug">
-                Sets the baseline passing score for your classroom. Individual activities can still override this with their own custom threshold when created.
+                Pre-fills the passing threshold when authoring new practice activities. Changing this value does not retroactively change existing activities or past student attempts.
               </p>
               {fieldErrors.passingThreshold && (
                 <p className="text-[11px] text-rose-600 font-semibold">
@@ -370,49 +367,19 @@ export function ClassroomRulesTab({
               className="rounded text-indigo-600 focus:ring-indigo-500 w-5 h-5 cursor-pointer shrink-0 disabled:opacity-50"
             />
           </label>
-        </div>
 
-        {/* Section 3: Daily Alerts */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Bell className="w-5 h-5 text-indigo-600" />
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Teacher Notifications
-              </h2>
-              <p className="text-xs text-slate-500">
-                Stay updated on students who need help.
-              </p>
-            </div>
+          <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+            <span className="text-[11px] font-medium text-slate-500">Configured AI Model:</span>
+            <span className="font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200/70">
+              {groqModel || "Server environment (.env)"}
+            </span>
           </div>
-
-          <label
-            htmlFor={FIELD_IDS.DAILY_ALERTS}
-            className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:bg-slate-50/80 transition-colors cursor-pointer"
-          >
-            <div className="space-y-0.5 pr-4">
-              <span className="text-xs font-bold text-slate-900 block">
-                Daily Morning Summary Email
-              </span>
-              <p className="text-[11px] text-slate-500">
-                Get an email every morning listing any students who struggled with activities yesterday.
-              </p>
-            </div>
-            <input
-              id={FIELD_IDS.DAILY_ALERTS}
-              type="checkbox"
-              checked={dailyAlertsEnabled}
-              disabled={saving}
-              onChange={(e) => setDailyAlertsEnabled(e.target.checked)}
-              className="rounded text-indigo-600 focus:ring-indigo-500 w-5 h-5 cursor-pointer shrink-0 disabled:opacity-50"
-            />
-          </label>
         </div>
 
         {/* Action Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
           <p className="text-xs text-slate-500">
-            Changes take effect immediately across all classroom activities.
+            Applies as the default for newly created activities.
           </p>
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
             <button

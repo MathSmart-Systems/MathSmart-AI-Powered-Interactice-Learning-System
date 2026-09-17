@@ -756,13 +756,16 @@ async def read_settings(
     app_settings = getattr(request.app.state, "settings", None)
     env_groq_enabled = bool(getattr(app_settings, "groq_enabled", False))
     groq_model = getattr(app_settings, "groq_model", None)
+    sanitized_model = str(groq_model).strip() if groq_model else None
     policy_enabled = bool(
         effective.get(
-            "features.groq_enabled",
-            effective.get("features.groq_feedback_enabled", False),
+            "features.groq_advisory",
+            effective.get(
+                "features.groq_enabled",
+                effective.get("features.groq_feedback_enabled", False),
+            ),
         )
     )
-
 
     return {
         "data": {
@@ -786,7 +789,7 @@ async def read_settings(
             },
             "groq": {
                 "enabled": policy_enabled and env_groq_enabled,
-                "model": groq_model,
+                "model": sanitized_model,
                 "model_is_editable": False,
                 "model_source": "server environment",
                 "environment_enabled": env_groq_enabled,

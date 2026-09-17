@@ -59,6 +59,36 @@ describe("settings api client", () => {
     assert.equal(result.ok, true);
     assert.equal(result.status, 200);
     assert.deepEqual(result.data, mockData);
+    assert.equal(result.data.groq.model, "groq/compound-mini");
+  });
+
+  it("sends PATCH /teacher-admin/settings with features.groq_advisory", async () => {
+    let capturedBody = null;
+    const mockFetch = async (url, options) => {
+      assert.equal(url, `${BASE}/teacher-admin/settings`);
+      assert.equal(options.method, "PATCH");
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: { "features.groq_advisory": true } }),
+        headers: new Map(),
+      };
+    };
+
+    const client = createApiClient({
+      baseUrl: BASE,
+      getAccessToken: async () => "valid-token",
+      fetchImpl: mockFetch,
+    });
+
+    const result = await client.request("/teacher-admin/settings", {
+      method: "PATCH",
+      body: { settings: { "features.groq_advisory": true } },
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(capturedBody, { settings: { "features.groq_advisory": true } });
   });
 
   it("sends audit events query request with action filter", async () => {

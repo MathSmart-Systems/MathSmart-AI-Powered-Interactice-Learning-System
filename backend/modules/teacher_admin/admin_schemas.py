@@ -33,7 +33,7 @@ SETTING_NAMESPACES = ("thresholds", "intervention", "notifications", "features")
 ACCEPTED_SETTING_KEYS = frozenset({
     "thresholds.activity_pass_percentage",
     "intervention.unsuccessful_attempts",
-    "notifications.daily_digest",
+    "features.groq_advisory",
     "features.groq_enabled",
     "features.groq_feedback_enabled",
 })
@@ -330,10 +330,11 @@ class SettingsChanges(BaseModel):
                 if not isinstance(value, int) or isinstance(value, bool):
                     raise ValueError("intervention.unsuccessful_attempts must be an integer")
                 validate_intervention_trigger(value)
-            elif key in ("features.groq_enabled", "features.groq_feedback_enabled"):
-                if not isinstance(value, bool):
-                    raise ValueError(f"{key} must be a boolean")
-            elif key == "notifications.daily_digest":
+            elif key in (
+                "features.groq_advisory",
+                "features.groq_enabled",
+                "features.groq_feedback_enabled",
+            ):
                 if not isinstance(value, bool):
                     raise ValueError(f"{key} must be a boolean")
         return self

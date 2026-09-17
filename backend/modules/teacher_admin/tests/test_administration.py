@@ -930,6 +930,27 @@ def test_settings_reject_out_of_bounds_values():
     )
     assert r5.status_code == 422
 
+    # Dead notification daily_digest setting is rejected
+    r6 = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"notifications.daily_digest": True}},
+        headers=ADVISER_HEADERS,
+    )
+    assert r6.status_code == 422
+    assert "not allowed" in str(r6.json()["error"]["fields"])
+
+
+def test_settings_accept_features_groq_advisory():
+    client = build_client(admin_connection())
+
+    response = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"features.groq_advisory": True}},
+        headers=ADVISER_HEADERS,
+    )
+    assert response.status_code == 200
+    assert "features.groq_advisory" in response.json()["data"]["updated"]
+
 
 def test_settings_update_is_audited():
     connection = admin_connection()

@@ -14,7 +14,6 @@ import {
 import { createClient } from "@/lib/supabase/client";
 
 import {
-  DEFAULT_DAILY_ALERTS_ENABLED,
   DEFAULT_DISPLAY_PREFERENCES,
   DEFAULT_GROQ_FEATURE_ENABLED,
   DEFAULT_INTERVENTION_ATTEMPTS,
@@ -59,8 +58,8 @@ export function TeacherSettingsView() {
     DEFAULT_INTERVENTION_ATTEMPTS
   );
   const [groqFeatureEnabled, setGroqFeatureEnabled] = useState(DEFAULT_GROQ_FEATURE_ENABLED);
-  const [dailyAlertsEnabled, setDailyAlertsEnabled] = useState(DEFAULT_DAILY_ALERTS_ENABLED);
   const [groqEnvEnabled, setGroqEnvEnabled] = useState(true);
+  const [groqModel, setGroqModel] = useState(null);
 
   // Recent Changes History (Audit Log)
   const [isAuditLogOpen, setIsAuditLogOpen] = useState(false);
@@ -121,7 +120,6 @@ export function TeacherSettingsView() {
     setPassingThreshold(DEFAULT_PASSING_THRESHOLD);
     setAutoInterventionAttempts(DEFAULT_INTERVENTION_ATTEMPTS);
     setGroqFeatureEnabled(DEFAULT_GROQ_FEATURE_ENABLED);
-    setDailyAlertsEnabled(DEFAULT_DAILY_ALERTS_ENABLED);
     setFieldErrors({});
     setSaveError(null);
     setNotice(
@@ -167,16 +165,16 @@ export function TeacherSettingsView() {
     if (data.intervention?.unsuccessful_attempts !== undefined) {
       setAutoInterventionAttempts(Number(data.intervention.unsuccessful_attempts));
     }
-    if (data.features?.groq_enabled !== undefined) {
+    if (data.features?.groq_advisory !== undefined) {
+      setGroqFeatureEnabled(Boolean(data.features.groq_advisory));
+    } else if (data.features?.groq_enabled !== undefined) {
       setGroqFeatureEnabled(Boolean(data.features.groq_enabled));
     } else if (data.features?.groq_feedback_enabled !== undefined) {
       setGroqFeatureEnabled(Boolean(data.features.groq_feedback_enabled));
     }
-    if (data.notifications?.daily_digest !== undefined) {
-      setDailyAlertsEnabled(Boolean(data.notifications.daily_digest));
-    }
     if (data.groq) {
       setGroqEnvEnabled(Boolean(data.groq.environment_enabled ?? true));
+      setGroqModel(data.groq.model ?? null);
     }
 
     setPreferences(loadDisplayPreferences(DEFAULT_DISPLAY_PREFERENCES));
@@ -221,16 +219,16 @@ export function TeacherSettingsView() {
       if (data.intervention?.unsuccessful_attempts !== undefined) {
         setAutoInterventionAttempts(Number(data.intervention.unsuccessful_attempts));
       }
-      if (data.features?.groq_enabled !== undefined) {
+      if (data.features?.groq_advisory !== undefined) {
+        setGroqFeatureEnabled(Boolean(data.features.groq_advisory));
+      } else if (data.features?.groq_enabled !== undefined) {
         setGroqFeatureEnabled(Boolean(data.features.groq_enabled));
       } else if (data.features?.groq_feedback_enabled !== undefined) {
         setGroqFeatureEnabled(Boolean(data.features.groq_feedback_enabled));
       }
-      if (data.notifications?.daily_digest !== undefined) {
-        setDailyAlertsEnabled(Boolean(data.notifications.daily_digest));
-      }
       if (data.groq) {
         setGroqEnvEnabled(Boolean(data.groq.environment_enabled ?? true));
+        setGroqModel(data.groq.model ?? null);
       }
 
       const currentPrefs = loadDisplayPreferences(DEFAULT_DISPLAY_PREFERENCES);
@@ -268,8 +266,8 @@ export function TeacherSettingsView() {
     const payload = {
       "thresholds.activity_pass_percentage": Number(passingThreshold),
       "intervention.unsuccessful_attempts": Number(autoInterventionAttempts),
+      "features.groq_advisory": Boolean(groqFeatureEnabled),
       "features.groq_enabled": Boolean(groqFeatureEnabled),
-      "notifications.daily_digest": Boolean(dailyAlertsEnabled),
     };
 
     const result = await updateSettings(payload);
@@ -453,9 +451,8 @@ export function TeacherSettingsView() {
           setAutoInterventionAttempts={setAutoInterventionAttempts}
           groqFeatureEnabled={groqFeatureEnabled}
           setGroqFeatureEnabled={setGroqFeatureEnabled}
-          dailyAlertsEnabled={dailyAlertsEnabled}
-          setDailyAlertsEnabled={setDailyAlertsEnabled}
           groqEnvEnabled={groqEnvEnabled}
+          groqModel={groqModel}
           fieldErrors={fieldErrors}
           setFieldErrors={setFieldErrors}
           saving={saving}
