@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { buildMyLearningModel, buildModuleReaderModel } from "../utils/my-learning-model";
+import { readCataloguePages } from "./catalogue-pagination";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -125,21 +126,16 @@ export async function readMyLearning() {
     return { state: MY_LEARNING_STATE.ERROR, reason: "unavailable" };
   }
 
-  const totalPages = Math.max(
-    1,
-    Math.trunc(Number(firstCataloguePage.meta?.total_pages) || 1),
-  );
-  const remainingCataloguePages = await Promise.all(
-    Array.from({ length: totalPages - 1 }, (_, index) =>
-      readFromApi(`/modules?page=${index + 2}&page_size=100`, token, base),
-    ),
+  const catalogue = await readCataloguePages(
+    firstCataloguePage,
+    (page) => readFromApi(`/modules?page=${page}&page_size=100`, token, base),
   );
 
-  if (remainingCataloguePages.some((page) => !page.ok)) {
+  if (!catalogue.ok) {
     return { state: MY_LEARNING_STATE.ERROR, reason: "unavailable" };
   }
 
-  const modules = [firstCataloguePage, ...remainingCataloguePages].flatMap((page) =>
+  const modules = catalogue.pages.flatMap((page) =>
     Array.isArray(page.data) ? page.data : [],
   );
 
