@@ -70,7 +70,7 @@ describe("the dominant next action", () => {
 
     assert.equal(model.nextAction.kind, "diagnostic");
     assert.equal(model.nextAction.title, "Take your diagnostic");
-    assert.equal(model.nextAction.href, STUDENT_ROUTE.ASSESSMENTS);
+    assert.equal(model.nextAction.href, STUDENT_ROUTE.DIAGNOSTIC);
   });
 
   it("is finishing the diagnostic while it is in progress", () => {
@@ -125,6 +125,24 @@ describe("the dominant next action", () => {
     });
 
     assert.equal(model.nextAction.kind, "all_done");
+    assert.equal(model.nextAction.href, STUDENT_ROUTE.PROGRESS);
+  });
+
+  it("does not claim a locked path is complete", () => {
+    const model = buildDashboardModel({
+      learner: learner(),
+      progress: progress({
+        recommended_next_action: {
+          type: "dashboard",
+          resource_id: null,
+          label: "Return to Dashboard",
+        },
+      }),
+      pathItems: [pathItem({ status: "locked" })],
+    });
+
+    assert.equal(model.nextAction.kind, "locked_path");
+    assert.equal(model.nextAction.title, "Your next module is not open yet");
     assert.equal(model.nextAction.href, STUDENT_ROUTE.PROGRESS);
   });
 

@@ -28,6 +28,7 @@ export const STUDENT_ROUTE = Object.freeze({
   MY_LEARNING: "/student/my-learning",
   ACTIVITIES: "/student/activities",
   ASSESSMENTS: "/student/assessments",
+  DIAGNOSTIC: "/student/assessments/diagnostic",
   PROGRESS: "/student/progress",
 });
 
@@ -49,7 +50,7 @@ function nextActionForDiagnostic(status) {
       ? "The diagnostic finds what you already know, so MathSmart can plot your starting point and build a path that fits you."
       : "You have answers saved already. Finishing the diagnostic plots your starting point and opens your learning path.",
     cta: starting ? "Start the diagnostic" : "Finish the diagnostic",
-    href: STUDENT_ROUTE.ASSESSMENTS,
+    href: STUDENT_ROUTE.DIAGNOSTIC,
     meta: null,
   };
 }
@@ -94,6 +95,17 @@ const NO_PATH_ACTION = Object.freeze({
     "Your teacher builds your path from your diagnostic and the Grade 6 competencies. Until it arrives, the modules already published are open to browse.",
   cta: "Browse My Learning",
   href: STUDENT_ROUTE.MY_LEARNING,
+  meta: null,
+});
+
+const LOCKED_PATH_ACTION = Object.freeze({
+  kind: "locked_path",
+  eyebrow: "More learning is coming",
+  title: "Your next module is not open yet",
+  description:
+    "Your teacher will open the next module when it is ready. You can review your progress while you wait.",
+  cta: "Look at my progress",
+  href: STUDENT_ROUTE.PROGRESS,
   meta: null,
 });
 
@@ -174,8 +186,10 @@ export function buildDashboardModel({ learner, progress, pathItems }) {
       competencyCode: null,
       estimatedMinutes: null,
     });
-  } else if (path.length > 0) {
+  } else if (path.length > 0 && path.every((item) => item.status === "completed")) {
     nextAction = ALL_DONE_ACTION;
+  } else if (path.length > 0) {
+    nextAction = LOCKED_PATH_ACTION;
   } else {
     nextAction = NO_PATH_ACTION;
   }
