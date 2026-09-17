@@ -103,20 +103,23 @@ export function ProfileAccountTab({
     }, 5000);
   };
 
-  const displayName = profile?.full_name || fullName || "Teacher Account";
-  const displayEmail = profile?.email || userEmail || "teacher@deped.gov.ph";
-  const schoolName = profile?.school_name || "San Jose Elementary School";
-  const divisionName = profile?.division_name || "DepEd Division of Rizal";
-  const employeeId = profile?.employee_id || "EMP-DEPED-2026";
+  const displayName = profile?.full_name || fullName || "Not available";
+  const displayEmail = profile?.email || userEmail || "Not available";
+  const schoolName = profile?.school_name || "Not assigned";
+  const divisionName = profile?.division_name || "Not assigned";
+  const employeeId = profile?.employee_id || "Not assigned";
 
   // Initials for avatar
-  const initials = displayName
-    .split(" ")
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase() || "T";
+  const initials =
+    displayName && displayName !== "Not available"
+      ? displayName
+          .split(" ")
+          .map((w) => w[0])
+          .filter(Boolean)
+          .slice(0, 2)
+          .join("")
+          .toUpperCase() || "T"
+      : "T";
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">

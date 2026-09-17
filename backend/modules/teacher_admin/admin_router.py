@@ -819,7 +819,7 @@ async def update_settings(
         target_type="system_settings",
         target_id=None,
         request_id=current_request_id(),
-        details={"updated": sorted(body.settings)},
+        details={"updated": sorted(body.settings), "updated_keys": sorted(body.settings)},
     )
     return {"data": {"updated": sorted(body.settings)}}
 

@@ -219,15 +219,12 @@ export function ClassroomRulesTab({
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                   How scores are graded:
                 </span>
-                <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] font-bold">
+                <div className="grid grid-cols-2 gap-1.5 text-center text-[10px] font-bold">
                   <div className="p-1 rounded bg-rose-100 text-rose-800">
-                    Below 50%<br />Needs Help
+                    Below {passingThreshold}%<br />Needs Help
                   </div>
-                  <div className="p-1 rounded bg-amber-100 text-amber-900 ring-2 ring-indigo-500/30">
-                    {passingThreshold}%–79%<br />Passing Zone
-                  </div>
-                  <div className="p-1 rounded bg-emerald-100 text-emerald-800">
-                    80%–100%<br />Mastered
+                  <div className="p-1 rounded bg-emerald-100 text-emerald-800 ring-2 ring-indigo-500/30">
+                    {passingThreshold}%–100%<br />Passing Zone / Mastered
                   </div>
                 </div>
               </div>

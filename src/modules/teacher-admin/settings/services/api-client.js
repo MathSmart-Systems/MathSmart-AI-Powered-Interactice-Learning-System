@@ -4,6 +4,8 @@
  * Deliberately depends only on the platform so it remains testable without a live server.
  */
 
+import { secureApiBaseUrl } from "../../learning-modules/utils/api-url.js";
+
 const REQUEST_TIMEOUT_MS = 10_000;
 
 export const CLIENT_FAILURE = Object.freeze({
@@ -73,7 +75,7 @@ export function createApiClient({
   timeoutMs = REQUEST_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
 } = {}) {
-  const base = typeof baseUrl === "string" && baseUrl ? baseUrl.replace(/\/+$/, "") : null;
+  const base = secureApiBaseUrl(baseUrl);
 
   async function request(path, { method = "GET", body = null, token = null } = {}) {
     if (!base) {
@@ -112,8 +114,21 @@ export function createApiClient({
     }
 
     let response;
+    let responseBody = null;
     try {
       response = await fetchImpl(url, init);
+      const text = await response.text();
+      if (text) {
+        try {
+          responseBody = JSON.parse(text);
+        } catch {
+          return failure({
+            status: response.status,
+            code: CLIENT_FAILURE.MALFORMED,
+            error: "The server response was malformed.",
+          });
+        }
+      }
     } catch (err) {
       if (err?.name === "AbortError") {
         return failure({
@@ -128,20 +143,6 @@ export function createApiClient({
     } finally {
       if (timer) {
         clearTimeout(timer);
-      }
-    }
-
-    let responseBody = null;
-    const text = await response.text();
-    if (text) {
-      try {
-        responseBody = JSON.parse(text);
-      } catch {
-        return failure({
-          status: response.status,
-          code: CLIENT_FAILURE.MALFORMED,
-          error: "The server response was malformed.",
-        });
       }
     }
 

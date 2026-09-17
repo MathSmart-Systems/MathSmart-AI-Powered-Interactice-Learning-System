@@ -290,8 +290,14 @@ export function TeacherSettingsView() {
   }
 
   const teacherName = profile?.full_name || "Teacher Account";
-  const teacherSchool = profile?.school_name || "San Jose Elementary School";
-  const teacherDivision = profile?.division_name || "DepEd Division of Rizal";
+  const teacherSchool = profile?.school_name;
+  const teacherDivision = profile?.division_name;
+  const institutionalDetails = [
+    teacherSchool,
+    teacherDivision ? `(${teacherDivision})` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
@@ -369,7 +375,7 @@ export function TeacherSettingsView() {
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Grade 6 Mathematics • {teacherSchool} ({teacherDivision})
+              Grade 6 Mathematics{institutionalDetails ? ` • ${institutionalDetails}` : ""}
             </p>
           </div>
         </div>

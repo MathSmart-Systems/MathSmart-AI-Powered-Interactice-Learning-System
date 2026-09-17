@@ -30,6 +30,13 @@ PUBLISHABLE_QUESTION_TYPES = {"multiple_choice", "number_input", "fill_blank"}
 #: The only namespaces app.system_settings accepts. Credentials and the Groq
 #: model are `.env` values and can never be stored here.
 SETTING_NAMESPACES = ("thresholds", "intervention", "notifications", "features")
+ACCEPTED_SETTING_KEYS = frozenset({
+    "thresholds.activity_pass_percentage",
+    "intervention.unsuccessful_attempts",
+    "notifications.daily_digest",
+    "features.groq_enabled",
+    "features.groq_feedback_enabled",
+})
 
 
 class PublicationStatus(StrEnum):
@@ -305,6 +312,11 @@ class SettingsChanges(BaseModel):
     @model_validator(mode="after")
     def validate_settings(self) -> SettingsChanges:
         for key, value in self.settings.items():
+            if key not in ACCEPTED_SETTING_KEYS:
+                raise ValueError(
+                    f"Setting key '{key}' is not allowed. Must be one of: "
+                    + ", ".join(sorted(ACCEPTED_SETTING_KEYS))
+                )
             namespace = key.split(".", 1)[0]
             if namespace not in SETTING_NAMESPACES:
                 raise ValueError(
@@ -321,10 +333,11 @@ class SettingsChanges(BaseModel):
             elif key in ("features.groq_enabled", "features.groq_feedback_enabled"):
                 if not isinstance(value, bool):
                     raise ValueError(f"{key} must be a boolean")
-            elif key.startswith("notifications."):
+            elif key == "notifications.daily_digest":
                 if not isinstance(value, bool):
                     raise ValueError(f"{key} must be a boolean")
         return self
+
 
 
 class DiagnosticResetRequest(BaseModel):

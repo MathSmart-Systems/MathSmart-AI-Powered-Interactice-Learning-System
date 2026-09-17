@@ -74,7 +74,7 @@ export function DisplayPreferencesTab({
         </div>
 
         <label
-          htmlFor={FIELD_IDS.PROJECTOR_MODE_TOGGLE}
+          htmlFor={FIELD_IDS.PROJECTOR_PREFERENCE_CHECKBOX}
           className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:bg-slate-50/80 transition-colors cursor-pointer"
         >
           <div className="space-y-0.5 pr-4">
@@ -86,7 +86,7 @@ export function DisplayPreferencesTab({
             </p>
           </div>
           <input
-            id={FIELD_IDS.PROJECTOR_MODE_TOGGLE}
+            id={FIELD_IDS.PROJECTOR_PREFERENCE_CHECKBOX}
             type="checkbox"
             checked={isProjectorMode}
             onChange={(e) => updatePref("projectorMode", e.target.checked)}

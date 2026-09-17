@@ -48,6 +48,7 @@ export const FIELD_IDS = Object.freeze({
   THEME_DARK_BTN: "teacher-settings-theme-dark-btn",
   THEME_SYSTEM_BTN: "teacher-settings-theme-system-btn",
   SOUND_EFFECTS_TOGGLE: "teacher-settings-sound-toggle",
+  PROJECTOR_PREFERENCE_CHECKBOX: "teacher-settings-projector-preference-toggle",
   DENSITY_COMFORTABLE_BTN: "teacher-settings-density-comfortable-btn",
   DENSITY_COMPACT_BTN: "teacher-settings-density-compact-btn",
 });

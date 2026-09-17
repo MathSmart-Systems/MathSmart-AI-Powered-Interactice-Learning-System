@@ -211,6 +211,35 @@ describe("settings api client", () => {
     assert.equal(result.ok, false);
     assert.equal(result.code, CLIENT_FAILURE.NETWORK);
   });
+
+  it("rejects insecure remote base URLs", async () => {
+    const client = createApiClient({ baseUrl: "http://api.insecure.test" });
+    const result = await client.request("/teacher-admin/settings");
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, CLIENT_FAILURE.UNCONFIGURED);
+  });
+
+  it("handles response body read errors inside result envelope", async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => {
+        throw new Error("Stream disconnected");
+      },
+      headers: new Map(),
+    });
+
+    const client = createApiClient({
+      baseUrl: BASE,
+      getAccessToken: async () => "valid-token",
+      fetchImpl: mockFetch,
+    });
+
+    const result = await client.request("/teacher-admin/settings");
+    assert.equal(result.ok, false);
+    assert.equal(result.code, CLIENT_FAILURE.NETWORK);
+  });
 });
 
 describe("readErrorEnvelope", () => {

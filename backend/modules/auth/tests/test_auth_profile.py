@@ -47,7 +47,9 @@ def test_auth_me_returns_profile_with_institutional_details():
 
 
 def test_auth_me_patches_caller_display_name():
+    updated_row = {**TEACHER_ROW, "full_name": "Maria C. Santos"}
     connection = auth_connection()
+    connection.results[OWN_PROFILE] = updated_row
     client = build_client(connection)
 
     response = client.patch(
@@ -59,6 +61,8 @@ def test_auth_me_patches_caller_display_name():
     data = response.json()["data"]
     assert data["user_id"] == str(ADVISER)
     assert data["role"] == "teacher_admin"
+    assert data["full_name"] == "Maria C. Santos"
+
 
 
 def test_auth_me_patch_rejects_empty_name():
