@@ -17,11 +17,12 @@ export function StudentProgressView({ model }) {
     <div className="min-w-0 space-y-8 max-w-6xl mx-auto pb-16 animate-in fade-in duration-200">
       {/* 1. Page Header */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-100 font-display tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground font-display tracking-tight">
           My Mathematics Competency Progress
         </h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-          Detailed record of your diagnostic screening baseline, targeted growth trajectory, and mastery certifications.
+        <p className="text-sm text-muted-foreground mt-1">
+          Detailed record of your diagnostic screening baseline, targeted growth
+          trajectory, and mastery certifications.
         </p>
       </div>
 
