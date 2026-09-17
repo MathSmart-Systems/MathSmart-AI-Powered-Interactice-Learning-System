@@ -24,6 +24,7 @@ import {
 } from "../utils/constants.js";
 import { validateSettingsDraft } from "../utils/validation.js";
 import {
+  applyTheme,
   fetchOwnProfile,
   fetchSettings,
   fetchSettingsAuditEvents,
@@ -72,7 +73,22 @@ export function TeacherSettingsView() {
   const handlePreferencesChange = (newPrefs) => {
     setPreferences(newPrefs);
     saveDisplayPreferences(newPrefs);
+    if (newPrefs?.theme) {
+      applyTheme(newPrefs.theme);
+    }
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      if (preferences.theme === "system") {
+        applyTheme("system");
+      }
+    };
+    mediaQuery.addEventListener("change", handler);
+    return () => mediaQuery.removeEventListener("change", handler);
+  }, [preferences.theme]);
 
   const toggleProjectorMode = () => {
     handlePreferencesChange({
@@ -217,7 +233,9 @@ export function TeacherSettingsView() {
         setGroqEnvEnabled(Boolean(data.groq.environment_enabled ?? true));
       }
 
-      setPreferences(loadDisplayPreferences(DEFAULT_DISPLAY_PREFERENCES));
+      const currentPrefs = loadDisplayPreferences(DEFAULT_DISPLAY_PREFERENCES);
+      setPreferences(currentPrefs);
+      applyTheme(currentPrefs.theme);
       setLoading(false);
     }
 

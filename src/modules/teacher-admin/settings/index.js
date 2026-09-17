@@ -15,6 +15,7 @@ export {
   updateOwnPassword,
   loadDisplayPreferences,
   saveDisplayPreferences,
+  applyTheme,
 } from "./services/settings-admin-service.js";
 export { createApiClient, CLIENT_FAILURE, readErrorEnvelope } from "./services/api-client.js";
 export { validateSettingsDraft } from "./utils/validation.js";

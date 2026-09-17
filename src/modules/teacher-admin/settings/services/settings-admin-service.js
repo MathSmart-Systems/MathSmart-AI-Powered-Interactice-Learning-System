@@ -152,7 +152,30 @@ export function loadDisplayPreferences(fallback = {}) {
 }
 
 /**
- * Saves display preferences to localStorage.
+ * Applies the active theme (light, dark, or system) to the document root element.
+ *
+ * @param {string} [theme]
+ */
+export function applyTheme(theme = "light") {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+  const root = document.documentElement;
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+  if (isDark) {
+    root.classList.add("dark");
+  } else {
+    root.classList.remove("dark");
+  }
+}
+
+/**
+ * Saves display preferences to localStorage and updates DOM styling.
  *
  * @param {object} prefs
  */
@@ -162,6 +185,9 @@ export function saveDisplayPreferences(prefs) {
     window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
   } catch {
     // Safe fallback
+  }
+  if (prefs?.theme) {
+    applyTheme(prefs.theme);
   }
 }
 

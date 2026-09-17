@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * MathSmart theme.
  *
@@ -38,6 +40,81 @@
     --shell-muted: 176 11% 62%;
     --shell-border: 196 32% 20%;
     --shell-accent: 166 46% 62%;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 14%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 14%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 166 56% 40%;
+    --primary-foreground: 100 16% 98%;
+    --secondary: 217 33% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 166 56% 40%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 358 61% 50%;
+    --destructive-foreground: 100 16% 98%;
+    --border: 217 33% 20%;
+    --input: 217 33% 24%;
+    --ring: 166 56% 45%;
+
+    --shell: 222 47% 9%;
+    --shell-foreground: 165 13% 88%;
+    --shell-muted: 176 11% 62%;
+    --shell-border: 217 33% 16%;
+    --shell-accent: 166 46% 62%;
+  }
+
+  .dark {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  .dark .bg-white {
+    background-color: hsl(222 47% 15%) !important;
+  }
+  .dark .bg-slate-50 {
+    background-color: hsl(222 47% 12%) !important;
+  }
+  .dark .bg-slate-100 {
+    background-color: hsl(217 33% 19%) !important;
+  }
+  .dark .text-slate-900 {
+    color: hsl(210 40% 98%) !important;
+  }
+  .dark .text-slate-800 {
+    color: hsl(210 40% 93%) !important;
+  }
+  .dark .text-slate-700 {
+    color: hsl(215 20% 80%) !important;
+  }
+  .dark .text-slate-600 {
+    color: hsl(215 20% 70%) !important;
+  }
+  .dark .text-slate-500 {
+    color: hsl(215 20% 62%) !important;
+  }
+  .dark .border-slate-200,
+  .dark .border-slate-200\/80,
+  .dark .border-slate-200\/70,
+  .dark .border-slate-200\/60,
+  .dark .border-slate-100 {
+    border-color: hsl(217 33% 20%) !important;
+  }
+  .dark .border-slate-300 {
+    border-color: hsl(217 33% 25%) !important;
+  }
+  .dark input[type="text"],
+  .dark input[type="password"] {
+    background-color: hsl(222 47% 12%) !important;
+    color: hsl(210 40% 98%) !important;
   }
 }
 

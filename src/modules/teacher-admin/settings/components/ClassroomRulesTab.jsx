@@ -187,9 +187,9 @@ export function ClassroomRulesTab({
                     htmlFor={FIELD_IDS.PASSING_THRESHOLD}
                     className="text-xs font-bold text-slate-900 block"
                   >
-                    Passing Score for Activities
+                    Default Activity Passing Score
                   </label>
-                  <span className="text-[11px] text-slate-500">Minimum score needed to pass</span>
+                  <span className="text-[11px] text-slate-500">Classroom baseline (DepEd standard: 75%)</span>
                 </div>
                 <div className="text-right">
                   <span className="text-xl font-extrabold text-indigo-600 font-mono">
@@ -217,7 +217,7 @@ export function ClassroomRulesTab({
 
               <div className="pt-2 border-t border-slate-200 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                  How scores are graded:
+                  How classroom scores are graded:
                 </span>
                 <div className="grid grid-cols-2 gap-1.5 text-center text-[10px] font-bold">
                   <div className="p-1 rounded bg-rose-100 text-rose-800">
@@ -230,7 +230,7 @@ export function ClassroomRulesTab({
               </div>
 
               <p className="text-[11px] text-slate-500 leading-snug">
-                Students scoring <strong>{passingThreshold}% or higher</strong> pass the activity.
+                Sets the baseline passing score for your classroom. Individual activities can still override this with their own custom threshold when created.
               </p>
               {fieldErrors.passingThreshold && (
                 <p className="text-[11px] text-rose-600 font-semibold">
@@ -247,9 +247,9 @@ export function ClassroomRulesTab({
                     htmlFor={FIELD_IDS.INTERVENTION_ATTEMPTS}
                     className="text-xs font-bold text-slate-900 block"
                   >
-                    When to Alert Teacher
+                    Auto-Intervention Alert Trigger
                   </label>
-                  <span className="text-[11px] text-slate-500">Failed attempts before alert</span>
+                  <span className="text-[11px] text-slate-500">Unsuccessful tries before teacher alert</span>
                 </div>
                 <div className="text-right">
                   <span className="text-xl font-extrabold text-rose-600 font-mono">
@@ -293,7 +293,7 @@ export function ClassroomRulesTab({
               </div>
 
               <p className="text-[11px] text-slate-500 leading-snug">
-                If a student fails <strong>{autoInterventionAttempts} times</strong> in a row, they appear on your <strong>Interventions Desk</strong>.
+                When a student fails an activity <strong>{autoInterventionAttempts} {autoInterventionAttempts === 1 ? "time" : "times"} in a row</strong>, they are automatically placed on your <strong>Interventions Desk</strong> for teacher guidance.
               </p>
               {fieldErrors.autoInterventionAttempts && (
                 <p className="text-[11px] text-rose-600 font-semibold">

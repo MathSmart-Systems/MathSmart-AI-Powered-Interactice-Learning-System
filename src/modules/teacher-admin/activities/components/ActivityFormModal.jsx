@@ -251,8 +251,11 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
             <FieldError id={`${FIELD_IDS.points}-error`} message={errors.points} />
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor={FIELD_IDS.threshold}>Pass threshold</Label>
+            <span className="text-[11px] text-muted-foreground">
+              Overrides the classroom default passing score for this activity.
+            </span>
             <div className="relative">
               <Input
                 id={FIELD_IDS.threshold}
