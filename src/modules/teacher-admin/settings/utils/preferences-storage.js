@@ -62,6 +62,17 @@ export function saveDisplayPreferences(prefs) {
   if (prefs?.theme) {
     applyTheme(prefs.theme);
   }
+  // Notify TeacherThemeListener so projector mode takes effect immediately
+  // across all teacher pages without requiring a reload.
+  try {
+    window.dispatchEvent(
+      new CustomEvent("mathsmart:theme-change", {
+        detail: { theme: prefs?.theme, projectorMode: prefs?.projectorMode },
+      })
+    );
+  } catch {
+    // Safe fallback
+  }
 }
 
 /**

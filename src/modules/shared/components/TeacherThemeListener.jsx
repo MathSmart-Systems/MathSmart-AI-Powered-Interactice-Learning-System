@@ -27,11 +27,12 @@ export function resolveTeacherTheme() {
 }
 
 /**
- * Applies or removes the dark class on documentElement for teacher modules.
+ * Applies or removes the dark and projector-mode classes on documentElement for teacher modules.
  *
  * @param {"light" | "dark" | "system"} [targetTheme]
+ * @param {boolean} [targetProjectorMode]
  */
-export function applyTeacherTheme(targetTheme) {
+export function applyTeacherTheme(targetTheme, targetProjectorMode) {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   const theme = targetTheme || resolveTeacherTheme();
   const isDark =
@@ -45,12 +46,31 @@ export function applyTeacherTheme(targetTheme) {
   } else {
     document.documentElement.classList.remove("dark");
   }
+
+  let projectorMode = targetProjectorMode;
+  if (projectorMode === undefined) {
+    try {
+      const rawPrefs = window.localStorage.getItem(TEACHER_PREFS_KEY);
+      if (rawPrefs) {
+        const parsed = JSON.parse(rawPrefs);
+        projectorMode = parsed?.projectorMode;
+      }
+    } catch {
+      // Graceful fallback
+    }
+  }
+
+  if (projectorMode) {
+    document.documentElement.classList.add("projector-mode");
+  } else {
+    document.documentElement.classList.remove("projector-mode");
+  }
 }
 
 /**
  * Teacher-only theme listener:
- * Activates dark mode strictly while the teacher workspace is mounted.
- * Automatically cleans up by removing dark mode whenever navigating away.
+ * Activates dark mode and projector mode strictly while the teacher workspace is mounted.
+ * Automatically cleans up by removing dark mode and projector mode whenever navigating away.
  */
 export function TeacherThemeListener() {
   useEffect(() => {
@@ -75,7 +95,7 @@ export function TeacherThemeListener() {
     };
 
     const handleCustomThemeChange = (e) => {
-      applyTeacherTheme(e.detail?.theme);
+      applyTeacherTheme(e.detail?.theme, e.detail?.projectorMode);
     };
 
     if (mediaQuery?.addEventListener) {
@@ -89,6 +109,7 @@ export function TeacherThemeListener() {
 
     return () => {
       document.documentElement.classList.remove("dark");
+      document.documentElement.classList.remove("projector-mode");
       if (mediaQuery?.removeEventListener) {
         mediaQuery.removeEventListener("change", handleMediaChange);
       } else if (mediaQuery?.removeListener) {
