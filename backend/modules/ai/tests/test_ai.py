@@ -57,17 +57,33 @@ class FakeGroq:
         )
 
 
-def ai_client(groq: FakeGroq | None = None, *, live_session: bool = True):
+def ai_client(
+    groq: FakeGroq | None = None,
+    *,
+    live_session: bool = True,
+    groq_advisory_enabled: bool = True,
+    server_groq_enabled: bool = True,
+):
     from fastapi.testclient import TestClient
+    from pydantic import SecretStr
 
     from app.main import create_app
 
+    settings = fake_settings()
+    settings.groq_enabled = server_groq_enabled
+    if server_groq_enabled:
+        settings.groq_model = "a-configured-model"
+        settings.groq_api_key = SecretStr("gsk_test")
+
+    results = {
+        "from app.system_settings": groq_advisory_enabled,
+    }
     application = create_app(
-        settings=fake_settings(),
+        settings=settings,
         token_verifier=FakeVerifier(),
-        database=FakeDatabase(FakeConnection()),
+        database=FakeDatabase(FakeConnection(results=results)),
         session_gateway=FakeSessionGateway(live=live_session),
-        groq=groq or FakeGroq(),
+        groq=groq if groq is not None else FakeGroq(enabled=server_groq_enabled),
     )
     return TestClient(application, raise_server_exceptions=False)
 
@@ -113,13 +129,37 @@ def test_an_unavailable_groq_is_a_clean_503():
 
 
 def test_a_disabled_groq_is_the_same_503():
-    client = ai_client(FakeGroq(text=None, enabled=False))
+    client = ai_client(FakeGroq(text=None, enabled=False), server_groq_enabled=False)
 
     response = client.post(
         "/api/v1/ai/pattern-analysis", json=PATTERN_BODY, headers=ADVISER_HEADERS
     )
 
     assert response.status_code == 503
+
+
+def test_groq_gated_by_database_stored_setting():
+    """Fails with 503 if DB setting is false even when server GROQ_ENABLED is true."""
+    client = ai_client(groq_advisory_enabled=False, server_groq_enabled=True)
+
+    response = client.post(
+        "/api/v1/ai/pattern-analysis", json=PATTERN_BODY, headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "groq_assistance_unavailable"
+
+
+def test_groq_gated_by_server_environment():
+    """Fails with 503 if server GROQ_ENABLED is false even when DB setting is true."""
+    client = ai_client(groq_advisory_enabled=True, server_groq_enabled=False)
+
+    response = client.post(
+        "/api/v1/ai/pattern-analysis", json=PATTERN_BODY, headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "groq_assistance_unavailable"
 
 
 def test_a_request_cannot_choose_the_model():

@@ -13,6 +13,7 @@ module loads, and every value travels as a bind parameter.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -353,6 +354,8 @@ order by audit_events.occurred_at desc
 limit $4 offset $5
 """
 
+_RECORD_AUDIT_SQL = "select app.record_audit_event($1, $2, $3, $4, $5::jsonb)"
+
 _MEMBERSHIP_DELETE_SQL = "delete from app.assessment_questions where assessment_id = $1"
 
 _MEMBERSHIP_INSERT_SQL = """
@@ -546,6 +549,20 @@ async def audit_events(
     offset: int,
 ) -> list[Any]:
     return await connection.fetch(_AUDIT_SQL, action, actor_user_id, target_id, limit, offset)
+
+
+async def record_audit_event(
+    connection: ActorConnection,
+    *,
+    action: str,
+    target_type: str,
+    target_id: UUID | None,
+    request_id: str | None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    await connection.execute(
+        _RECORD_AUDIT_SQL, action, target_type, target_id, request_id, json.dumps(details or {})
+    )
 
 
 async def replace_assessment_questions(

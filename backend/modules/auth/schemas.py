@@ -1,10 +1,7 @@
-"""Request and response contracts for the auth module."""
-
-from __future__ import annotations
-
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 
 class IdentitySummary(BaseModel):
@@ -19,3 +16,17 @@ class IdentitySummary(BaseModel):
     full_name: str | None = None
     email: str | None = None
     account_status: str | None = None
+    school_name: str | None = None
+    division_name: str | None = None
+    employee_id: str | None = None
+
+
+class OwnProfileChanges(BaseModel):
+    """What a user may change about themselves."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=2, max_length=120),
+    ]

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
+import { fetchSettings } from "../../settings/index.js";
 import { createActivity, updateActivity } from "../services/activity-admin-service.js";
 import {
   DEFAULT_MASTERY_THRESHOLD,
@@ -71,9 +72,10 @@ function FieldError({ id, message }) {
  * @param {Array<object>} props.modules - Available learning modules for the dropdown selector
  * @param {() => void} props.onClose - Dismiss callback
  * @param {(saved: object) => void} props.onSaved - Success callback receiving the saved record
+ * @param {number} [props.defaultThreshold] - Pre-filled default pass threshold for new drafts
  * @returns {JSX.Element}
  */
-function ActivityForm({ activity, modules, onClose, onSaved }) {
+function ActivityForm({ activity, modules, onClose, onSaved, defaultThreshold }) {
   const isEditing = Boolean(activity?.activity_id);
 
   const [values, setValues] = useState(() => ({
@@ -81,13 +83,50 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
     module_id: activity?.module_id ?? (modules.length === 1 ? modules[0].module_id : ""),
     estimated_minutes: String(activity?.estimated_minutes ?? 15),
     points: String(activity?.points ?? 100),
-    mastery_threshold: String(activity?.mastery_threshold ?? DEFAULT_MASTERY_THRESHOLD),
+    mastery_threshold: String(
+      activity?.mastery_threshold ?? defaultThreshold ?? DEFAULT_MASTERY_THRESHOLD
+    ),
     status: activity?.status ?? "draft",
     description: activity?.description ?? "",
   }));
+  const [hasUserEditedThreshold, setHasUserEditedThreshold] = useState(false);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isEditing || defaultThreshold != null) {
+      return;
+    }
+
+    let isMounted = true;
+    fetchSettings()
+      .then((res) => {
+        if (
+          isMounted &&
+          res?.ok &&
+          res.data?.thresholds?.activity_pass_percentage != null
+        ) {
+          const passThreshold = res.data.thresholds.activity_pass_percentage;
+          setValues((prev) => {
+            if (hasUserEditedThreshold) {
+              return prev;
+            }
+            return {
+              ...prev,
+              mastery_threshold: String(passThreshold),
+            };
+          });
+        }
+      })
+      .catch(() => {
+        // Fall back gracefully to DEFAULT_MASTERY_THRESHOLD
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isEditing, defaultThreshold, hasUserEditedThreshold]);
 
   /**
    * Updates a single form field value and clears associated field errors.
@@ -96,6 +135,9 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
    * @param {string} value
    */
   function change(field, value) {
+    if (field === "mastery_threshold") {
+      setHasUserEditedThreshold(true);
+    }
     setValues((previous) => ({ ...previous, [field]: value }));
     setErrors((previous) => ({ ...previous, [field]: undefined }));
     setServerError(null);
@@ -251,8 +293,11 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
             <FieldError id={`${FIELD_IDS.points}-error`} message={errors.points} />
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor={FIELD_IDS.threshold}>Pass threshold</Label>
+            <span className="text-[11px] text-muted-foreground">
+              Overrides the classroom default passing score for this activity.
+            </span>
             <div className="relative">
               <Input
                 id={FIELD_IDS.threshold}
@@ -348,9 +393,17 @@ function ActivityForm({ activity, modules, onClose, onSaved }) {
  * @param {(saved: object) => void} [props.onSaved] - Callback invoked when an activity is saved
  * @param {object} [props.activity] - Target activity to edit, or null when creating
  * @param {Array<object>} props.modules - List of learning modules available for selection
+ * @param {number} [props.defaultThreshold] - Pre-filled default pass threshold for new drafts
  * @returns {JSX.Element}
  */
-export function ActivityFormModal({ open, onOpenChange, onSaved, activity, modules = [] }) {
+export function ActivityFormModal({
+  open,
+  onOpenChange,
+  onSaved,
+  activity,
+  modules = [],
+  defaultThreshold,
+}) {
   const isEditing = Boolean(activity?.activity_id);
 
   return (
@@ -372,6 +425,7 @@ export function ActivityFormModal({ open, onOpenChange, onSaved, activity, modul
             key={activity?.activity_id ?? "new"}
             activity={activity}
             modules={modules}
+            defaultThreshold={defaultThreshold}
             onClose={() => onOpenChange(false)}
             onSaved={(saved) => {
               onOpenChange(false);

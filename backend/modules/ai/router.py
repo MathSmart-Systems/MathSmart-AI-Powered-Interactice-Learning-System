@@ -13,6 +13,7 @@ the documentation asks for as provenance.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -54,7 +55,55 @@ def _evidence(model: Any) -> dict[str, Any]:
     }
 
 
-async def _advise(request: Request, *, purpose: str, model: Any) -> Any:
+async def _is_groq_feature_enabled(request: Request, actor: Any) -> bool:
+    """True only when BOTH server GROQ_ENABLED and database features.groq_advisory are true."""
+    settings = getattr(request.app.state, "settings", None)
+    if not bool(getattr(settings, "groq_enabled", False)):
+        return False
+
+    adviser = getattr(request.app.state, "groq", None)
+    if adviser is None or not bool(getattr(adviser, "enabled", True)):
+        return False
+
+    database = getattr(request.app.state, "database", None)
+    if database is None:
+        return False
+
+    query = (
+        "select setting_value from app.system_settings "
+        "where setting_key in ('features.groq_advisory', 'features.groq_enabled') "
+        "order by case when setting_key = 'features.groq_advisory' then 1 else 2 end "
+        "limit 1"
+    )
+    try:
+        val = None
+        if hasattr(database, "_pool") and database._pool is not None:
+            async with database._pool.acquire() as conn:
+                val = await conn.fetchval(query)
+        elif hasattr(database, "actor") and actor is not None:
+            async with database.actor(actor) as conn:
+                val = await conn.fetchval(query)
+        elif hasattr(database, "fetchval"):
+            val = await database.fetchval(query)
+
+        if val is None:
+            return False
+
+        if isinstance(val, str):
+            try:
+                val = json.loads(val)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        return bool(val) is True
+    except Exception:
+        return False
+
+
+async def _advise(request: Request, *, purpose: str, model: Any, actor: Any = None) -> Any:
+    if not await _is_groq_feature_enabled(request, actor):
+        raise ApiError(503, "AI assistance is not available", code=UNAVAILABLE)
+
     adviser = _groq(request)
     result = await adviser.advise(purpose=purpose, evidence=_evidence(model))
     if result is None:
@@ -76,10 +125,10 @@ def _provenance(result: Any) -> dict[str, Any]:
 
 @router.post("/ai/pattern-analysis")
 async def pattern_analysis(
-    _actor: TeacherAdmin, request: Request, body: PatternAnalysisRequest
+    actor: TeacherAdmin, request: Request, body: PatternAnalysisRequest
 ) -> dict[str, Any]:
     """Advisory analysis of a learner's incorrect attempts."""
-    result = await _advise(request, purpose="pattern analysis", model=body)
+    result = await _advise(request, purpose="pattern analysis", model=body, actor=actor)
     return {
         "data": {
             "misconception_summary": result.text,
@@ -92,10 +141,10 @@ async def pattern_analysis(
 
 @router.post("/ai/student-feedback")
 async def student_feedback(
-    _actor: CurrentActor, request: Request, body: StudentFeedbackRequest
+    actor: CurrentActor, request: Request, body: StudentFeedbackRequest
 ) -> dict[str, Any]:
     """Encouraging phrasing for a score that has already been decided."""
-    result = await _advise(request, purpose="student feedback", model=body)
+    result = await _advise(request, purpose="student feedback", model=body, actor=actor)
     return {
         "data": {
             "feedback_text": result.text,
@@ -108,23 +157,25 @@ async def student_feedback(
 
 @router.post("/ai/incorrect-answer-explanation")
 async def incorrect_answer_explanation(
-    _actor: CurrentActor, request: Request, body: AnswerExplanationRequest
+    actor: CurrentActor, request: Request, body: AnswerExplanationRequest
 ) -> dict[str, Any]:
     """A bounded explanation for a completed answer check.
 
     The verdict is an input, not an output: this response has no `is_correct`
     and no score, so it cannot change either.
     """
-    result = await _advise(request, purpose="incorrect answer explanation", model=body)
+    result = await _advise(
+        request, purpose="incorrect answer explanation", model=body, actor=actor
+    )
     return {"data": {"explanation": result.text, **_provenance(result)}}
 
 
 @router.post("/ai/teacher-insight")
 async def teacher_insight(
-    _actor: TeacherAdmin, request: Request, body: TeacherInsightRequest
+    actor: TeacherAdmin, request: Request, body: TeacherInsightRequest
 ) -> dict[str, Any]:
     """Advisory insight for an educator looking at one learner and competency."""
-    result = await _advise(request, purpose="teacher insight", model=body)
+    result = await _advise(request, purpose="teacher insight", model=body, actor=actor)
     return {
         "data": {
             "insight_summary": result.text,
@@ -139,10 +190,10 @@ async def teacher_insight(
 
 @router.post("/ai/remediation-support")
 async def remediation_support(
-    _actor: TeacherAdmin, request: Request, body: RemediationRequest
+    actor: TeacherAdmin, request: Request, body: RemediationRequest
 ) -> dict[str, Any]:
     """Advisory remediation suggestions for an educator."""
-    result = await _advise(request, purpose="remediation support", model=body)
+    result = await _advise(request, purpose="remediation support", model=body, actor=actor)
     return {
         "data": {
             "recommended_module_title": result.text,
