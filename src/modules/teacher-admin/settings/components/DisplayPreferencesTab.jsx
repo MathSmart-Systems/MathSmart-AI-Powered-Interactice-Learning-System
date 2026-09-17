@@ -75,7 +75,7 @@ export function DisplayPreferencesTab({
 
         <label
           htmlFor={FIELD_IDS.PROJECTOR_PREFERENCE_CHECKBOX}
-          className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:bg-slate-50/80 transition-colors cursor-pointer"
+          className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 transition-colors cursor-pointer"
         >
           <div className="space-y-0.5 pr-4">
             <span className="text-xs font-bold text-slate-900 block">
@@ -116,7 +116,7 @@ export function DisplayPreferencesTab({
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
               theme === "light"
                 ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20"
-                : "border-slate-200 hover:border-slate-300 bg-white"
+                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 bg-white"
             }`}
           >
             <div className="flex items-center justify-between">
@@ -142,25 +142,25 @@ export function DisplayPreferencesTab({
             onClick={() => updatePref("theme", "dark")}
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
               theme === "dark"
-                ? "border-indigo-600 bg-slate-900 text-white ring-2 ring-indigo-500/20"
-                : "border-slate-200 hover:border-slate-300 bg-white"
+                ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20"
+                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 bg-white"
             }`}
           >
             <div className="flex items-center justify-between">
-              <div className="w-8 h-8 rounded-lg bg-indigo-900 text-indigo-200 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
                 <Moon className="w-4 h-4" />
               </div>
               {theme === "dark" && (
-                <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
                   <Check className="w-3 h-3" />
                 </div>
               )}
             </div>
             <div>
-              <span className={`text-xs font-bold block ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
+              <span className="text-xs font-bold text-slate-900 block">
                 Dark Theme
               </span>
-              <span className={`text-[11px] ${theme === "dark" ? "text-slate-300" : "text-slate-500"}`}>
+              <span className="text-[11px] text-slate-500">
                 Easy on the eyes for evening work
               </span>
             </div>
@@ -174,7 +174,7 @@ export function DisplayPreferencesTab({
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
               theme === "system"
                 ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20"
-                : "border-slate-200 hover:border-slate-300 bg-white"
+                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 bg-white"
             }`}
           >
             <div className="flex items-center justify-between">
@@ -213,7 +213,7 @@ export function DisplayPreferencesTab({
 
         <label
           htmlFor={FIELD_IDS.SOUND_EFFECTS_TOGGLE}
-          className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:bg-slate-50/80 transition-colors cursor-pointer"
+          className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:bg-slate-50/80 hover:border-slate-300 transition-colors cursor-pointer"
         >
           <div className="space-y-0.5 pr-4">
             <span className="text-xs font-bold text-slate-900 block">
@@ -255,7 +255,7 @@ export function DisplayPreferencesTab({
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
               density === "comfortable"
                 ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20"
-                : "border-slate-200 hover:border-slate-300 bg-white"
+                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 bg-white"
             }`}
           >
             <div className="space-y-1">
@@ -276,7 +276,7 @@ export function DisplayPreferencesTab({
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
               density === "compact"
                 ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20"
-                : "border-slate-200 hover:border-slate-300 bg-white"
+                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 bg-white"
             }`}
           >
             <div className="space-y-1">

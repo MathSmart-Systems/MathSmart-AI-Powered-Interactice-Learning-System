@@ -128,8 +128,22 @@
     border-color: hsl(217 33% 26%) !important;
   }
 
+  /* Interactive Card Hover & Selection in Dark Mode */
+  .dark .hover\:bg-slate-50\/80:hover,
+  .dark .hover\:bg-slate-50\/70:hover,
+  .dark .hover\:bg-slate-50:hover {
+    background-color: hsl(222 47% 18%) !important;
+  }
+  .dark .hover\:border-slate-300:hover {
+    border-color: hsl(217 33% 36%) !important;
+  }
+  .dark .hover\:text-slate-900:hover {
+    color: hsl(210 40% 98%) !important;
+  }
+
   /* Tinted Callouts & Status Tiles */
   .dark .bg-indigo-50,
+  .dark .bg-indigo-50\/40,
   .dark .bg-indigo-50\/60,
   .dark .bg-indigo-50\/80 {
     background-color: hsl(234 40% 16%) !important;
@@ -225,6 +239,10 @@
   }
   .dark input[type="range"] {
     background-color: hsl(217 33% 24%) !important;
+  }
+  .dark input[type="checkbox"] {
+    background-color: hsl(222 47% 11%) !important;
+    border-color: hsl(217 33% 30%) !important;
   }
 }
 
