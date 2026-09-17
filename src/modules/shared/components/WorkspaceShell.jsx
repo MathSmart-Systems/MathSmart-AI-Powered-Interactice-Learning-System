@@ -8,7 +8,7 @@ export function WorkspaceShell({ sidebar, children }) {
     <div className="flex min-h-svh flex-col lg:flex-row">
       {sidebar}
       <main id="workspace-content" className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-12">
-        <div className="mx-auto w-full max-w-3xl">{children}</div>
+        <div className="mx-auto w-full max-w-5xl">{children}</div>
       </main>
     </div>
   );
