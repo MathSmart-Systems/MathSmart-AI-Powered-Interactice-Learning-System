@@ -1,10 +1,16 @@
-import { WorkspacePlaceholder } from "@/modules/shared";
-import { STUDENT_WORKSPACE } from "@/modules/student";
+import { Suspense } from "react";
+
+import {
+  StudentActivities,
+  StudentActivitiesSkeleton,
+} from "@/modules/student/activities";
 
 export const metadata = { title: "Activities | MathSmart" };
 
 export default function StudentActivitiesPage() {
   return (
-    <WorkspacePlaceholder title="Activities" workspaceName={STUDENT_WORKSPACE.name} />
+    <Suspense fallback={<StudentActivitiesSkeleton />}>
+      <StudentActivities />
+    </Suspense>
   );
 }
