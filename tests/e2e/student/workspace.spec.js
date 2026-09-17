@@ -11,6 +11,7 @@ import {
 const describe = hasAccount(STUDENT_ACCOUNT) ? test.describe : test.describe.skip;
 
 const IMPLEMENTED_HEADINGS = new Map([
+  ["/student/my-learning", "My Learning"],
   ["/student/assessments", "Assessments"],
   ["/student/profile", "Student Profile & Learning Record"],
 ]);
