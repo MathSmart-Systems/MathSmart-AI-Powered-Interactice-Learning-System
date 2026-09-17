@@ -93,18 +93,28 @@ export function ReportsAnalyticsView({ initialDashboard, initialAnalytics, initi
 
   return (
     <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-3">
-        <p className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-          <BarChart3 aria-hidden="true" className="size-3.5" />
-          Reports & Analytics
-        </p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
-          Reports and Analytics
-        </h1>
-        <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-          Cohort mastery, competency performance, and learner growth across sections.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div>
+          <p className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <BarChart3 aria-hidden="true" className="size-3.5" />
+            Reports & Analytics
+          </p>
+          <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight text-foreground">
+            Reports and Analytics
+          </h1>
+          <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
+          <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+            Cohort mastery, competency performance, and learner growth across sections.
+          </p>
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="inline-flex shrink-0 items-center gap-2 self-start rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
+        >
+          <Download aria-hidden="true" className="size-4" />
+          {exporting ? "Exporting..." : "Export CSV"}
+        </button>
       </header>
 
       {pageError ? (
@@ -119,17 +129,6 @@ export function ReportsAnalyticsView({ initialDashboard, initialAnalytics, initi
           Report exported successfully.
         </div>
       ) : null}
-
-      <div className="flex items-center justify-end">
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
-        >
-          <Download aria-hidden="true" className="size-4" />
-          {exporting ? "Exporting..." : "Export CSV"}
-        </button>
-      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
