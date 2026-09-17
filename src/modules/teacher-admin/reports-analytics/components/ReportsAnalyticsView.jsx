@@ -101,10 +101,20 @@ export function ReportsAnalyticsView({ initialDashboard, initialAnalytics, initi
         <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
           Reports and Analytics
         </h1>
-        <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-          Cohort mastery, competency performance, and learner growth across sections.
-        </p>
+        <span aria-hidden="true" className="h-0.5 w-16 bg-primary" />
+        <div className="flex items-center justify-between gap-4">
+          <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+            Cohort mastery, competency performance, and learner growth across sections.
+          </p>
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
+          >
+            <Download aria-hidden="true" className="size-4" />
+            {exporting ? "Exporting..." : "Export CSV"}
+          </button>
+        </div>
       </header>
 
       {pageError ? (
@@ -119,17 +129,6 @@ export function ReportsAnalyticsView({ initialDashboard, initialAnalytics, initi
           Report exported successfully.
         </div>
       ) : null}
-
-      <div className="flex items-center justify-end">
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
-        >
-          <Download aria-hidden="true" className="size-4" />
-          {exporting ? "Exporting..." : "Export CSV"}
-        </button>
-      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
