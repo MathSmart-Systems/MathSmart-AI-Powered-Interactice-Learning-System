@@ -4,3 +4,4 @@ export { SignOutButton } from "./components/SignOutButton";
 export { WorkspacePlaceholder } from "./components/WorkspacePlaceholder";
 export { WorkspaceShell } from "./components/WorkspaceShell";
 export { Wordmark } from "./components/Wordmark";
+export { GlobalThemeListener, applyGlobalTheme } from "./components/GlobalThemeListener";

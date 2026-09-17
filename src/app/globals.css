@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * MathSmart theme.
  *
@@ -38,6 +40,209 @@
     --shell-muted: 176 11% 62%;
     --shell-border: 196 32% 20%;
     --shell-accent: 166 46% 62%;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 14%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 14%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 166 56% 40%;
+    --primary-foreground: 100 16% 98%;
+    --secondary: 217 33% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 166 56% 40%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 358 61% 50%;
+    --destructive-foreground: 100 16% 98%;
+    --border: 217 33% 20%;
+    --input: 217 33% 24%;
+    --ring: 166 56% 45%;
+
+    --shell: 222 47% 9%;
+    --shell-foreground: 165 13% 88%;
+    --shell-muted: 176 11% 62%;
+    --shell-border: 217 33% 16%;
+    --shell-accent: 166 46% 62%;
+  }
+
+  .dark {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  /* Core Card & Surface Inversion */
+  .dark .bg-white {
+    background-color: hsl(222 47% 13%) !important;
+  }
+  .dark .bg-slate-50 {
+    background-color: hsl(222 47% 9%) !important;
+  }
+  .dark .bg-slate-100,
+  .dark .bg-slate-100\/80 {
+    background-color: hsl(217 33% 16%) !important;
+  }
+  .dark .bg-slate-200 {
+    background-color: hsl(217 33% 24%) !important;
+  }
+
+  /* High-Contrast Crisp Typography */
+  .dark .text-slate-900 {
+    color: hsl(210 40% 98%) !important;
+  }
+  .dark .text-slate-800 {
+    color: hsl(210 40% 94%) !important;
+  }
+  .dark .text-slate-700 {
+    color: hsl(215 25% 88%) !important;
+  }
+  .dark .text-slate-600 {
+    color: hsl(215 20% 82%) !important;
+  }
+  .dark .text-slate-500 {
+    color: hsl(215 20% 75%) !important;
+  }
+  .dark .text-slate-400 {
+    color: hsl(215 20% 70%) !important;
+  }
+  .dark strong,
+  .dark b {
+    color: hsl(210 40% 98%) !important;
+  }
+
+  /* Subtle Borders */
+  .dark .border-slate-200,
+  .dark .border-slate-200\/80,
+  .dark .border-slate-200\/70,
+  .dark .border-slate-200\/60,
+  .dark .border-slate-100 {
+    border-color: hsl(217 33% 20%) !important;
+  }
+  .dark .border-slate-300 {
+    border-color: hsl(217 33% 26%) !important;
+  }
+
+  /* Interactive Card Hover & Selection in Dark Mode */
+  .dark .hover\:bg-slate-50\/80:hover,
+  .dark .hover\:bg-slate-50\/70:hover,
+  .dark .hover\:bg-slate-50:hover {
+    background-color: hsl(222 47% 18%) !important;
+  }
+  .dark .hover\:border-slate-300:hover {
+    border-color: hsl(217 33% 36%) !important;
+  }
+  .dark .hover\:text-slate-900:hover {
+    color: hsl(210 40% 98%) !important;
+  }
+
+  /* Tinted Callouts & Status Tiles */
+  .dark .bg-indigo-50,
+  .dark .bg-indigo-50\/40,
+  .dark .bg-indigo-50\/60,
+  .dark .bg-indigo-50\/80 {
+    background-color: hsl(234 40% 16%) !important;
+    border-color: hsl(234 45% 28%) !important;
+  }
+  .dark .bg-indigo-100 {
+    background-color: hsl(234 45% 20%) !important;
+  }
+  .dark .text-indigo-950,
+  .dark .text-indigo-900 {
+    color: hsl(230 100% 93%) !important;
+  }
+  .dark .text-indigo-800,
+  .dark .text-indigo-700 {
+    color: hsl(230 90% 78%) !important;
+  }
+  .dark .text-indigo-600 {
+    color: hsl(230 90% 72%) !important;
+  }
+
+  .dark .bg-rose-50,
+  .dark .bg-rose-50\/60,
+  .dark .bg-rose-50\/80,
+  .dark .bg-rose-100 {
+    background-color: hsl(350 40% 16%) !important;
+    border-color: hsl(350 45% 28%) !important;
+  }
+  .dark .text-rose-950,
+  .dark .text-rose-900 {
+    color: hsl(350 100% 93%) !important;
+  }
+  .dark .text-rose-800,
+  .dark .text-rose-700 {
+    color: hsl(350 90% 78%) !important;
+  }
+  .dark .text-rose-600 {
+    color: hsl(350 90% 70%) !important;
+  }
+
+  .dark .bg-emerald-50,
+  .dark .bg-emerald-50\/60,
+  .dark .bg-emerald-50\/80,
+  .dark .bg-emerald-100 {
+    background-color: hsl(155 40% 14%) !important;
+    border-color: hsl(155 45% 26%) !important;
+  }
+  .dark .text-emerald-950,
+  .dark .text-emerald-900 {
+    color: hsl(155 100% 93%) !important;
+  }
+  .dark .text-emerald-800,
+  .dark .text-emerald-700 {
+    color: hsl(155 80% 76%) !important;
+  }
+  .dark .text-emerald-600 {
+    color: hsl(155 75% 68%) !important;
+  }
+
+  .dark .bg-blue-50,
+  .dark .bg-blue-100 {
+    background-color: hsl(217 40% 16%) !important;
+    border-color: hsl(217 45% 28%) !important;
+  }
+  .dark .text-blue-950,
+  .dark .text-blue-900 {
+    color: hsl(214 100% 93%) !important;
+  }
+  .dark .text-blue-700,
+  .dark .text-blue-600 {
+    color: hsl(214 90% 76%) !important;
+  }
+
+  .dark .bg-amber-50,
+  .dark .bg-amber-100 {
+    background-color: hsl(38 40% 14%) !important;
+    border-color: hsl(38 45% 26%) !important;
+  }
+  .dark .text-amber-950,
+  .dark .text-amber-900 {
+    color: hsl(45 100% 92%) !important;
+  }
+  .dark .text-amber-800,
+  .dark .text-amber-700 {
+    color: hsl(45 90% 76%) !important;
+  }
+
+  /* Form Controls */
+  .dark input[type="text"],
+  .dark input[type="password"] {
+    background-color: hsl(222 47% 11%) !important;
+    border-color: hsl(217 33% 26%) !important;
+    color: hsl(210 40% 98%) !important;
+  }
+  .dark input[type="range"] {
+    background-color: hsl(217 33% 24%) !important;
+  }
+  .dark input[type="checkbox"] {
+    background-color: hsl(222 47% 11%) !important;
+    border-color: hsl(217 33% 30%) !important;
   }
 }
 
