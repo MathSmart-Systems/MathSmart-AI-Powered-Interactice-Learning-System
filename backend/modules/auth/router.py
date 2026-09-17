@@ -41,4 +41,3 @@ async def update_own_identity(
     if identity is None:
         raise ApiError(404, "No profile belongs to this account")
     return {"data": identity.model_dump(mode="json")}
-

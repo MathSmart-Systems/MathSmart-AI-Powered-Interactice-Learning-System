@@ -858,6 +858,7 @@ def test_a_setting_can_be_updated():
 
 def test_settings_report_sanitized_model_identifier():
     from fastapi.testclient import TestClient
+
     from app.main import create_app
     from modules.shared.testing import (
         FakeDatabase,
@@ -865,6 +866,7 @@ def test_settings_report_sanitized_model_identifier():
         FakeVerifier,
         fake_settings,
     )
+
 
     settings = fake_settings()
     settings.groq_enabled = True

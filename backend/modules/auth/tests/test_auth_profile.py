@@ -1,12 +1,8 @@
 """Unit tests for /auth/me profile routes."""
 
-from uuid import UUID
-
 from modules.shared.testing import (
     ADVISER,
     ADVISER_HEADERS,
-    LEARNER,
-    LEARNER_HEADERS,
     FakeConnection,
     build_client,
 )

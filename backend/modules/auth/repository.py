@@ -38,8 +38,5 @@ async def own_profile(connection: ActorConnection, user_id: UUID) -> Any:
     return await connection.fetchrow(_OWN_PROFILE_SQL, user_id)
 
 
-async def update_own_name(
-    connection: ActorConnection, *, user_id: UUID, full_name: str
-) -> Any:
+async def update_own_name(connection: ActorConnection, *, user_id: UUID, full_name: str) -> Any:
     return await connection.fetchrow(_UPDATE_OWN_NAME_SQL, user_id, full_name)
-

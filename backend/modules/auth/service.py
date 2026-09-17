@@ -49,4 +49,3 @@ async def update_name_for(
         return None
     row = await repository.own_profile(connection, actor.user_id)
     return _summary(actor, row)
-
