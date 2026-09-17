@@ -274,6 +274,84 @@ def test_a_competency_request_cannot_set_an_identifier():
     assert response.status_code == 422
 
 
+def _module_payload(**overrides):
+    return {
+        "competency_id": str(COMPETENCY),
+        "title": "Multiplication and Division of Integers",
+        "estimated_minutes": 15,
+        "learning_objective": "Apply sign rules.",
+        "short_explanation": "Equal signs give a positive result.",
+        "rules": [],
+        "worked_examples": [],
+        "order_index": 1,
+        **overrides,
+    }
+
+
+def test_a_published_module_requires_a_published_competency_on_create():
+    connection = FakeConnection(results={"for share": None})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/modules",
+        json=_module_payload(status="published"),
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "module_not_publishable"
+    assert not [call for call in connection.calls if "insert into app.learning_modules" in call[0]]
+
+
+def test_a_published_module_requires_a_published_competency_on_update():
+    connection = FakeConnection(
+        results={
+            "for update": MODULE_ROW,
+            "for share": None,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/modules/{MODULE}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "module_not_publishable"
+    assert not [call for call in connection.calls if "update app.learning_modules" in call[0]]
+
+
+def test_a_published_module_locks_its_published_competency_before_update():
+    published_module = {**MODULE_ROW, "status": "published"}
+    connection = FakeConnection(
+        results={
+            "for update": published_module,
+            "for share": COMPETENCY_ROW,
+            "returning": published_module,
+        },
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/modules/{MODULE}",
+        json={"title": "Updated integer module"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    lock_index = next(
+        index for index, call in enumerate(connection.calls) if "for share" in call[0]
+    )
+    write_index = next(
+        index
+        for index, call in enumerate(connection.calls)
+        if "update app.learning_modules" in call[0]
+    )
+    assert lock_index < write_index
+
+
 def test_archiving_a_competency_does_not_delete_it():
     connection = admin_connection()
     client = build_client(connection)
