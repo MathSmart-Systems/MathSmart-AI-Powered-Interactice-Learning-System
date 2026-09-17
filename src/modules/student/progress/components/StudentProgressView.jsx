@@ -14,7 +14,7 @@ export function StudentProgressView({ model }) {
   }
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto pb-16 animate-in fade-in duration-200">
+    <div className="min-w-0 space-y-8 max-w-6xl mx-auto pb-16 animate-in fade-in duration-200">
       {/* 1. Page Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-100 font-display tracking-tight">

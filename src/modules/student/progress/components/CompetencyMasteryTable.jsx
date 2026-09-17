@@ -13,7 +13,7 @@ export function CompetencyMasteryTable({ competencies = [] }) {
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
+    <div className="min-w-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
       {/* Table Header Strip */}
       <div className="p-6 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
@@ -35,7 +35,7 @@ export function CompetencyMasteryTable({ competencies = [] }) {
           No competency records have been logged yet. Complete activities and assessments to view your score trajectory.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table
             id={FIELD_IDS.COMPETENCY_TABLE}
             className="w-full text-left border-collapse text-xs"

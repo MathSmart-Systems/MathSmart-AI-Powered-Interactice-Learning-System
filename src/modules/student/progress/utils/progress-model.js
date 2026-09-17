@@ -12,6 +12,10 @@ export function toNumber(val) {
   return typeof val === "number" && Number.isFinite(val) ? val : null;
 }
 
+function text(value, fallback) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
 /** Formats a numeric score as whole percentage string or fallback. */
 export function formatScore(val, fallback = "—") {
   const num = toNumber(val);
@@ -45,12 +49,11 @@ export function formatDate(dateInput) {
   }
 }
 
-/** Resolves mastery badge details from the backend mastery band and score. */
-export function masteryStatus(band, currentScore) {
-  const score = toNumber(currentScore);
+/** Resolves display details from the authoritative backend mastery band. */
+export function masteryStatus(band) {
   const normalizedBand = typeof band === "string" ? band.toLowerCase().trim() : "";
 
-  if (normalizedBand === "mastered" || (score !== null && score >= 85)) {
+  if (normalizedBand === "mastered") {
     return {
       label: "Mastered",
       variant: "mastered",
@@ -60,8 +63,7 @@ export function masteryStatus(band, currentScore) {
 
   if (
     normalizedBand === "developing" ||
-    normalizedBand === "improved" ||
-    (score !== null && score >= 60 && score < 85)
+    normalizedBand === "improved"
   ) {
     return {
       label: "Developing",
@@ -72,8 +74,7 @@ export function masteryStatus(band, currentScore) {
 
   if (
     normalizedBand === "needs improvement" ||
-    normalizedBand === "needs support" ||
-    (score !== null && score < 60)
+    normalizedBand === "needs support"
   ) {
     return {
       label: "Needs Support",
@@ -94,6 +95,17 @@ export function masteryStatus(band, currentScore) {
  * presentation model for the student progress workspace.
  */
 export function buildProgressModel({ progress = {}, learner = {}, pathItems = [] } = {}) {
+  if (
+    !progress ||
+    typeof progress !== "object" ||
+    Array.isArray(progress) ||
+    !learner ||
+    typeof learner !== "object" ||
+    Array.isArray(learner)
+  ) {
+    throw new TypeError("Progress payload must contain learner and progress records");
+  }
+
   const rawMastery = toNumber(progress.overall_mastery);
   const rawDiagnostic = toNumber(progress.diagnostic_score);
   const rawGrowth = toNumber(progress.growth);
@@ -105,45 +117,46 @@ export function buildProgressModel({ progress = {}, learner = {}, pathItems = []
   const rawCompetencies = Array.isArray(progress.competencies) ? progress.competencies : [];
   let masteredCount = 0;
 
-  const competencyRows = rawCompetencies.map((comp) => {
-    const curScore = toNumber(comp.current_score);
-    const diagScore = toNumber(comp.diagnostic_score);
-    const status = masteryStatus(comp.mastery_band, curScore);
+  const competencyRows = rawCompetencies
+    .filter((comp) => comp && typeof comp === "object" && !Array.isArray(comp))
+    .map((comp, index) => {
+      const curScore = toNumber(comp.current_score);
+      const diagScore = toNumber(comp.diagnostic_score);
+      const status = masteryStatus(comp.mastery_band);
 
-    if (status.variant === "mastered") {
-      masteredCount += 1;
-    }
+      if (status.variant === "mastered") {
+        masteredCount += 1;
+      }
 
-    const growthVal =
-      curScore !== null && diagScore !== null
-        ? Math.round(curScore - diagScore)
-        : toNumber(comp.growth);
+      const growthVal = toNumber(comp.growth);
 
-    const trajectory = Array.isArray(comp.trajectory)
-      ? comp.trajectory.map((pt) => ({
-          dateFormatted: formatDate(pt.date),
-          score: toNumber(pt.score),
-          scoreFormatted: formatScore(pt.score),
-          label: pt.label || "Attempt",
-        }))
-      : [];
+      const trajectory = Array.isArray(comp.trajectory)
+        ? comp.trajectory
+            .filter((pt) => pt && typeof pt === "object" && !Array.isArray(pt))
+            .map((pt) => ({
+              dateFormatted: formatDate(pt.date),
+              score: toNumber(pt.score),
+              scoreFormatted: formatScore(pt.score),
+              label: typeof pt.label === "string" ? pt.label : "Attempt",
+            }))
+        : [];
 
-    return {
-      id: comp.competency_id || comp.competency_code,
-      code: comp.competency_code || "MATH6",
-      name: comp.competency_name || "Mathematics Competency",
-      diagnostic: diagScore,
-      diagnosticFormatted: formatScore(diagScore),
-      current: curScore,
-      currentFormatted: formatScore(curScore),
-      growth: growthVal,
-      growthFormatted: formatGrowth(growthVal),
-      status,
-      attemptCount: comp.attempt_count || 0,
-      unsuccessfulAttempts: comp.unsuccessful_attempts || 0,
-      trajectory,
-    };
-  });
+      return {
+        id: text(comp.competency_id, text(comp.competency_code, `competency-${index}`)),
+        code: text(comp.competency_code, "MATH6"),
+        name: text(comp.competency_name, "Mathematics Competency"),
+        diagnostic: diagScore,
+        diagnosticFormatted: formatScore(diagScore),
+        current: curScore,
+        currentFormatted: formatScore(curScore),
+        growth: growthVal,
+        growthFormatted: formatGrowth(growthVal),
+        status,
+        attemptCount: toNumber(comp.attempt_count) ?? 0,
+        unsuccessfulAttempts: toNumber(comp.unsuccessful_attempts) ?? 0,
+        trajectory,
+      };
+    });
 
   const totalCompetencies = Math.max(competencyRows.length, 1);
   const masteryPercent = totalCompetencies > 0 ? Math.round((masteredCount / totalCompetencies) * 100) : 0;
@@ -158,21 +171,22 @@ export function buildProgressModel({ progress = {}, learner = {}, pathItems = []
       cta: "Start Diagnostic",
       href: STUDENT_ROUTE.DIAGNOSTIC,
     };
-  } else if (progress.recommended_next_action?.label) {
+  } else if (typeof progress.recommended_next_action?.label === "string") {
     const rec = progress.recommended_next_action;
     nextAction = {
-      type: rec.type || "module",
-      title: rec.label || "Continue Recommended Learning",
+      type: text(rec.type, "module"),
+      title: rec.label,
       description: "Follow your recommended next step to strengthen competencies and boost your mastery score.",
       cta: rec.label.startsWith("Continue") ? rec.label : `Continue ${rec.label}`,
       href: rec.type === "module" ? STUDENT_ROUTE.MY_LEARNING : STUDENT_ROUTE.ACTIVITIES,
     };
   } else if (Array.isArray(pathItems) && pathItems.length > 0) {
-    const activeItem = pathItems.find((p) => p.status === "in_progress" || p.status === "available") || pathItems[0];
+    const validPathItems = pathItems.filter((p) => p && typeof p === "object" && !Array.isArray(p));
+    const activeItem = validPathItems.find((p) => p.status === "in_progress" || p.status === "available") || validPathItems[0];
     nextAction = {
       type: "module",
-      title: activeItem?.module?.title || "Continue Your Learning Path",
-      description: activeItem?.reason || "Targeted practice specifically assigned for your learning pace.",
+      title: text(activeItem?.module?.title, "Continue Your Learning Path"),
+      description: text(activeItem?.reason, "Targeted practice specifically assigned for your learning pace."),
       cta: "Start Module",
       href: STUDENT_ROUTE.MY_LEARNING,
     };
@@ -212,17 +226,18 @@ export function buildProgressModel({ progress = {}, learner = {}, pathItems = []
 
   // Recent activity list populated from progress
   rawActivities.forEach((act, idx) => {
+    if (!act || typeof act !== "object" || Array.isArray(act)) return;
     const actScore = toNumber(act.score);
     const item = {
-      id: act.resource_id || `activity-${idx}`,
-      title: act.title || act.label || "Interactive Activity",
-      label: act.label || "Practice",
+      id: text(act.resource_id, `activity-${idx}`),
+      title: text(act.title, text(act.label, "Interactive Activity")),
+      label: text(act.label, "Practice"),
       score: actScore,
       scoreFormatted: formatScore(actScore),
       dateFormatted: formatDate(act.date),
     };
 
-    const lower = (act.label || "").toLowerCase();
+    const lower = typeof act.label === "string" ? act.label.toLowerCase() : "";
     if (lower.includes("assessment") || lower.includes("diagnostic")) {
       assessmentsHistory.push(item);
     } else if (lower.includes("module")) {
@@ -235,10 +250,11 @@ export function buildProgressModel({ progress = {}, learner = {}, pathItems = []
   // Path items as completed/in-progress module history if recent activities lack modules
   if (modulesHistory.length === 0 && Array.isArray(pathItems)) {
     pathItems.forEach((p) => {
+      if (!p || typeof p !== "object" || Array.isArray(p)) return;
       if (p.status === "completed" || p.status === "in_progress") {
         modulesHistory.push({
-          id: p.id || p.module?.id,
-          title: p.module?.title || "Learning Module",
+          id: text(p.id, text(p.module?.id, "learning-module")),
+          title: text(p.module?.title, "Learning Module"),
           label: p.status === "completed" ? "Module Completed" : "Module In Progress",
           score: null,
           scoreFormatted: p.status === "completed" ? "Completed" : "In Progress",
@@ -250,7 +266,7 @@ export function buildProgressModel({ progress = {}, learner = {}, pathItems = []
 
   return {
     studentId: progress.student_id || learner?.student_id,
-    learnerName: learner?.full_name || "Learner",
+    learnerName: text(learner.full_name, "Learner"),
     overallMastery: rawMastery,
     overallMasteryFormatted: formatScore(rawMastery, "0%"),
     diagnosticScore: rawDiagnostic,

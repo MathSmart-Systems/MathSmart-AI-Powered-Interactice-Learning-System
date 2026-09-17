@@ -127,19 +127,19 @@ describe("Progress Model Formatting Helpers", () => {
   });
 
   it("masteryStatus resolves correct labels and variant badges", () => {
-    const mastered = masteryStatus("Mastered", 90);
+    const mastered = masteryStatus("Mastered");
     assert.equal(mastered.label, "Mastered");
     assert.equal(mastered.variant, "mastered");
 
-    const developing = masteryStatus("Developing", 70);
+    const developing = masteryStatus("Developing");
     assert.equal(developing.label, "Developing");
     assert.equal(developing.variant, "developing");
 
-    const needsSupport = masteryStatus("Needs Improvement", 45);
+    const needsSupport = masteryStatus("Needs Improvement");
     assert.equal(needsSupport.label, "Needs Support");
     assert.equal(needsSupport.variant, "needs_support");
 
-    const unscored = masteryStatus(null, null);
+    const unscored = masteryStatus(null);
     assert.equal(unscored.label, "Not Scored");
     assert.equal(unscored.variant, "unscored");
   });
@@ -221,5 +221,44 @@ describe("buildProgressModel Transformation", () => {
     assert.equal(model.history.assessments.length, 0);
     assert.equal(model.history.modules.length, 0);
     assert.equal(model.history.activities.length, 0);
+  });
+
+  it("preserves backend mastery bands and growth even when scores imply another result", () => {
+    const model = buildProgressModel({
+      learner: mockLearner(),
+      progress: mockProgress({
+        growth: -7,
+        overall_mastery: 95,
+        diagnostic_score: 10,
+        competencies: [{
+          competency_id: COMPETENCY_ID_1,
+          current_score: 99,
+          diagnostic_score: 20,
+          growth: 4,
+          mastery_band: "Needs Improvement",
+        }],
+      }),
+    });
+
+    assert.equal(model.growth, -7);
+    assert.equal(model.competencies[0].growth, 4);
+    assert.equal(model.competencies[0].status.variant, "needs_support");
+  });
+
+  it("ignores malformed nested rows without throwing or inventing mastery", () => {
+    const model = buildProgressModel({
+      learner: mockLearner({ full_name: { unexpected: true } }),
+      progress: mockProgress({
+        competencies: [null, "bad", { current_score: 99, trajectory: [null, { label: 7 }] }],
+        recent_activity: [null, "bad", { label: { unexpected: true } }],
+      }),
+      pathItems: [null, "bad"],
+    });
+
+    assert.equal(model.learnerName, "Learner");
+    assert.equal(model.competencies.length, 1);
+    assert.equal(model.competencies[0].status.variant, "unscored");
+    assert.equal(model.competencies[0].trajectory[0].label, "Attempt");
+    assert.equal(model.history.activities[0].title, "Interactive Activity");
   });
 });
