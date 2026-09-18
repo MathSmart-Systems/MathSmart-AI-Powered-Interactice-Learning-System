@@ -55,7 +55,7 @@ function nextActionForDiagnostic(status) {
   };
 }
 
-function nextActionForModule(item) {
+function nextActionForModule(item, masteryScore = null) {
   const status = pathItemStatus(item.status);
   const carryingOn = item.status === "in_progress";
 
@@ -72,6 +72,7 @@ function nextActionForModule(item) {
       competencyCode: item.competencyCode,
       minutes: item.estimatedMinutes,
       statusLabel: status.label,
+      masteryScore: toNumber(masteryScore),
     },
   };
 }
@@ -169,12 +170,21 @@ export function buildDashboardModel({ learner, progress, pathItems }) {
     ? path.find((item) => item.moduleId === recommendedModuleId)
     : null;
 
+  const competencies = Array.isArray(progress?.competencies)
+    ? progress.competencies.map(toCompetency)
+    : [];
+
   let nextAction;
 
   if (!diagnosticIsComplete) {
     nextAction = nextActionForDiagnostic(diagnosticValue);
   } else if (recommendedItem) {
-    nextAction = nextActionForModule(recommendedItem);
+    const comp = competencies.find(
+      (c) =>
+        (c.code && c.code === recommendedItem.competencyCode) ||
+        (c.name && c.name === recommendedItem.competencyName)
+    );
+    nextAction = nextActionForModule(recommendedItem, comp?.currentScore ?? null);
   } else if (recommendedModuleId) {
     // The API recommended a module the path response does not describe. Take the
     // learner to the same destination, using the wording the API supplied.
@@ -196,9 +206,6 @@ export function buildDashboardModel({ learner, progress, pathItems }) {
 
   const modulesFinished = toNumber(progress?.modules_completed_count) ?? 0;
   const modulesTotal = toNumber(progress?.total_modules_count) ?? 0;
-  const competencies = Array.isArray(progress?.competencies)
-    ? progress.competencies.map(toCompetency)
-    : [];
   const activity = Array.isArray(progress?.recent_activity)
     ? progress.recent_activity.map(toActivity)
     : [];

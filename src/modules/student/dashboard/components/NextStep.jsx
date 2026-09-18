@@ -1,8 +1,8 @@
 import React from "react";
 import Link from "next/link";
-import { ArrowRight, CircleCheck, Clock3, Compass, PlayCircle } from "lucide-react";
+import { ArrowRight, CircleCheck, Clock3, Compass, PlayCircle, Sparkles } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { STUDENT_ROUTE } from "../utils/dashboard-model";
 import { formatMinutes } from "../utils/format";
 
 const ICON_FOR_KIND = {
@@ -15,22 +15,22 @@ const ICON_FOR_KIND = {
 /**
  * Primary Next Step Action Card conforming to the MathSmart UI/UX reference.
  * Highlights the learner's recommended competency or immediate diagnostic action
- * with an engaging gradient surface, progress metadata, and clear primary CTA.
+ * with an engaging indigo gradient surface, progress indicator, and clear CTA buttons.
  */
 export function NextStep({ action, headingId }) {
   const Icon = ICON_FOR_KIND[action.kind] ?? Compass;
   const minutes = formatMinutes(action.meta?.minutes);
+  const masteryScore = action.meta?.masteryScore ?? null;
+  const isModule = action.kind === "module";
 
   return (
     <section
       aria-labelledby={headingId}
-      className="relative rounded-2xl p-6 sm:p-8 text-white shadow-md overflow-hidden border border-border/20 bg-gradient-to-br from-primary via-primary/95 to-shell"
+      className="bg-gradient-to-br from-indigo-700 via-indigo-800 to-slate-900 rounded-2xl p-6 sm:p-8 text-white shadow-md relative overflow-hidden"
     >
-      <div aria-hidden="true" className="grid-paper absolute inset-0 opacity-20 pointer-events-none" />
-
       <div className="relative z-10 max-w-2xl space-y-4">
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-white/90 text-xs font-medium backdrop-blur-xs border border-white/15">
-          <Icon className="size-3.5 text-amber-300" aria-hidden="true" />
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-500/30 text-indigo-200 text-xs font-medium backdrop-blur-xs border border-indigo-400/30">
+          <Icon className="size-3.5 text-amber-300 shrink-0" aria-hidden="true" />
           <span>{action.eyebrow}</span>
         </div>
 
@@ -41,13 +41,29 @@ export function NextStep({ action, headingId }) {
           >
             {action.title}
           </h2>
-          <p className="text-white/90 text-sm leading-relaxed max-w-xl">
+          <p className="text-indigo-100 text-sm leading-relaxed max-w-xl">
             {action.description}
           </p>
         </div>
 
+        {/* Competency Progress Indicator (when mastery score is available) */}
+        {masteryScore !== null && masteryScore !== undefined ? (
+          <div className="pt-2">
+            <div className="flex items-center justify-between text-xs font-medium text-indigo-200 mb-1.5">
+              <span>Current Mastery Progress</span>
+              <span className="font-bold text-white">{masteryScore}%</span>
+            </div>
+            <div className="h-2.5 w-full bg-indigo-950/60 rounded-full overflow-hidden p-0.5 border border-indigo-400/20">
+              <div
+                className="h-full bg-gradient-to-r from-teal-400 to-emerald-300 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(0, masteryScore))}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
+
         {action.meta ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/80 pt-1 border-t border-white/10">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-indigo-200/80 pt-1 border-t border-indigo-400/20">
             {action.meta.competency ? (
               <span>
                 <strong className="text-white font-semibold">Competency:</strong> {action.meta.competency}
@@ -67,16 +83,26 @@ export function NextStep({ action, headingId }) {
         ) : null}
 
         <div className="pt-2 flex flex-wrap items-center gap-3">
-          <Button
-            asChild
-            className="h-11 inline-flex items-center gap-2 px-6 rounded-xl bg-white text-slate-900 font-bold text-sm shadow-sm hover:bg-white/90 transition-all cursor-pointer"
+          <Link
+            id="continue-learning-btn"
+            href={action.href}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-indigo-900 font-bold text-sm shadow-sm hover:bg-indigo-50 transition-all cursor-pointer"
           >
-            <Link href={action.href}>
-              <PlayCircle className="size-4 text-primary shrink-0" aria-hidden="true" />
-              <span>{action.cta}</span>
-              <ArrowRight className="size-4 text-primary ml-1 shrink-0" aria-hidden="true" />
+            <PlayCircle className="w-4 h-4 text-indigo-600 shrink-0" aria-hidden="true" />
+            <span>{action.cta}</span>
+            <ArrowRight className="w-4 h-4 text-indigo-600 ml-1 shrink-0" aria-hidden="true" />
+          </Link>
+
+          {isModule ? (
+            <Link
+              id="quick-activity-btn"
+              href={STUDENT_ROUTE.ACTIVITIES}
+              className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-600/60 text-white font-medium text-sm hover:bg-indigo-600/90 transition-colors border border-indigo-400/30 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300 shrink-0" aria-hidden="true" />
+              <span>Jump to Interactive Practice</span>
             </Link>
-          </Button>
+          ) : null}
         </div>
       </div>
     </section>
