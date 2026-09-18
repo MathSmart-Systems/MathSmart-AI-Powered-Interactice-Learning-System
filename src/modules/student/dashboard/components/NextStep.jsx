@@ -17,10 +17,11 @@ const ICON_FOR_KIND = {
  * while honoring the system's signature pine-tree and deep-shell colorway.
  *
  * Features:
- * - Rich pine-to-shell gradient surface matching the sidebar's dark ink tones.
- * - Soft shell-accent ambient glow and badges.
+ * - Solid deep-shell surface matching the sidebar's dark ink tone.
+ * - MathSmart notebook grid ruling texture.
+ * - Soft shell-accent highlights and badges.
  * - Dynamic competency mastery progress indicator.
- * - High-contrast white CTA button with pine-green typography and iconography.
+ * - High-contrast white CTA button with shell typography and pine iconography.
  * - Secondary translucent action button for interactive practice.
  */
 export function NextStep({ action, headingId }) {
@@ -32,16 +33,10 @@ export function NextStep({ action, headingId }) {
   return (
     <section
       aria-labelledby={headingId}
-      className="on-shell relative rounded-2xl p-6 sm:p-8 text-white shadow-md overflow-hidden border border-white/15 bg-gradient-to-br from-primary via-primary/95 to-shell"
+      className="on-shell relative rounded-2xl p-6 sm:p-8 text-white shadow-md overflow-hidden border border-shell-border bg-shell"
     >
       {/* MathSmart notebook grid texture */}
       <div aria-hidden="true" className="grid-paper absolute inset-0 opacity-20 pointer-events-none" />
-
-      {/* Subtle pine/mint ambient accent glow */}
-      <div
-        aria-hidden="true"
-        className="absolute -top-24 -right-24 size-64 rounded-full bg-shell-accent/15 blur-3xl pointer-events-none"
-      />
 
       <div className="relative z-10 max-w-2xl space-y-4">
         {/* Eyebrow badge with pine/shell accent */}
@@ -71,7 +66,7 @@ export function NextStep({ action, headingId }) {
             </div>
             <div className="h-2.5 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/15">
               <div
-                className="h-full bg-gradient-to-r from-emerald-400 via-teal-300 to-shell-accent rounded-full transition-all duration-500"
+                className="h-full bg-shell-accent rounded-full transition-all duration-500"
                 style={{ width: `${Math.min(100, Math.max(0, masteryScore))}%` }}
               />
             </div>
