@@ -74,16 +74,16 @@ export function LearningPathPreview({ items }) {
 
             <div className="flex items-center gap-2 self-end sm:self-center shrink-0 text-xs">
               <span
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium text-[11px] ${
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium text-[11px] border whitespace-nowrap ${
                   isCompleted
-                    ? "bg-primary/10 text-primary"
+                    ? "bg-primary/10 text-primary border-primary/20"
                     : isInProgress
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-muted text-muted-foreground"
+                    ? "bg-primary text-primary-foreground border-primary font-semibold"
+                    : "bg-muted text-muted-foreground border-border"
                 }`}
               >
                 <Icon aria-hidden="true" className="size-3" />
-                {item.statusLabel}
+                <span>{item.statusLabel}</span>
               </span>
               {minutes ? <span className="text-[11px] text-muted-foreground">{minutes}</span> : null}
             </div>

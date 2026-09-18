@@ -1,9 +1,23 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, ChevronUp, History } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  History,
+} from "lucide-react";
 
 import { FIELD_IDS } from "../utils/constants.js";
+
+const STATUS_ICONS = {
+  mastered: CheckCircle2,
+  developing: Clock,
+  needs_support: AlertCircle,
+  unscored: Clock,
+};
 
 export function CompetencyMasteryTable({ competencies = [] }) {
   const [expandedId, setExpandedId] = useState(null);
@@ -24,6 +38,9 @@ export function CompetencyMasteryTable({ competencies = [] }) {
             Comparing diagnostic baseline against real-time mastery after
             targeted interventions
           </p>
+        </div>
+        <div className="text-xs text-muted-foreground font-medium shrink-0">
+          Standard: Grade 6 Mathematics (ARAL Curriculum)
         </div>
       </div>
 
@@ -106,11 +123,17 @@ export function CompetencyMasteryTable({ competencies = [] }) {
                       </td>
 
                       <td className="py-4 px-4 text-center">
-                        <span
-                          className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${row.status.colorClass}`}
-                        >
-                          {row.status.label}
-                        </span>
+                        {(() => {
+                          const StatusIcon = STATUS_ICONS[row.status.variant] || Clock;
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${row.status.colorClass}`}
+                            >
+                              <StatusIcon className="w-3 h-3 shrink-0" aria-hidden="true" />
+                              <span>{row.status.label}</span>
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       <td className="py-4 px-4 text-center">
