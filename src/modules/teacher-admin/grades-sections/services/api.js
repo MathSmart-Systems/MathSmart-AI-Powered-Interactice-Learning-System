@@ -77,8 +77,20 @@ export async function updateSection(sectionId, patch) {
   return clarifySectionFailure(result);
 }
 
+/** Retires a section. Reversible: the row stays and can be activated again. */
 export async function deleteSection(sectionId) {
   return apiRequest("DELETE", `/teacher-admin/sections/${sectionId}`);
+}
+
+/**
+ * Removes a retired section for good.
+ *
+ * A different path from the one above, because it means something different.
+ * The API refuses it for a section that is still active or that any learner
+ * still belongs to.
+ */
+export async function destroySection(sectionId) {
+  return apiRequest("DELETE", `/teacher-admin/sections/${sectionId}/record`);
 }
 
 // ─── Advisers ────────────────────────────────────────────────────

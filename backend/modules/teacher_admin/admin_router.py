@@ -754,8 +754,54 @@ async def update_section(
 async def deactivate_section(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, section_id: UUID
 ) -> Response:
+    """Retires a section. Reversible: the row stays and `is_active` goes false."""
     deactivated = await repository.deactivate(connection, SECTIONS, section_id)
     if deactivated is None:
+        raise ApiError(404, "No section was found")
+    return Response(status_code=204)
+
+
+@router.delete("/teacher-admin/sections/{section_id}/record", status_code=204)
+async def delete_section(
+    _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, section_id: UUID
+) -> Response:
+    """Removes a retired section for good.
+
+    A separate path from the deactivation above, which keeps its documented
+    meaning. This one is for a section that should never have existed — a
+    typo, a duplicate, a trial — and it is deliberately hard to reach:
+
+    * the section has to be deactivated already, which is its own reversible
+      decision taken separately and first;
+    * no learner may still point at it, which is checked here so the refusal
+      can say how many do, and enforced by ON DELETE RESTRICT regardless;
+    * the row-level policy repeats both the role and the retired condition, so
+      the database refuses even if this route is ever wrong.
+    """
+    section = await repository.read(connection, SECTIONS, section_id)
+    if section is None:
+        raise ApiError(404, "No section was found")
+
+    if section["is_active"]:
+        raise ApiError(
+            422,
+            "Deactivate this section before deleting it, so retiring a live class is "
+            "always a separate decision.",
+            code="section_active",
+        )
+
+    learners = await repository.section_learner_count(connection, section_id)
+    if learners:
+        raise ApiError(
+            422,
+            f"{learners} learner{'s' if learners != 1 else ''} still "
+            f"belong{'' if learners != 1 else 's'} to this section. Move them to another "
+            "section before deleting it.",
+            code="section_in_use",
+        )
+
+    deleted = await repository.delete_section(connection, section_id)
+    if deleted is None:
         raise ApiError(404, "No section was found")
     return Response(status_code=204)
 

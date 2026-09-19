@@ -1620,3 +1620,210 @@ def test_a_refused_request_still_carries_the_cors_header_a_browser_needs():
 
     assert response.status_code == 422
     assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+# ---------------------------------------------------------------------------
+# Deleting a retired section, which is the one thing here that cannot be undone
+# ---------------------------------------------------------------------------
+
+#: The statement that reads one section, used to decide whether it is retired.
+SECTION_READ = "where sections.section_id = $1"
+#: The statement that counts the learners still pointing at a section.
+LEARNER_COUNT = "from app.student_profiles"
+#: The removal itself.
+SECTION_DELETE = "delete from app.sections"
+
+RETIRED_SECTION = {**SECTION_ROW, "is_active": False}
+
+
+def delete_connection(*, section=None, learners=0, **overrides):
+    """A connection whose section read, learner count and delete are chosen.
+
+    Built directly rather than through `admin_connection`, because the shared
+    fixture answers anything containing `count(*) as total` with 1 and the
+    learner count is such a statement. The fragments below are ordered so the
+    specific ones win.
+    """
+    results = {
+        LEARNER_COUNT: learners,
+        SECTION_DELETE: SECTION,
+        SECTION_READ: RETIRED_SECTION if section is None else section,
+        "set is_active = false": SECTION,
+        TOTAL: 1,
+    }
+    results.update(overrides)
+    return FakeConnection(results=results)
+
+
+def test_a_retired_section_with_no_learners_is_deleted():
+    connection = delete_connection()
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 204
+    assert any(SECTION_DELETE in query for query in connection.queries())
+
+
+def test_a_live_section_cannot_be_deleted_in_one_step():
+    """Retiring is a separate, reversible decision that has to come first."""
+    connection = delete_connection(section=SECTION_ROW)
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "section_active"
+    assert not any(SECTION_DELETE in query for query in connection.queries())
+
+
+def test_a_section_a_learner_still_belongs_to_cannot_be_deleted():
+    connection = delete_connection(learners=3)
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "section_in_use"
+    # The refusal says how many, so the teacher knows what to move.
+    assert "3 learners" in response.json()["error"]["message"]
+    assert not any(SECTION_DELETE in query for query in connection.queries())
+
+
+def test_the_refusal_counts_a_single_learner_correctly():
+    connection = delete_connection(learners=1)
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert "1 learner still belongs" in response.json()["error"]["message"]
+
+
+def test_deleting_a_section_that_is_not_there_is_a_404():
+    connection = delete_connection(**{SECTION_READ: None})
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 404
+    assert not any(SECTION_DELETE in query for query in connection.queries())
+
+
+def test_deleting_a_section_needs_a_live_session():
+    """The same sensitive-action gate every other write here carries."""
+    client = build_client(delete_connection(), live_session=False)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 401
+
+
+def test_a_learner_cannot_delete_a_section():
+    connection = delete_connection()
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
+    assert not any(SECTION_DELETE in query for query in connection.queries())
+
+
+def test_the_archiving_route_still_only_archives():
+    """The documented DELETE keeps its documented meaning."""
+    connection = delete_connection()
+    client = build_client(connection)
+
+    response = client.delete(f"/api/v1/teacher-admin/sections/{SECTION}", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 204
+    assert not any(SECTION_DELETE in query for query in connection.queries())
+    assert any("set is_active = false" in query for query in connection.queries())
+
+
+def test_the_learner_check_runs_before_the_delete():
+    """Order matters: the count is what lets the refusal be specific."""
+    connection = delete_connection()
+    client = build_client(connection)
+
+    client.delete(f"/api/v1/teacher-admin/sections/{SECTION}/record", headers=ADVISER_HEADERS)
+
+    queries = connection.queries()
+    counted = next(i for i, query in enumerate(queries) if LEARNER_COUNT in query)
+    deleted = next(i for i, query in enumerate(queries) if SECTION_DELETE in query)
+    assert counted < deleted
+
+
+def test_an_unexpected_failure_still_reaches_the_browser():
+    """The reason two separate defects read as "Failed to fetch".
+
+    An unhandled exception is answered by Starlette's outermost error
+    middleware, above CORS, so the reply carried no
+    `Access-Control-Allow-Origin` and the page could not read it. The safety
+    net answers from inside CORS instead.
+    """
+
+    class ExplodingConnection(FakeConnection):
+        async def fetchval(self, query: str, *args):
+            if "from app.grade_levels" in query:
+                raise RuntimeError("something nobody predicted")
+            return await super().fetchval(query, *args)
+
+    client = build_client(ExplodingConnection(results={GRADE_READ: MVP_GRADE_ROW}))
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={"name": "Rizal", "is_active": True},
+        headers={**ADVISER_HEADERS, "Origin": "http://localhost:3000"},
+    )
+
+    assert response.status_code == 500
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    # The envelope is intact, and the exception text is not in it.
+    assert response.json()["error"]["request_id"]
+    assert "something nobody predicted" not in response.text
+
+
+def test_a_database_privilege_refusal_is_not_a_silent_failure():
+    """What a missing grant looks like before the migration lands."""
+    import asyncpg
+
+    class UnprivilegedConnection(FakeConnection):
+        async def fetchval(self, query: str, *args):
+            if "delete from app.sections" in query:
+                raise asyncpg.exceptions.InsufficientPrivilegeError(
+                    "permission denied for table sections"
+                )
+            return await super().fetchval(query, *args)
+
+    connection = UnprivilegedConnection(
+        results={
+            LEARNER_COUNT: 0,
+            SECTION_READ: RETIRED_SECTION,
+            TOTAL: 1,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/sections/{SECTION}/record",
+        headers={**ADVISER_HEADERS, "Origin": "http://localhost:3000"},
+    )
+
+    assert response.status_code == 500
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert "permission denied" not in response.text

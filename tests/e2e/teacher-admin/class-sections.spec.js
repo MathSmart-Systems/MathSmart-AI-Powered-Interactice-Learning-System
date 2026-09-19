@@ -91,6 +91,8 @@ async function stubDirectory(page, { grades = [GRADE_6], sections = [], advisers
   const store = {
     grades: [...grades],
     sections: [...sections],
+    //: section_id to how many learners still belong to it.
+    learners: {},
     advisers: advisers
       ? [
           {
@@ -134,12 +136,13 @@ async function stubDirectory(page, { grades = [GRADE_6], sections = [], advisers
       const collection = isGrade ? store.grades : store.sections;
       const idKey = isGrade ? "grade_id" : "section_id";
 
-      const last = pathname.split("/").filter(Boolean).pop();
+      const segments = pathname.split("/").filter(Boolean);
+      const last = segments.at(-1) === "record" ? segments.at(-2) : segments.at(-1);
       const id = last === "grades" || last === "sections" ? null : last;
       const row = id ? collection.find((entry) => entry[idKey] === id) : null;
 
       if (method === "GET") {
-        return jsonReply(route, 200, { data: collection });
+        return jsonReply(route, 200, { data: isGrade ? store.grades : store.sections });
       }
 
       const body = method === "POST" || method === "PATCH" ? request.postDataJSON() : null;
@@ -193,7 +196,29 @@ async function stubDirectory(page, { grades = [GRADE_6], sections = [], advisers
 
       if (method === "DELETE") {
         if (isGrade && row.level === 6) return scopeRefusal(route);
-        // The API deactivates rather than deletes, and answers with no body.
+
+        // `/record` removes the row; the plain path only retires it.
+        if (!isGrade && pathname.endsWith("/record")) {
+          if (row.is_active) {
+            return jsonReply(route, 422, {
+              error: {
+                code: "section_active",
+                message: "Deactivate this section before deleting it.",
+              },
+            });
+          }
+          if (store.learners[row.section_id]) {
+            return jsonReply(route, 422, {
+              error: {
+                code: "section_in_use",
+                message: `${store.learners[row.section_id]} learners still belong to this section.`,
+              },
+            });
+          }
+          store.sections = store.sections.filter((entry) => entry !== row);
+          return route.fulfill({ status: 204, headers: CORS_HEADERS, body: "" });
+        }
+
         row.is_active = false;
         return route.fulfill({ status: 204, headers: CORS_HEADERS, body: "" });
       }
@@ -212,6 +237,8 @@ const adviserSelect = (page) => page.getByLabel("Adviser", { exact: true });
 const dialogAlert = (page) => page.getByRole("dialog").getByRole("alert");
 
 const editButton = (page, name) => page.getByRole("button", { name: `Edit ${name}`, exact: true });
+const deleteButton = (page, name) =>
+  page.getByRole("button", { name: `Delete ${name}`, exact: true });
 const retireButton = (page, name) =>
   page.getByRole("button", { name: `Deactivate ${name}`, exact: true });
 
@@ -594,6 +621,106 @@ describe("class sections workspace", () => {
 
     release();
     await expect(statusLine(page)).toHaveText(`${name} deactivated.`);
+  });
+
+  // ─── Deleting a retired section ──────────────────────────────────
+
+  test("a live section offers no delete", async ({ page }) => {
+    await stubDirectory(page);
+    await page.goto("/teacher/grades-sections");
+
+    const name = await addSection(page, uniqueName("Rizal QA"));
+
+    await expect(deleteButton(page, name)).toHaveCount(0);
+    await expect(retireButton(page, name)).toBeVisible();
+  });
+
+  test("a deactivated section offers delete", async ({ page }) => {
+    await stubDirectory(page);
+    await page.goto("/teacher/grades-sections");
+
+    const name = await addSection(page, uniqueName("Rizal QA"));
+    await retireButton(page, name).click();
+    await expect(statusLine(page)).toHaveText(`${name} deactivated.`);
+
+    await expect(deleteButton(page, name)).toBeVisible();
+    await expect(deleteButton(page, name)).toHaveText(/Delete/);
+  });
+
+  test("deleting asks first, and keeping it changes nothing", async ({ page }) => {
+    const store = await stubDirectory(page);
+    await page.goto("/teacher/grades-sections");
+
+    const name = await addSection(page, uniqueName("Rizal QA"));
+    await retireButton(page, name).click();
+    await expect(statusLine(page)).toHaveText(`${name} deactivated.`);
+
+    await deleteButton(page, name).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("there is no undo");
+    await expect(dialog).toContainText(name);
+
+    await dialog.getByRole("button", { name: "Keep it", exact: true }).click();
+    await expect(dialog).toBeHidden();
+
+    // Nothing was sent, and the row is still there.
+    expect(store.sections.some((entry) => entry.name === name)).toBe(true);
+    await expect(page.getByRole("listitem").filter({ hasText: name })).toBeVisible();
+  });
+
+  test("confirming removes the section from the directory", async ({ page }) => {
+    const store = await stubDirectory(page);
+    await page.goto("/teacher/grades-sections");
+
+    const name = await addSection(page, uniqueName("Rizal QA"));
+    await retireButton(page, name).click();
+    await expect(statusLine(page)).toHaveText(`${name} deactivated.`);
+
+    await deleteButton(page, name).click();
+    await page.getByRole("button", { name: "Delete section", exact: true }).click();
+
+    await expect(statusLine(page)).toHaveText(`${name} deleted.`);
+    await expect(page.getByRole("listitem").filter({ hasText: name })).toHaveCount(0);
+    expect(store.sections.some((entry) => entry.name === name)).toBe(false);
+  });
+
+  test("a section a learner still belongs to is refused, readably", async ({ page }) => {
+    const store = await stubDirectory(page);
+    await page.goto("/teacher/grades-sections");
+
+    const name = await addSection(page, uniqueName("Rizal QA"));
+    await retireButton(page, name).click();
+    await expect(statusLine(page)).toHaveText(`${name} deactivated.`);
+
+    // Three learners arrive between the page loading and the delete.
+    const target = store.sections.find((entry) => entry.name === name);
+    store.learners[target.section_id] = 3;
+
+    await deleteButton(page, name).click();
+    await page.getByRole("button", { name: "Delete section", exact: true }).click();
+
+    // The refusal stays where the decision is being made.
+    await expect(dialogAlert(page)).toContainText("3 learners still belong");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(store.sections.some((entry) => entry.name === name)).toBe(true);
+  });
+
+  test("the delete dialog is reachable and dismissable from the keyboard", async ({ page }) => {
+    await stubDirectory(page);
+    await page.goto("/teacher/grades-sections");
+
+    const name = await addSection(page, uniqueName("Rizal QA"));
+    await retireButton(page, name).click();
+    await expect(statusLine(page)).toHaveText(`${name} deactivated.`);
+
+    const trigger = deleteButton(page, name);
+    await trigger.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(trigger).toBeFocused();
   });
 
   // ─── Every viewport ──────────────────────────────────────────────

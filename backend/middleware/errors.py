@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from middleware.request_context import REQUEST_ID_HEADER, current_request_id
 
@@ -105,6 +106,31 @@ def _fields_from(exc: RequestValidationError) -> dict[str, list[str]]:
     return fields
 
 
+class ErrorSafetyNetMiddleware(BaseHTTPMiddleware):
+    """Turns anything that escapes into an envelope a browser can read.
+
+    FastAPI answers an unhandled exception from Starlette's own
+    `ServerErrorMiddleware`, which sits above every middleware added here —
+    including CORS. That reply therefore carries no
+    `Access-Control-Allow-Origin`, and a browser refuses to hand it to the
+    page: the fetch rejects with `TypeError: Failed to fetch` and the
+    interface can only report that the service is unavailable. The status, the
+    code and the request id are all there, and none of them reach the person.
+
+    Installed inside the CORS middleware so the reply is a normal one. Nothing
+    is rendered from the exception itself; it is logged against the request id.
+    """
+
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        try:
+            return await call_next(request)
+        except Exception:
+            logger.exception(
+                "Unhandled error on %s %s", request.method, request.url.path
+            )
+            return error_response(500, GENERIC_SERVER_MESSAGE)
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Route every failure through the single envelope."""
 
@@ -164,6 +190,7 @@ def install_error_handlers(app: FastAPI) -> None:
 __all__ = [
     "GENERIC_SERVER_MESSAGE",
     "ApiError",
+    "ErrorSafetyNetMiddleware",
     "HTTPException",
     "error_code_for",
     "error_response",

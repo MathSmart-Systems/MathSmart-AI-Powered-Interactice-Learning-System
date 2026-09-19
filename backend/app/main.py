@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings, get_settings
-from middleware.errors import install_error_handlers
+from middleware.errors import ErrorSafetyNetMiddleware, install_error_handlers
 from middleware.request_context import RequestIdMiddleware
 from modules.activities.router import router as activities_router
 from modules.ai.router import router as ai_router
@@ -104,6 +104,10 @@ def create_app(
     )
     application.state.groq = groq or _default_groq(resolved)
 
+    # Added first, so it ends up innermost: inside RequestIdMiddleware, which
+    # gives it the request id, and inside CORSMiddleware, which is what lets a
+    # browser read the reply at all.
+    application.add_middleware(ErrorSafetyNetMiddleware)
     application.add_middleware(RequestIdMiddleware)
     application.add_middleware(
         CORSMiddleware,

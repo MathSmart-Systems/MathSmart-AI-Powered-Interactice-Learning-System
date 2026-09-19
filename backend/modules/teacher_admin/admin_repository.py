@@ -538,6 +538,31 @@ where teacher_admin_profiles.teacher_admin_id = $1
 """
 
 
+#: How many learners still point at a section. A section with any is not
+#: removable, and PostgreSQL would refuse it anyway; asking first is what lets
+#: the refusal say which section and how many.
+_SECTION_LEARNERS_SQL = """
+select count(*) as total
+from app.student_profiles
+where student_profiles.section_id = $1
+"""
+
+_DELETE_SECTION_SQL = """
+delete from app.sections
+where sections.section_id = $1
+returning sections.section_id
+"""
+
+
+async def section_learner_count(connection: ActorConnection, section_id: UUID) -> int:
+    return await connection.fetchval(_SECTION_LEARNERS_SQL, section_id) or 0
+
+
+async def delete_section(connection: ActorConnection, section_id: UUID) -> Any:
+    """Removes the row outright. The policy allows this only once retired."""
+    return await connection.fetchval(_DELETE_SECTION_SQL, section_id)
+
+
 async def adviser(connection: ActorConnection, teacher_admin_id: UUID) -> Any:
     """The adviser profile behind this id, when it may still advise a section."""
     return await connection.fetchval(_ADVISER_SQL, teacher_admin_id)

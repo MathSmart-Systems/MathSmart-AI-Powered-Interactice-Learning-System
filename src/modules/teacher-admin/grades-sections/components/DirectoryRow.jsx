@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Power, PowerOff } from "lucide-react";
+import { Pencil, Power, PowerOff, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -39,7 +39,7 @@ export function EmptyState({ message }) {
  * enough to be a phone the stacked buttons share the full width, which makes
  * them easier to hit; wider than that they take their natural size.
  */
-export function DirectoryRow({ label, meta, active, onEdit, onToggle, working }) {
+export function DirectoryRow({ label, meta, active, onEdit, onToggle, onDelete, working }) {
   const toggleText = working
     ? active
       ? "Deactivating…"
@@ -84,6 +84,24 @@ export function DirectoryRow({ label, meta, active, onEdit, onToggle, working })
           >
             <ToggleIcon aria-hidden="true" className="size-3.5" />
             {toggleText}
+          </Button>
+        ) : null}
+        {/*
+         * Deleting is offered only once a section is retired, so removing a
+         * live class can never be one click. It is marking-pen red because it
+         * is the one action here that cannot be undone.
+         */}
+        {onDelete && !active ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="flex-1 text-destructive hover:bg-destructive/10 hover:text-destructive @sm:flex-none"
+            onClick={onDelete}
+            disabled={working}
+            aria-label={`Delete ${label}`}
+          >
+            <Trash2 aria-hidden="true" className="size-3.5" />
+            Delete
           </Button>
         ) : null}
       </div>

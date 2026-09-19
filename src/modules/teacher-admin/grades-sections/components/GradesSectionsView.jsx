@@ -9,12 +9,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   createSection,
   deleteSection,
+  destroySection,
   listAdvisers,
   listGrades,
   listSections,
   updateSection,
 } from "../services/api";
 import { MVP_GRADE_NAME, partitionDirectory } from "../utils/grade-scope";
+import { DeleteSectionDialog } from "./DeleteSectionDialog";
 import { DirectoryRow, EmptyState } from "./DirectoryRow";
 import { SectionFormDialog } from "./SectionFormDialog";
 
@@ -50,6 +52,9 @@ export function GradesSectionsView({
   const [pageError, setPageError] = useState(null);
 
   const [sectionDialog, setSectionDialog] = useState({ open: false, record: null });
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, record: null });
+  const [deleteError, setDeleteError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -156,6 +161,40 @@ export function GradesSectionsView({
     }
   }
 
+  /**
+   * Removes a retired section for good.
+   *
+   * The only action here that cannot be taken back, so it is reached through
+   * its own confirmation and only from a row that is already deactivated. A
+   * refusal stays in the dialog, where the person can read it and decide,
+   * rather than closing over the top of it.
+   */
+  async function handleDelete() {
+    const section = deleteDialog.record;
+    if (!section) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    setPageError(null);
+    announceBusy(`Deleting ${section.name}…`);
+
+    const result = await destroySection(section.section_id);
+
+    if (!result.ok) {
+      setDeleteError(result.error ?? "Could not delete this section.");
+      setDeleting(false);
+      setNotice(null);
+      return;
+    }
+
+    const refreshed = await refreshDirectory();
+    setDeleting(false);
+    setDeleteDialog({ open: false, record: null });
+    if (refreshed) {
+      announce(`${section.name} deleted.`);
+    }
+  }
+
   // Without the grade record there is nothing for a section to belong to, and
   // the API says so too. The page stays readable and the control stands down.
   const gradeMissing = !scope.grade;
@@ -258,6 +297,10 @@ export function GradesSectionsView({
                         setSectionDialog({ open: true, record: section });
                       }}
                       onToggle={() => handleToggle(section)}
+                      onDelete={() => {
+                        setDeleteError(null);
+                        setDeleteDialog({ open: true, record: section });
+                      }}
                       working={workingSectionId === section.section_id}
                     />
                   );
@@ -279,6 +322,17 @@ export function GradesSectionsView({
         onSubmit={handleSubmit}
         busy={saving}
         error={formError}
+      />
+
+      <DeleteSectionDialog
+        section={deleteDialog.record}
+        open={deleteDialog.open}
+        onOpenChange={(open) => {
+          if (!open) setDeleteDialog((current) => ({ ...current, open: false }));
+        }}
+        onConfirm={handleDelete}
+        busy={deleting}
+        error={deleteError}
       />
     </div>
   );
