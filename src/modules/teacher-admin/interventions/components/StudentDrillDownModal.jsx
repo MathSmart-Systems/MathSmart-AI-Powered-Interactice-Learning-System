@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { History, Loader2, User } from "lucide-react";
+import { History, Loader2, Printer, User } from "lucide-react";
 
 import {
   Dialog,
@@ -27,8 +27,9 @@ import { formatDate, formatScore, sortCases } from "../utils/intervention-helper
  * @param {object} props.student - `{ id, learner_id, full_name, section_name }`
  * @param {string|null} [props.currentCaseId]
  * @param {() => void} props.onClose
+ * @param {(report: object) => void} [props.onPrint] - Opens the print/PDF report
  */
-export function StudentDrillDownModal({ open, student, currentCaseId = null, onClose }) {
+export function StudentDrillDownModal({ open, student, currentCaseId = null, onClose, onPrint }) {
   const [history, setHistory] = useState(() => ({ ready: false, cases: [], error: null }));
 
   useEffect(() => {
@@ -93,7 +94,26 @@ export function StudentDrillDownModal({ open, student, currentCaseId = null, onC
           ) : null}
 
           {!loading && !error && cases.length > 0 ? (
-            <ol className="relative space-y-4 border-l border-border pl-4">
+            <>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onPrint?.({
+                      kind: "history",
+                      student,
+                      competency: null,
+                      cases,
+                      title: "Intervention History Report",
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs transition-colors hover:bg-muted/40"
+                >
+                  <Printer aria-hidden="true" className="size-3.5" />
+                  Print history
+                </button>
+              </div>
+              <ol className="relative space-y-4 border-l border-border pl-4">
               {cases.map((item) => (
                 <li key={item.id} className="relative">
                   <span aria-hidden="true" className="absolute -left-[21px] top-1.5 size-2.5 rounded-full border-2 border-card bg-primary" />
@@ -148,6 +168,7 @@ export function StudentDrillDownModal({ open, student, currentCaseId = null, onC
                 </li>
               ))}
             </ol>
+            </>
           ) : null}
         </DialogBody>
       </DialogContent>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, BookOpen, History, Loader2 } from "lucide-react";
+import { AlertTriangle, BookOpen, History, Loader2, Printer } from "lucide-react";
 
 import {
   Dialog,
@@ -41,8 +41,9 @@ function EvidenceStat({ label, value, tone = "default" }) {
  * @param {object} props.actions - The `useInterventionActions` return value
  * @param {() => void} props.onClose - Closes the modal for good (clears selection)
  * @param {(updated: object) => void} [props.onRecorded] - Called after a save
+ * @param {(report: object) => void} [props.onPrint] - Opens the print/PDF report
  */
-export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded }) {
+export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded, onPrint }) {
   const {
     caseDetail,
     loadingDetail,
@@ -132,6 +133,23 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
                     <History aria-hidden="true" className="size-3.5" />
                     Student history
                   </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onPrint?.({
+                        kind: "case",
+                        student,
+                        competency,
+                        cases: [caseDetail],
+                        title: "Intervention Case Report",
+                      })
+                    }
+                    disabled={!caseDetail}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs transition-colors hover:bg-muted/40 disabled:pointer-events-none disabled:opacity-60"
+                  >
+                    <Printer aria-hidden="true" className="size-3.5" />
+                    Print report
+                  </button>
                 </div>
               </div>
 
@@ -191,6 +209,7 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
         student={student}
         currentCaseId={caseDetail?.id ?? null}
         onClose={() => setHistoryOpen(false)}
+        onPrint={onPrint}
       />
     </Dialog>
   );

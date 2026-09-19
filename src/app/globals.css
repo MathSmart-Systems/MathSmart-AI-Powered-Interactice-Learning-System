@@ -506,4 +506,16 @@ html.density-compact:not(.projector-mode) table td .size-8 {
   height: 1.75rem !important;
 }
 
+/* Print-to-PDF: hide the app shell and show only the report host. */
+.mathsmart-print-host {
+  display: none;
+}
 
+@media print {
+  body > *:not(.mathsmart-print-host) {
+    display: none !important;
+  }
+  .mathsmart-print-host {
+    display: block !important;
+  }
+}

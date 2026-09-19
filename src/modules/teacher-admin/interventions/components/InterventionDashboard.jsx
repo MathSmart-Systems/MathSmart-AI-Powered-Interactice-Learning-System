@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, Download, X } from "lucide-react";
 
 import { useInterventionQueue } from "../hooks/useInterventionQueue";
@@ -10,6 +10,8 @@ import { InterventionFilters } from "./InterventionFilters";
 import { InterventionCaseTable } from "./InterventionCaseTable";
 import { InterventionReviewModal } from "./InterventionReviewModal";
 import { PatternAnalysisPanel } from "./PatternAnalysisPanel";
+import { ReportPrintPane } from "./ReportPrintPane";
+import { WeeklySummaryCard } from "./WeeklySummaryCard";
 import {
   casesToCsv,
   downloadCsv,
@@ -46,8 +48,20 @@ export function InterventionDashboard({
   const [reviewingId, setReviewingId] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [printReport, setPrintReport] = useState(null);
   const queue = useInterventionQueue(initialCases);
   const actions = useInterventionActions();
+
+  useEffect(() => {
+    if (!printReport) return undefined;
+    const frame = requestAnimationFrame(() => window.print());
+    const done = () => setPrintReport(null);
+    window.addEventListener("afterprint", done);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("afterprint", done);
+    };
+  }, [printReport]);
 
   const reviewingCase = queue.cases.find((item) => item.id === reviewingId) || null;
   const selectedCases = queue.cases.filter((item) => selectedIds.has(item.id));
@@ -70,6 +84,10 @@ export function InterventionDashboard({
   const handleRecorded = useCallback((updated) => {
     applySaved(updated);
   }, [applySaved]);
+
+  const handlePrintReport = useCallback((report) => {
+    setPrintReport(report);
+  }, []);
 
   const handleQuickStatus = useCallback(
     async (interventionId, status) => {
@@ -191,6 +209,8 @@ export function InterventionDashboard({
         grades={grades}
       />
 
+      {queue.cases.length > 0 ? <WeeklySummaryCard cases={queue.cases} /> : null}
+
       {selectedIds.size > 0 ? (
         <div
           className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3"
@@ -262,7 +282,10 @@ export function InterventionDashboard({
         actions={actions}
         onClose={handleCloseReview}
         onRecorded={handleRecorded}
+        onPrint={handlePrintReport}
       />
+
+      <ReportPrintPane report={printReport} />
     </div>
   );
 }

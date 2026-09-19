@@ -436,6 +436,65 @@ export function buildClassPatternAnalysisPayload(
 }
 
 /**
+ * The trailing seven-day reporting window (`now` inclusive), used by the weekly
+ * summary. Deterministic: computed from timestamps only, never from AI.
+ *
+ * @param {Date} [now]
+ * @returns {{start: Date, end: Date}}
+ */
+export function weekWindow(now = new Date()) {
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(now);
+  start.setDate(start.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+}
+
+/**
+ * Whether a timestamp falls inside a reporting window. Absent or malformed
+ * values are never counted.
+ *
+ * @param {string|null|undefined} value
+ * @param {{start: Date, end: Date}} window
+ * @returns {boolean}
+ */
+export function inWindow(value, window) {
+  if (!value || !window) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= window.start && date <= window.end;
+}
+
+/**
+ * Deterministic weekly summary over a batch of cases. Counts activity in the
+ * trailing seven days plus the current unresolved and high-priority-open load,
+ * so a teacher can see the week at a glance and export it.
+ *
+ * @param {Array<object>} cases
+ * @param {Date} [now]
+ * @returns {object}
+ */
+export function weeklySummary(cases, now = new Date()) {
+  const window = weekWindow(now);
+  const list = Array.isArray(cases) ? cases : [];
+  const opened = list.filter((item) => inWindow(item?.created_at, window));
+  const resolved = list.filter((item) => inWindow(item?.resolved_at, window));
+  const unresolved = list.filter((item) => item?.status !== "Resolved");
+  const highOpen = unresolved.filter((item) => item?.severity === "HIGH");
+  return {
+    window,
+    total: list.length,
+    openedCount: opened.length,
+    resolvedCount: resolved.length,
+    unresolvedCount: unresolved.length,
+    highOpenCount: highOpen.length,
+    openedCases: opened,
+    resolvedCases: resolved,
+  };
+}
+
+/**
  * Defensive normaliser for a queue row so a malformed reply degrades to a safe
  * empty shape instead of throwing downstream. Keeps the documented fields.
  *
