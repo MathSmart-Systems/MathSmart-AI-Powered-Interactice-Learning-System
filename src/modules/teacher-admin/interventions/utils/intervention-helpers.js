@@ -278,6 +278,170 @@ export function scoreDrop(item) {
  * @param {unknown} item
  * @returns {object}
  */
+/** Cap matching the backend's MAX_ATTEMPTS so a request can never exceed it. */
+const MAX_AI_EVIDENCE_ITEMS = 20;
+
+/**
+ * Builds the bounded evidence for the advisory `/ai/teacher-insight` call from
+ * one case detail. Arrays are capped at the backend limit and scores are
+ * normalised numbers; nothing here can carry a learner name, because the key
+ * names sent upstream must survive the adapter's evidence redaction.
+ *
+ * @param {object|null|undefined} detail - The case detail object
+ * @returns {object}
+ */
+export function buildCaseAIEvidence(detail) {
+  const evidence = detail?.evidence ?? {};
+  const list = (value) => (Array.isArray(value) ? value.slice(0, MAX_AI_EVIDENCE_ITEMS) : []);
+  return {
+    competencyId: detail?.competency?.id ?? null,
+    diagnosticScore: normalizeScore(evidence.diagnostic_score),
+    currentScore: normalizeScore(evidence.current_score),
+    attemptCount: evidence.attempt_count ?? 0,
+    unsuccessfulAttempts: evidence.unsuccessful_attempts ?? 0,
+    incorrectPatterns: list(detail?.incorrect_patterns),
+    completedModules: list(detail?.modules_attempted),
+  };
+}
+
+/**
+ * Builds the bounded evidence for the advisory `/ai/remediation-support` call.
+ * The display context is a short, PII-free sentence about the case's own
+ * deterministic state; it never references the learner by name.
+ *
+ * @param {object|null|undefined} detail - The case detail object
+ * @returns {object}
+ */
+export function buildRemediationContext(detail) {
+  const parts = [];
+  if (detail?.severity) parts.push(`Case severity: ${String(detail.severity).toUpperCase()}.`);
+  if (detail?.status) parts.push(`Status: ${String(detail.status)}.`);
+  if (parts.length === 0) parts.push("An intervention case is being reviewed.");
+  return {
+    competencyId: detail?.competency?.id ?? null,
+    currentScore: normalizeScore(detail?.evidence?.current_score),
+    displayContext: parts.join(" ").slice(0, 2000),
+  };
+}
+
+/**
+ * Reads one advisory reply into the shape the panels render, or null when
+ * nothing usable came back. Disabled (503 groq_assistance_unavailable),
+ * timeouts, network failure, and malformed or empty text all collapse to null,
+ * which is the graceful fallback the deterministic UI is built on.
+ *
+ * @param {object} result - The normalised API client reply
+ * @param {"insight_summary"|"recommended_module_title"|"misconception_summary"} textKey
+ * @returns {{text: string, provider: string, model: string, generatedAt: string}|null}
+ */
+export function readAdvisory(result, textKey) {
+  if (!result || typeof result !== "object") return null;
+  const data = result.ok && result.data && typeof result.data === "object" ? result.data : null;
+  if (!data) return null;
+  const text = typeof data[textKey] === "string" ? data[textKey].trim() : "";
+  if (!text) return null;
+  return {
+    text,
+    provider: typeof data.provider === "string" ? data.provider : null,
+    model: typeof data.model === "string" ? data.model : null,
+    generatedAt: typeof data.generated_at === "string" ? data.generated_at : null,
+  };
+}
+
+/**
+ * Formats a provenance timestamp for display, or an em dash when absent.
+ *
+ * @param {string|null|undefined} value - ISO-8601 timestamp
+ * @returns {string}
+ */
+export function formatGeneratedAt(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * One provenance line for an advisory block: `provider · model · when`, with
+ * whichever parts are present. Returns null when nothing is available.
+ *
+ * @param {object|null} advisory
+ * @returns {string|null}
+ */
+export function provenanceLabel(advisory) {
+  if (!advisory) return null;
+  const when = formatGeneratedAt(advisory.generatedAt);
+  const parts = [advisory.provider, advisory.model, when !== "—" ? when : null].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/**
+ * Builds the bounded body for the advisory `/ai/pattern-analysis` call from the
+ * filtered queue. Neither grade nor competency scope is present (or the queue is
+ * empty), the panel stays quiet: there is no class to summarise. The display
+ * context aggregates severity and status counts only and states that no learner
+ * identity is included; the queue never feeds names or per-question attempts,
+ * because neither would satisfy this contract without leaking identity.
+ *
+ * @param {Array<object>} cases
+ * @param {object} [scope]
+ * @param {string|null} [scope.gradeId]
+ * @param {string|null} [scope.competencyId]
+ * @param {Array<object>} [scope.grades]
+ * @returns {object|null}
+ */
+export function buildClassPatternAnalysisPayload(
+  cases,
+  { gradeId = null, competencyId = null, grades = [] } = {}
+) {
+  if (!Array.isArray(cases) || cases.length === 0) return null;
+  if (!gradeId && !competencyId) return null;
+
+  const severities = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+  const statuses = {};
+  for (const item of cases) {
+    const severity = item?.severity;
+    if (severity in severities) severities[severity] += 1;
+    const status = item?.status ?? "Unknown";
+    statuses[status] = (statuses[status] ?? 0) + 1;
+  }
+
+  const severityLine = `Severity: ${severities.HIGH} HIGH, ${severities.MEDIUM} MEDIUM, ${severities.LOW} LOW.`;
+  const statusLine = `Status: ${Object.entries(statuses)
+    .map(([name, count]) => `${count} ${name}`)
+    .join(", ")}.`;
+  const displayContext = [
+    `A teacher is reviewing ${cases.length} intervention case${cases.length === 1 ? "" : "s"} in this scope.`,
+    severityLine,
+    statusLine,
+    "No individually identifying learner details are included.",
+  ].join(" ");
+
+  const gradeRecord = Array.isArray(grades)
+    ? grades.find((grade) => grade?.id && String(grade.id) === String(gradeId))
+    : null;
+
+  return {
+    grade: typeof gradeRecord?.name === "string" ? gradeRecord.name.slice(0, 60) : null,
+    competencyId,
+    displayContext: displayContext.slice(0, 2000),
+    incorrectAttempts: [],
+  };
+}
+
+/**
+ * Defensive normaliser for a queue row so a malformed reply degrades to a safe
+ * empty shape instead of throwing downstream. Keeps the documented fields.
+ *
+ * @param {unknown} item
+ * @returns {object}
+ */
 export function normalizeCase(item) {
   if (!item || typeof item !== "object") return {};
   const student = item.student || {};

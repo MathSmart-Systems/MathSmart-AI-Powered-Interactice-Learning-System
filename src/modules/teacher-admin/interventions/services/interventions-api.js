@@ -210,3 +210,26 @@ export function fetchRemediationSupport(payload) {
     },
   });
 }
+
+/**
+ * Advisory class-level pattern summary for a teacher reviewing a filtered batch
+ * of cases. Same advisory boundary as `fetchTeacherInsight`: never decides
+ * severity, status, or which learners need help.
+ *
+ * @param {object} payload
+ * @param {string|null} [payload.grade]
+ * @param {string|null} [payload.competencyId]
+ * @param {string|null} [payload.displayContext]
+ * @param {Array} [payload.incorrectAttempts]
+ */
+export function fetchPatternAnalysis(payload) {
+  return client.request("/ai/pattern-analysis", {
+    method: "POST",
+    body: {
+      grade: payload.grade ?? null,
+      competency_id: payload.competencyId ?? null,
+      display_context: payload.displayContext ?? null,
+      incorrect_attempts: payload.incorrectAttempts ?? [],
+    },
+  });
+}

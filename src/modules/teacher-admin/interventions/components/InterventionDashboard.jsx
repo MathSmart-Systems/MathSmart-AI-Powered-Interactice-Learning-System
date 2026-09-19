@@ -9,6 +9,7 @@ import { useQueueShortcuts } from "../hooks/useQueueShortcuts";
 import { InterventionFilters } from "./InterventionFilters";
 import { InterventionCaseTable } from "./InterventionCaseTable";
 import { InterventionReviewModal } from "./InterventionReviewModal";
+import { PatternAnalysisPanel } from "./PatternAnalysisPanel";
 import {
   casesToCsv,
   downloadCsv,
@@ -181,6 +182,13 @@ export function InterventionDashboard({
         disabled={queue.loading}
         cases={queue.cases}
         focusRef={filterFocusRef}
+      />
+
+      <PatternAnalysisPanel
+        cases={queue.cases}
+        gradeId={queue.filters.gradeId}
+        competencyId={queue.filters.competencyId}
+        grades={grades}
       />
 
       {selectedIds.size > 0 ? (

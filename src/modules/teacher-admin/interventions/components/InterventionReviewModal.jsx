@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, BookOpen, History, Zap, Loader2 } from "lucide-react";
+import { AlertTriangle, BookOpen, History, Loader2 } from "lucide-react";
 
 import {
   Dialog,
@@ -15,6 +15,7 @@ import {
 import { CaseStatusBadge } from "./CaseStatusBadge";
 import { InterventionRecordForm } from "./InterventionRecordForm";
 import { StudentDrillDownModal } from "./StudentDrillDownModal";
+import { AIInsightPanel } from "./AIInsightPanel";
 import { formatScore } from "../utils/intervention-helpers";
 
 function EvidenceStat({ label, value, tone = "default" }) {
@@ -32,9 +33,8 @@ function EvidenceStat({ label, value, tone = "default" }) {
  * Detailed review of one intervention case.
  *
  * Deterministic evidence (scores, attempts, patterns, modules) renders as soon
- * as the detail request returns. Any stored advisory AI text is shown only
- * beneath it, labelled as advisory, and the failure of either never blocks the
- * other.
+ * as the detail request returns. Advisory AI is layered on beneath it by
+ * `AIInsightPanel`, which never blocks this evidence and fails quietly.
  *
  * @param {object} props
  * @param {object|null} props.caseItem - The summary row that opened the modal
@@ -66,8 +66,6 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
   const student = caseDetail?.student ?? summary.student ?? {};
   const competency = summary.competency ?? {};
   const evidence = (caseDetail?.evidence ?? summary.evidence ?? {});
-  const hasStoredAdvisory =
-    Boolean(caseDetail?.ai_insight) || Boolean(caseDetail?.ai_recommendation);
 
   return (
     <Dialog
@@ -137,28 +135,6 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
                 </div>
               </div>
 
-              {hasStoredAdvisory ? (
-                <div className="space-y-2 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4">
-                  <div className="flex items-center gap-2">
-                    <Zap aria-hidden="true" className="size-4 text-indigo-500" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
-                      AI pedagogical insight (advisory)
-                    </h4>
-                  </div>
-                  {caseDetail.ai_insight ? (
-                    <p className="text-sm leading-relaxed text-foreground">{caseDetail.ai_insight}</p>
-                  ) : null}
-                  {caseDetail.ai_recommendation ? (
-                    <p className="text-sm leading-relaxed text-foreground">{caseDetail.ai_recommendation}</p>
-                  ) : null}
-                  {caseDetail.ai_provider ? (
-                    <p className="text-[11px] text-muted-foreground">
-                      Provided by {caseDetail.ai_provider}{caseDetail.ai_model ? ` (${caseDetail.ai_model})` : ""}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
                   <h4 className="flex items-center gap-1.5 text-xs font-bold text-foreground">
@@ -192,6 +168,8 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
                   )}
                 </div>
               </div>
+
+              <AIInsightPanel detail={caseDetail} />
 
               <InterventionRecordForm
                 onSubmit={async (payload) => {
