@@ -1,8 +1,8 @@
 /**
  * Client-side API helpers for grade and section mutations.
  *
- * The server component fetches the initial list; these helpers handle
- * create, update, and deactivate from the browser. They read a fresh
+ * The server component fetches the initial list; these helpers handle the
+ * section create, the updates, and the deactivations from the browser. They read a fresh
  * Supabase access token from the session cookie and hand it to the
  * transport, which owns the request and reply shapes.
  */
@@ -47,9 +47,8 @@ export async function listGrades() {
   return extractList(result);
 }
 
-export async function createGrade({ name, level, is_active }) {
-  return apiRequest("POST", "/teacher-admin/grades", { name, level, is_active });
-}
+// There is deliberately no createGrade. MathSmart teaches one grade level,
+// seeded with the database, and the API refuses a second one.
 
 export async function updateGrade(gradeId, patch) {
   return apiRequest("PATCH", `/teacher-admin/grades/${gradeId}`, patch);

@@ -1089,3 +1089,226 @@ def test_a_diagnostic_reset_needs_a_live_session():
     )
 
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Grade 6 is the product's scope, and the API is where that is enforced
+# ---------------------------------------------------------------------------
+
+#: The read of one grade, which is the specific statement over grade_levels.
+GRADE_READ = "where grade_levels.grade_id = $1"
+
+MVP_GRADE_ROW = {"grade_id": GRADE, "name": "Grade 6", "level": 6, "is_active": True}
+LEGACY_GRADE = UUID("3f0f0000-0000-4000-8000-000000000003")
+LEGACY_GRADE_ROW = {"grade_id": LEGACY_GRADE, "name": "Grade 3", "level": 3, "is_active": True}
+SECTION_ROW = {
+    "section_id": SECTION,
+    "grade_id": GRADE,
+    "adviser_id": None,
+    "name": "Rizal",
+    "is_active": True,
+    "created_at": None,
+}
+
+
+def grade_connection(grade=None, **overrides):
+    """An admin connection whose single-grade read answers with `grade`."""
+    return admin_connection(**{GRADE_READ: grade or MVP_GRADE_ROW, **overrides})
+
+
+def test_a_teacher_admin_cannot_add_another_grade_level():
+    """The grade level is the product's scope, not a teacher's choice."""
+    connection = grade_connection()
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/grades",
+        json={"name": "Grade 3", "level": 3, "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert not any("insert into app.grade_levels" in query for query in connection.queries())
+
+
+def test_even_a_second_grade_six_record_is_refused():
+    """The refusal is on creating a grade at all, not on the level requested."""
+    connection = grade_connection()
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/grades",
+        json={"name": "Grade 6", "level": 6, "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not any("insert into app.grade_levels" in query for query in connection.queries())
+
+
+def test_a_grade_cannot_be_moved_off_the_supported_level():
+    connection = grade_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/grades/{GRADE}",
+        json={"level": 3},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert not any("update app.grade_levels" in query for query in connection.queries())
+
+
+def test_a_grade_name_cannot_contradict_its_level():
+    """The defect this guards: a row reading Grade 3 while stored as level 6."""
+    connection = grade_connection(**{"returning": MVP_GRADE_ROW})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/grades/{GRADE}",
+        json={"name": "Grade 3"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert not any("update app.grade_levels" in query for query in connection.queries())
+
+
+def test_a_grade_can_still_be_renamed_within_its_own_level():
+    connection = grade_connection(**{"returning": MVP_GRADE_ROW})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/grades/{GRADE}",
+        json={"name": "Grade 6 Mathematics"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert any("update app.grade_levels" in query for query in connection.queries())
+
+
+def test_a_legacy_grade_can_be_brought_back_into_scope():
+    """Setting a legacy record to the MVP level is the one level change allowed."""
+    connection = grade_connection(LEGACY_GRADE_ROW, **{"returning": MVP_GRADE_ROW})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/grades/{LEGACY_GRADE}",
+        json={"name": "Grade 6", "level": 6},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+
+
+def test_the_supported_grade_cannot_be_deactivated():
+    """Retiring Grade 6 would empty the curriculum, not tidy the directory."""
+    connection = grade_connection()
+    client = build_client(connection)
+
+    response = client.delete(f"/api/v1/teacher-admin/grades/{GRADE}", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert not any("set is_active = false" in query for query in connection.queries())
+
+
+def test_a_grade_outside_the_scope_can_be_retired():
+    """The cleanup path for a record that should never have existed."""
+    connection = grade_connection(LEGACY_GRADE_ROW, **{"returning": LEGACY_GRADE_ROW})
+    client = build_client(connection)
+
+    response = client.delete(
+        f"/api/v1/teacher-admin/grades/{LEGACY_GRADE}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 204
+
+
+def test_a_section_cannot_be_created_under_an_unsupported_grade():
+    connection = grade_connection(LEGACY_GRADE_ROW)
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={"grade_id": str(LEGACY_GRADE), "name": "Rizal", "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert not any("insert into app.sections" in query for query in connection.queries())
+
+
+def test_a_section_under_the_supported_grade_is_created():
+    connection = grade_connection(**{"returning": SECTION_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={"grade_id": str(GRADE), "name": "Rizal", "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["name"] == "Rizal"
+
+
+def test_a_section_cannot_be_moved_to_an_unsupported_grade():
+    connection = grade_connection(LEGACY_GRADE_ROW)
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/sections/{SECTION}",
+        json={"grade_id": str(LEGACY_GRADE)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert not any("update app.sections" in query for query in connection.queries())
+
+
+def test_a_section_change_that_leaves_its_grade_alone_needs_no_grade_read():
+    """Renaming a section is not a scope decision, so it does not become one."""
+    connection = grade_connection(**{"returning": SECTION_ROW})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/sections/{SECTION}",
+        json={"name": "Bonifacio"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert not any(GRADE_READ in query for query in connection.queries())
+
+
+def test_a_grade_scope_refusal_still_needs_a_live_session():
+    """The scope rule is not a way around the session requirement."""
+    client = build_client(grade_connection(), live_session=False)
+
+    response = client.post(
+        "/api/v1/teacher-admin/grades",
+        json={"name": "Grade 3", "level": 3, "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 401
+
+
+def test_a_learner_cannot_reach_the_grade_directory():
+    client = build_client(grade_connection())
+
+    response = client.post(
+        "/api/v1/teacher-admin/grades",
+        json={"name": "Grade 6", "level": 6, "is_active": True},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert response.status_code == 403

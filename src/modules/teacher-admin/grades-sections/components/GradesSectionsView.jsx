@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { GraduationCap, Pencil, Plus, Power, PowerOff } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GraduationCap, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 import {
-  createGrade,
   createSection,
   deleteGrade,
   deleteSection,
@@ -16,89 +15,21 @@ import {
   updateGrade,
   updateSection,
 } from "../services/api";
+import { MVP_GRADE_NAME, gradeNameFor, partitionDirectory } from "../utils/grade-scope";
+import { DirectoryRow, EmptyState } from "./DirectoryRow";
 import { GradeFormDialog } from "./GradeFormDialog";
+import { OutOfScopePanel } from "./OutOfScopePanel";
 import { SectionFormDialog } from "./SectionFormDialog";
 
 /** How long a completed-action message stays before it clears itself. */
 const NOTICE_TIMEOUT_MS = 6000;
 
-function StatusPill({ active }) {
-  return (
-    <span className="shrink-0 rounded-full border border-border bg-background/70 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-      {active ? "Active" : "Inactive"}
-    </span>
-  );
-}
-
-function EmptyState({ message }) {
-  return (
-    <p className="rounded-lg border border-dashed border-border bg-background/50 px-4 py-6 text-center text-sm text-muted-foreground">
-      {message}
-    </p>
-  );
-}
-
-/**
- * A single bordered row: the name and its status on the left, the two actions
- * on the right. Both actions carry their own word, because a teacher taking a
- * live section out of the directory should not have to interpret an icon.
- *
- * The row stacks until its own panel is wide enough to hold a name beside the
- * wording — a container query, not a viewport one, because the panel is half
- * the width of the page from the `md` breakpoint upward. On a panel narrow
- * enough to be a phone the stacked buttons share the full width, which makes
- * them easier to hit; wider than that they take their natural size.
- */
-function DirectoryRow({ label, meta, active, onEdit, onToggle, working }) {
-  const toggleText = working
-    ? active
-      ? "Deactivating…"
-      : "Activating…"
-    : active
-      ? "Deactivate"
-      : "Activate";
-  const ToggleIcon = active ? PowerOff : Power;
-
-  return (
-    <li className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-2.5 @md:flex-row @md:items-center @md:justify-between @md:gap-3">
-      <div className="flex min-w-0 flex-1 items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">{label}</p>
-          {meta ? <p className="truncate text-[11px] text-muted-foreground">{meta}</p> : null}
-        </div>
-        <StatusPill active={active} />
-      </div>
-
-      <div className="flex w-full shrink-0 items-center gap-2 @sm:w-auto">
-        <Button
-          size="sm"
-          variant="outline"
-          className="flex-1 @sm:flex-none"
-          onClick={onEdit}
-          aria-label={`Edit ${label}`}
-        >
-          <Pencil aria-hidden="true" className="size-3.5" />
-          Edit
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="flex-1 @sm:flex-none"
-          onClick={onToggle}
-          disabled={working}
-          aria-busy={working || undefined}
-          aria-label={`${toggleText} ${label}`}
-        >
-          <ToggleIcon aria-hidden="true" className="size-3.5" />
-          {toggleText}
-        </Button>
-      </div>
-    </li>
-  );
-}
-
 /**
  * The Grades & Sections workspace.
+ *
+ * MathSmart teaches one grade, so this manages the Grade 6 record and the
+ * sections under it. There is no way to add a second grade level here, because
+ * there is no second curriculum behind it — the API refuses one too.
  *
  * The initial lists arrive from the server component (so the page is useful on
  * first paint) and every mutation refreshes them through the API. A refresh
@@ -110,8 +41,11 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
   const [sections, setSections] = useState(initialSections);
   const [pageError, setPageError] = useState(null);
 
-  const [gradeDialog, setGradeDialog] = useState({ open: false, record: null });
-  const [sectionDialog, setSectionDialog] = useState({ open: false, record: null });
+  const [gradeDialogOpen, setGradeDialogOpen] = useState(false);
+  const [sectionDialog, setSectionDialog] = useState({
+    open: false,
+    record: null,
+  });
 
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -126,6 +60,8 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
   const noticeTimer = useRef(null);
 
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  const scope = useMemo(() => partitionDirectory({ grades, sections }), [grades, sections]);
 
   /** Shows a message that clears itself, so it never becomes stale furniture. */
   function announce(message) {
@@ -167,12 +103,13 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
   }
 
   async function handleGradeSubmit(payload) {
+    if (!scope.grade) return;
+
     setSaving(true);
     setFormError(null);
     setPageError(null);
 
-    const record = gradeDialog.record;
-    const result = record ? await updateGrade(record.grade_id, payload) : await createGrade(payload);
+    const result = await updateGrade(scope.grade.grade_id, payload);
 
     if (!result.ok) {
       setFormError(result.error ?? "Could not save this grade.");
@@ -180,12 +117,12 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
       return;
     }
 
-    announceBusy("Updating grade levels…");
+    announceBusy("Updating the grade level…");
     const refreshed = await refreshGrades();
     setSaving(false);
-    setGradeDialog({ open: false, record: null });
+    setGradeDialogOpen(false);
     if (refreshed) {
-      announce(record ? `${payload.name} saved.` : `${payload.name} added.`);
+      announce(`${payload.name} saved.`);
     }
   }
 
@@ -218,7 +155,7 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
     const deactivating = grade.is_active !== false;
     setWorkingGradeId(grade.grade_id);
     setPageError(null);
-    announceBusy(`${deactivating ? "Deactivating" : "Activating"} ${grade.name}…`);
+    announceBusy(`${deactivating ? "Retiring" : "Restoring"} ${grade.name}…`);
 
     const result = deactivating
       ? await deleteGrade(grade.grade_id)
@@ -262,6 +199,8 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
     }
   }
 
+  const gradeName = scope.grade?.name ?? MVP_GRADE_NAME;
+
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-3">
@@ -274,7 +213,8 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
         </h1>
         <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-          Maintain the grade levels and class sections that organize the school directory.
+          MathSmart teaches the DepEd {MVP_GRADE_NAME} mathematics curriculum, so {MVP_GRADE_NAME}{" "}
+          is the one grade level. Organise its class sections here.
         </p>
       </header>
 
@@ -304,115 +244,125 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
       </p>
 
       <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
-        {/* Grade levels */}
-        <Card>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-base font-semibold text-foreground">
-                Grade Levels
-              </h2>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setFormError(null);
-                  setGradeDialog({ open: true, record: null });
-                }}
-              >
-                <Plus aria-hidden="true" />
-                Add grade
-              </Button>
-            </div>
+        {/* The one grade level */}
+        <section aria-labelledby="grade-level-heading">
+          <Card>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2
+                  id="grade-level-heading"
+                  className="font-display text-base font-semibold text-foreground"
+                >
+                  Grade Level
+                </h2>
+                <span className="rounded-full border border-border bg-background/70 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  Fixed by the curriculum
+                </span>
+              </div>
 
-            {grades.length === 0 ? (
-              <EmptyState message="No grade levels yet. Add the first one to begin organizing sections." />
-            ) : (
-              <ul
-                aria-busy={refreshingGrades || undefined}
-                className={`@container space-y-2 transition-opacity ${
-                  refreshingGrades ? "opacity-60" : ""
-                }`}
-              >
-                {grades.map((grade) => (
+              {scope.grade ? (
+                <ul className="@container space-y-2">
                   <DirectoryRow
-                    key={grade.grade_id}
-                    label={grade.name}
-                    meta={`Level ${grade.level}`}
-                    active={grade.is_active !== false}
+                    label={scope.grade.name}
+                    meta={`Level ${scope.grade.level}`}
+                    active={scope.grade.is_active !== false}
                     onEdit={() => {
                       setFormError(null);
-                      setGradeDialog({ open: true, record: grade });
+                      setGradeDialogOpen(true);
                     }}
-                    onToggle={() => handleToggleGrade(grade)}
-                    working={workingGradeId === grade.grade_id}
                   />
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+                </ul>
+              ) : (
+                <EmptyState
+                  message={`The ${MVP_GRADE_NAME} record is missing from the directory. Restore it from the database seed before adding sections.`}
+                />
+              )}
+
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                There is no second grade level to add. Every competency, module and assessment in
+                MathSmart belongs to {MVP_GRADE_NAME}.
+              </p>
+            </CardContent>
+          </Card>
+        </section>
 
         {/* Class sections */}
-        <Card>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-base font-semibold text-foreground">
-                Class Sections
-              </h2>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setFormError(null);
-                  setSectionDialog({ open: true, record: null });
-                }}
-              >
-                <Plus aria-hidden="true" />
-                Add section
-              </Button>
-            </div>
+        <section aria-labelledby="class-sections-heading">
+          <Card>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2
+                  id="class-sections-heading"
+                  className="font-display text-base font-semibold text-foreground"
+                >
+                  Class Sections
+                </h2>
+                <Button
+                  size="sm"
+                  disabled={!scope.grade}
+                  onClick={() => {
+                    setFormError(null);
+                    setSectionDialog({ open: true, record: null });
+                  }}
+                >
+                  <Plus aria-hidden="true" />
+                  Add section
+                </Button>
+              </div>
 
-            {sections.length === 0 ? (
-              <EmptyState message="No sections yet. Add a section to a grade level." />
-            ) : (
-              <ul
-                aria-busy={refreshingSections || undefined}
-                className={`@container space-y-2 transition-opacity ${
-                  refreshingSections ? "opacity-60" : ""
-                }`}
-              >
-                {sections.map((section) => {
-                  const gradeName =
-                    grades.find((grade) => grade.grade_id === section.grade_id)?.name ??
-                    section.grade_id;
-                  const adviserName = section.adviser_id
-                    ? (advisers[section.adviser_id] ?? "Assigned")
-                    : null;
-                  return (
-                    <DirectoryRow
-                      key={section.section_id}
-                      label={`${section.name} (${gradeName})`}
-                      meta={adviserName ? `Adviser: ${adviserName}` : "No adviser"}
-                      active={section.is_active !== false}
-                      onEdit={() => {
-                        setFormError(null);
-                        setSectionDialog({ open: true, record: section });
-                      }}
-                      onToggle={() => handleToggleSection(section)}
-                      working={workingSectionId === section.section_id}
-                    />
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+              {scope.sections.length === 0 ? (
+                <EmptyState
+                  message={`No ${gradeName} sections yet. Add the first one to start assigning learners.`}
+                />
+              ) : (
+                <ul
+                  aria-busy={refreshingSections || undefined}
+                  className={`@container space-y-2 transition-opacity ${
+                    refreshingSections ? "opacity-60" : ""
+                  }`}
+                >
+                  {scope.sections.map((section) => {
+                    const adviserName = section.adviser_id
+                      ? (advisers[section.adviser_id] ?? "Assigned")
+                      : null;
+                    return (
+                      <DirectoryRow
+                        key={section.section_id}
+                        label={`${section.name} (${gradeName})`}
+                        meta={adviserName ? `Adviser: ${adviserName}` : "No adviser"}
+                        active={section.is_active !== false}
+                        onEdit={() => {
+                          setFormError(null);
+                          setSectionDialog({ open: true, record: section });
+                        }}
+                        onToggle={() => handleToggleSection(section)}
+                        working={workingSectionId === section.section_id}
+                      />
+                    );
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </section>
       </div>
 
+      <OutOfScopePanel
+        grades={scope.outOfScopeGrades}
+        sections={scope.outOfScopeSections}
+        allGrades={grades}
+        gradeNameFor={gradeNameFor}
+        onRetireGrade={handleToggleGrade}
+        onRetireSection={handleToggleSection}
+        workingGradeId={workingGradeId}
+        workingSectionId={workingSectionId}
+        busy={refreshingGrades}
+      />
+
       <GradeFormDialog
-        grade={gradeDialog.record}
-        open={gradeDialog.open}
-        onOpenChange={(open) => {
-          if (!open) setGradeDialog((current) => ({ ...current, open: false }));
-        }}
+        grade={scope.grade}
+        open={gradeDialogOpen}
+        onOpenChange={setGradeDialogOpen}
         onSubmit={handleGradeSubmit}
         busy={saving}
         error={formError}
@@ -420,7 +370,7 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
 
       <SectionFormDialog
         section={sectionDialog.record}
-        grades={grades}
+        grade={scope.grade}
         advisers={advisers}
         open={sectionDialog.open}
         onOpenChange={(open) => {

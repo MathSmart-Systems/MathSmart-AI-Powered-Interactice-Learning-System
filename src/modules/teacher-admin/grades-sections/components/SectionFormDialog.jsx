@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -13,9 +14,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
+import { MVP_GRADE_NAME } from "../utils/grade-scope";
+
 function FieldLabel({ htmlFor, children }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1 block text-xs font-bold uppercase tracking-wider text-foreground">
+    <label
+      htmlFor={htmlFor}
+      className="mb-1 block text-xs font-bold tracking-wider text-foreground uppercase"
+    >
       {children}
     </label>
   );
@@ -24,62 +30,46 @@ function FieldLabel({ htmlFor, children }) {
 /**
  * The form body. It is keyed by the section it edits, so React remounts it each
  * time the dialog opens for a different section and state starts fresh.
+ *
+ * The grade is not a field. Every section in MathSmart belongs to the one
+ * grade the product teaches, so the form states which grade that is rather
+ * than offering a choice that the API would refuse.
  */
-function SectionFormFields({
-  record,
-  grades,
-  advisers,
-  onCancel,
-  onSubmit,
-  busy,
-  error,
-}) {
+function SectionFormFields({ record, grade, advisers, onCancel, onSubmit, busy, error }) {
   const editing = Boolean(record);
   const [name, setName] = useState(record?.name ?? "");
-  const [gradeId, setGradeId] = useState(record?.grade_id ?? grades[0]?.grade_id ?? "");
   const [adviserId, setAdviserId] = useState(record?.adviser_id ?? "");
   const [isActive, setIsActive] = useState(record?.is_active !== false);
 
+  const adviserOptions = Object.entries(advisers ?? {});
+  // An adviser who has since left the directory is not a choice any more. The
+  // select shows the current value so it is not silently dropped on save.
+  const adviserMissing = Boolean(adviserId) && !adviserOptions.some(([id]) => id === adviserId);
+
   function handleSubmit(event) {
     event.preventDefault();
-    
-    // Validate adviser_id if one was selected
-    if (adviserId && adviserId.trim()) {
-      const adviserExists = adviserOptions.some(([id]) => id === adviserId);
-      if (!adviserExists) {
-        // This shouldn't happen normally, but protects against stale data
-        alert("The selected adviser is no longer available. Please choose another or leave unassigned.");
-        return;
-      }
-    }
-    
-    const payload = {
+    onSubmit({
       name: name.trim(),
-      grade_id: gradeId,
+      grade_id: grade.grade_id,
+      adviser_id: adviserId,
       is_active: isActive,
-    };
-    if (adviserId && adviserId.trim()) {
-      payload.adviser_id = adviserId;
-    }
-    onSubmit(payload);
+    });
   }
 
-  const adviserOptions = Object.entries(advisers);
-
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <DialogHeader>
         <DialogTitle className="font-display text-lg font-semibold">
           {editing ? "Edit Section" : "Add Section"}
         </DialogTitle>
         <DialogDescription>
           {editing
-            ? "Update the name, grade, or adviser of this section."
-            : "Create a new section inside a grade level."}
+            ? `Update the name, adviser, or availability of this ${grade.name} section.`
+            : `Create a new class section inside ${grade.name}.`}
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex flex-col gap-4 py-4">
+      <DialogBody className="flex flex-col gap-4">
         <div>
           <FieldLabel htmlFor="section-name">Section Name</FieldLabel>
           <Input
@@ -95,19 +85,12 @@ function SectionFormFields({
 
         <div>
           <FieldLabel htmlFor="section-grade">Grade Level</FieldLabel>
-          <select
+          <p
             id="section-grade"
-            value={gradeId}
-            onChange={(event) => setGradeId(event.target.value)}
-            required
-            className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
           >
-            {grades.map((grade) => (
-              <option key={grade.grade_id} value={grade.grade_id}>
-                {grade.name}
-              </option>
-            ))}
-          </select>
+            {grade.name} — every section belongs to it
+          </p>
         </div>
 
         <div>
@@ -119,17 +102,25 @@ function SectionFormFields({
             className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <option value="">No adviser assigned</option>
-            {adviserOptions.map(([id, name]) => (
+            {adviserMissing ? (
+              <option value={adviserId}>The assigned adviser is no longer available</option>
+            ) : null}
+            {adviserOptions.map(([id, adviserName]) => (
               <option key={id} value={id}>
-                {name}
+                {adviserName}
               </option>
             ))}
           </select>
-          {adviserOptions.length === 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              No active teacher/admin accounts available. You can assign an adviser later.
+          {adviserMissing ? (
+            <p className="mt-1 text-xs text-destructive">
+              That adviser has left the directory. Choose another, or leave the section unassigned.
             </p>
-          )}
+          ) : null}
+          {adviserOptions.length === 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              No active Teacher/Administrator accounts available. You can assign an adviser later.
+            </p>
+          ) : null}
         </div>
 
         <label className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -141,13 +132,16 @@ function SectionFormFields({
           />
           Active section
         </label>
-      </div>
-
-      {error ? (
-        <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </p>
+        ) : null}
+      </DialogBody>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
@@ -162,15 +156,16 @@ function SectionFormFields({
 }
 
 /**
- * Create or edit a class section.
+ * Create or edit a class section under the one grade MathSmart teaches.
  *
  * `section` is the record being edited, or `null` when the dialog creates one.
- * `grades` and `advisers` supply the dropdown options; advisers maps teacher
- * user ids to display names from the Teacher/Administrator directory.
+ * `grade` is the Grade 6 record every section belongs to; without it there is
+ * nothing to create a section inside, and the dialog says so instead of
+ * offering a form that cannot be saved.
  */
 export function SectionFormDialog({
   section,
-  grades,
+  grade,
   advisers,
   open,
   onOpenChange,
@@ -178,22 +173,33 @@ export function SectionFormDialog({
   busy,
   error,
 }) {
-  // Validate that grades exist before allowing section creation
-  const hasGrades = grades && grades.length > 0;
-  const noGradesError = !hasGrades && open ? "Please create at least one grade level before adding sections." : null;
-  
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:rounded-xl">
-        {noGradesError ? (
+        {grade ? (
+          <SectionFormFields
+            key={section?.section_id ?? `new-${open}`}
+            record={section}
+            grade={grade}
+            advisers={advisers}
+            onCancel={() => onOpenChange(false)}
+            onSubmit={onSubmit}
+            busy={busy}
+            error={error}
+          />
+        ) : (
           <div className="py-6">
             <DialogHeader>
               <DialogTitle className="font-display text-lg font-semibold">
                 {section ? "Edit Section" : "Add Section"}
               </DialogTitle>
             </DialogHeader>
-            <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {noGradesError}
+            <p
+              role="alert"
+              className="mt-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              The {MVP_GRADE_NAME} record is missing from the directory, so there is no grade to put
+              a section in. Restore it from the database seed first.
             </p>
             <DialogFooter className="mt-4">
               <Button type="button" onClick={() => onOpenChange(false)}>
@@ -201,17 +207,6 @@ export function SectionFormDialog({
               </Button>
             </DialogFooter>
           </div>
-        ) : (
-          <SectionFormFields
-            key={section?.section_id ?? `new-${open}`}
-            record={section}
-            grades={grades}
-            advisers={advisers}
-            onCancel={() => onOpenChange(false)}
-            onSubmit={onSubmit}
-            busy={busy}
-            error={error}
-          />
         )}
       </DialogContent>
     </Dialog>

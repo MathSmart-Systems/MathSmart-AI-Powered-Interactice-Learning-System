@@ -21,8 +21,8 @@ function RowSkeleton() {
   );
 }
 
-/** One placeholder panel, matching a Grade Levels or Class Sections card. */
-function PanelSkeleton() {
+/** One placeholder panel, matching the Grade Level or Class Sections card. */
+function PanelSkeleton({ rows }) {
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
@@ -31,9 +31,9 @@ function PanelSkeleton() {
           <Block className="h-8 w-28" />
         </div>
         <ul className="@container space-y-2">
-          <RowSkeleton />
-          <RowSkeleton />
-          <RowSkeleton />
+          {Array.from({ length: rows }, (_, index) => (
+            <RowSkeleton key={index} />
+          ))}
         </ul>
       </CardContent>
     </Card>
@@ -63,8 +63,9 @@ export function GradesSectionsSkeleton() {
       </header>
 
       <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
-        <PanelSkeleton />
-        <PanelSkeleton />
+        {/* One grade level, and however many sections belong to it. */}
+        <PanelSkeleton rows={1} />
+        <PanelSkeleton rows={3} />
       </div>
     </div>
   );

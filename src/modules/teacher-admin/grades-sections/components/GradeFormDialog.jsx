@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -13,11 +14,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-const GRADE_LEVELS = Array.from({ length: 12 }, (_, index) => String(index + 1));
+import { MVP_GRADE_LEVEL, nameContradictsLevel } from "../utils/grade-scope";
 
 function FieldLabel({ htmlFor, children }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1 block text-xs font-bold uppercase tracking-wider text-foreground">
+    <label
+      htmlFor={htmlFor}
+      className="mb-1 block text-xs font-bold tracking-wider text-foreground uppercase"
+    >
       {children}
     </label>
   );
@@ -25,65 +29,76 @@ function FieldLabel({ htmlFor, children }) {
 
 /**
  * The form body. It is keyed by the record it edits, so React remounts it each
- * time the dialog opens for a different grade and state starts fresh.
+ * time the dialog opens and state starts fresh.
+ *
+ * The level is not a field. MathSmart teaches one grade, so the only thing
+ * there is to change about the grade record is what it is called — and even
+ * that cannot name a different grade, which is the contradiction this guards.
  */
 function GradeFormFields({ record, onCancel, onSubmit, busy, error }) {
-  const editing = Boolean(record);
   const [name, setName] = useState(record?.name ?? "");
-  const [level, setLevel] = useState(String(record?.level ?? 6));
   const [isActive, setIsActive] = useState(record?.is_active !== false);
+  const [nameProblem, setNameProblem] = useState(null);
+
+  const trimmed = name.trim();
+  const contradicts = nameContradictsLevel(trimmed, MVP_GRADE_LEVEL);
 
   function handleSubmit(event) {
     event.preventDefault();
-    onSubmit({
-      name: name.trim(),
-      level: Number(level),
-      is_active: isActive,
-    });
+
+    if (contradicts) {
+      setNameProblem(
+        `This is the Grade ${MVP_GRADE_LEVEL} record, so its name cannot name a different grade.`,
+      );
+      return;
+    }
+
+    setNameProblem(null);
+    onSubmit({ name: trimmed, level: MVP_GRADE_LEVEL, is_active: isActive });
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <DialogHeader>
-        <DialogTitle className="font-display text-lg font-semibold">
-          {editing ? "Edit Grade Level" : "Add Grade Level"}
-        </DialogTitle>
+        <DialogTitle className="font-display text-lg font-semibold">Edit Grade Level</DialogTitle>
         <DialogDescription>
-          {editing
-            ? "Update the name, level, or availability of this grade."
-            : "Add a new DepEd grade level to the school directory."}
+          MathSmart teaches the DepEd Grade {MVP_GRADE_LEVEL} curriculum, so the level is fixed. You
+          can change what this grade is called.
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex flex-col gap-4 py-4">
+      <DialogBody className="flex flex-col gap-4">
         <div>
           <FieldLabel htmlFor="grade-name">Grade Name</FieldLabel>
           <Input
             id="grade-name"
             value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. Grade 6"
+            onChange={(event) => {
+              setName(event.target.value);
+              setNameProblem(null);
+            }}
+            placeholder={`e.g. Grade ${MVP_GRADE_LEVEL}`}
             required
             minLength={2}
             maxLength={60}
+            aria-invalid={Boolean(nameProblem) || undefined}
+            aria-describedby={nameProblem ? "grade-name-problem" : undefined}
           />
+          {nameProblem ? (
+            <p id="grade-name-problem" role="alert" className="mt-1 text-xs text-destructive">
+              {nameProblem}
+            </p>
+          ) : null}
         </div>
 
         <div>
           <FieldLabel htmlFor="grade-level">Level</FieldLabel>
-          <select
+          <p
             id="grade-level"
-            value={level}
-            onChange={(event) => setLevel(event.target.value)}
-            required
-            className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
           >
-            {GRADE_LEVELS.map((levelNumber) => (
-              <option key={levelNumber} value={levelNumber}>
-                {levelNumber}
-              </option>
-            ))}
-          </select>
+            {MVP_GRADE_LEVEL} — the only level MathSmart supports
+          </p>
         </div>
 
         <label className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -95,20 +110,23 @@ function GradeFormFields({ record, onCancel, onSubmit, busy, error }) {
           />
           Active grade level
         </label>
-      </div>
-
-      {error ? (
-        <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </p>
+        ) : null}
+      </DialogBody>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
         <Button type="submit" disabled={busy}>
-          {busy ? "Saving…" : editing ? "Save Grade" : "Add Grade"}
+          {busy ? "Saving…" : "Save Grade"}
         </Button>
       </DialogFooter>
     </form>
@@ -116,17 +134,17 @@ function GradeFormFields({ record, onCancel, onSubmit, busy, error }) {
 }
 
 /**
- * Create or edit a grade level.
+ * Edit the one grade level.
  *
- * `grade` is the record being edited, or `null` when the dialog creates one.
- * Archiving is done from the row, not from the dialog, so this stays focused.
+ * There is no create mode: MathSmart has a single grade, seeded with the
+ * database, and the API refuses a second one.
  */
 export function GradeFormDialog({ grade, open, onOpenChange, onSubmit, busy, error }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:rounded-xl">
         <GradeFormFields
-          key={grade?.grade_id ?? `new-${open}`}
+          key={grade?.grade_id ?? "grade"}
           record={grade}
           onCancel={() => onOpenChange(false)}
           onSubmit={onSubmit}

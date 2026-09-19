@@ -55,6 +55,13 @@ from modules.teacher_admin.admin_schemas import (
     UserChanges,
     UserRole,
 )
+from modules.teacher_admin.grade_scope import (
+    MVP_GRADE_LEVEL,
+    SCOPE_CODE,
+    SCOPE_REFUSAL,
+    is_mvp_level,
+    name_contradicts_level,
+)
 
 router = APIRouter(tags=["teacher-admin"])
 
@@ -572,6 +579,28 @@ async def publish_assessment(
 # ---------------------------------------------------------------------------
 
 
+async def _grade_or_404(connection: Any, grade_id: UUID) -> Any:
+    row = await repository.read(connection, GRADES, grade_id)
+    if row is None:
+        raise ApiError(404, "No grade was found")
+    return row
+
+
+async def _refuse_grade_outside_scope(connection: Any, grade_id: UUID | None) -> None:
+    """Refuse a section that would belong to anything but the MVP grade.
+
+    Read first, write second. A section is the thing learners are enrolled
+    into, so pointing one at an unsupported grade is the step that would carry
+    the scope breach into the roster.
+    """
+    if grade_id is None:
+        return
+
+    grade = await _grade_or_404(connection, grade_id)
+    if not is_mvp_level(grade["level"]):
+        raise ApiError(422, SCOPE_REFUSAL, code=SCOPE_CODE)
+
+
 @router.get("/teacher-admin/grades")
 async def list_grades(
     _actor: TeacherAdmin,
@@ -584,9 +613,13 @@ async def list_grades(
 
 @router.post("/teacher-admin/grades", status_code=201)
 async def create_grade(
-    _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: GradeDraft
+    _actor: TeacherAdmin, _session: SensitiveActor, _connection: ActorDb, _body: GradeDraft
 ) -> dict[str, Any]:
-    return await _create(connection, GRADES, body)
+    """Refused. The grade level is the product's scope, not a teacher's choice.
+
+    The route stays so a caller gets this sentence rather than a bare 405.
+    """
+    raise ApiError(422, SCOPE_REFUSAL, code=SCOPE_CODE)
 
 
 @router.patch("/teacher-admin/grades/{grade_id}")
@@ -597,6 +630,26 @@ async def update_grade(
     grade_id: UUID,
     body: GradeChanges,
 ) -> dict[str, Any]:
+    """Rename or reactivate a grade, within the one level MathSmart teaches.
+
+    A level may only ever be set to the MVP level, which leaves a legacy record
+    a way back into scope and no way further out of it. The name is checked
+    against the level the record will actually have, so a row cannot read
+    "Grade 3" while it is stored as Grade 6.
+    """
+    existing = await _grade_or_404(connection, grade_id)
+
+    if body.level is not None and not is_mvp_level(body.level):
+        raise ApiError(422, SCOPE_REFUSAL, code=SCOPE_CODE)
+
+    level = body.level if body.level is not None else existing["level"]
+    if name_contradicts_level(body.name, level):
+        raise ApiError(
+            422,
+            f"This grade is level {level}, so its name cannot name a different grade.",
+            code=SCOPE_CODE,
+        )
+
     return await _update(connection, GRADES, grade_id, body)
 
 
@@ -604,7 +657,21 @@ async def update_grade(
 async def deactivate_grade(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, grade_id: UUID
 ) -> Response:
-    """A grade has no publication status, so retiring it deactivates it."""
+    """A grade has no publication status, so retiring it deactivates it.
+
+    The MVP grade itself is not retirable: every competency, module, assessment
+    and section in the product hangs off it, and a teacher deactivating it
+    would empty the curriculum rather than tidy the directory.
+    """
+    grade = await _grade_or_404(connection, grade_id)
+    if is_mvp_level(grade["level"]):
+        raise ApiError(
+            422,
+            f"Grade {MVP_GRADE_LEVEL} is the curriculum MathSmart teaches, "
+            "so it cannot be deactivated.",
+            code=SCOPE_CODE,
+        )
+
     deactivated = await repository.deactivate(connection, GRADES, grade_id)
     if deactivated is None:
         raise ApiError(404, "No grade was found")
@@ -626,6 +693,8 @@ async def list_sections(
 async def create_section(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: SectionDraft
 ) -> dict[str, Any]:
+    """Create a section, which may only belong to the grade MathSmart teaches."""
+    await _refuse_grade_outside_scope(connection, body.grade_id)
     return await _create(connection, SECTIONS, body)
 
 
@@ -637,7 +706,12 @@ async def update_section(
     section_id: UUID,
     body: SectionChanges,
 ) -> dict[str, Any]:
-    """Update a section, including assigning its adviser."""
+    """Update a section, including assigning its adviser.
+
+    Moving a section to another grade is the one change that could carry it out
+    of scope, so the destination is checked before anything is written.
+    """
+    await _refuse_grade_outside_scope(connection, body.grade_id)
     return await _update(connection, SECTIONS, section_id, body)
 
 
