@@ -10,6 +10,10 @@ import {
 
 const describe = hasAccount(TEACHER_ADMIN_ACCOUNT) ? test.describe : test.describe.skip;
 
+const PLACEHOLDER_ROUTES = TEACHER_ADMIN_ROUTES.filter(
+  (route) => route !== "/teacher/interventions",
+);
+
 describe("teacher/administrator workspace", () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page, TEACHER_ADMIN_ACCOUNT);
@@ -27,11 +31,33 @@ describe("teacher/administrator workspace", () => {
   });
 
   test("every destination opens its own UI-in-progress page", async ({ page }) => {
-    for (const route of TEACHER_ADMIN_ROUTES) {
+    for (const route of PLACEHOLDER_ROUTES) {
       await page.goto(route);
       await expect(page).toHaveURL(new RegExp(`${route}$`));
       await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
     }
+  });
+
+  test("the interventions destination renders the live dashboard", async ({ page }) => {
+    await page.goto("/teacher/interventions");
+    await expect(page).toHaveURL(/\/teacher\/interventions$/);
+    await expect(page).not.toHaveText("UI in progress");
+    await expect(
+      page.getByRole("heading", { name: "Teacher Intervention Dashboard" }),
+    ).toBeVisible();
+  });
+
+  test("interventions stays usable on a narrow phone viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto("/teacher/interventions");
+
+    await expect(
+      page.getByRole("heading", { name: "Teacher Intervention Dashboard" }),
+    ).toBeVisible();
+    const overflows = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    );
+    expect(overflows).toBe(false);
   });
 
   test("navigation links move between destinations and mark the active one", async ({ page }) => {

@@ -13,7 +13,7 @@ function SummaryStat({ label, value, tone = "default" }) {
   const toneClass =
     tone === "problem"
       ? "text-destructive"
-      : tone === "good" ? "text-emerald-600" : "text-foreground";
+      : tone === "good" ? "text-emerald-700" : "text-foreground";
   return (
     <div className="grid gap-0.5">
       <span className="text-[11px] text-muted-foreground">{label}</span>

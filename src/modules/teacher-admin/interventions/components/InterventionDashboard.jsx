@@ -236,7 +236,7 @@ export function InterventionDashboard({
             disabled={bulkBusy || eligibleForStatus(selectedCases, "Resolved").length === 0}
             className={BULK_BUTTON_STYLE}
           >
-            <CheckCircle2 aria-hidden="true" className="size-3.5 text-emerald-600" />
+            <CheckCircle2 aria-hidden="true" className="size-3.5 text-emerald-700" />
             Mark Resolved
           </button>
           <button

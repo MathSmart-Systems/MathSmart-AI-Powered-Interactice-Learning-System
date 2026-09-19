@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 
 /**
@@ -19,39 +19,80 @@ import { ChevronRight, MoreHorizontal } from "lucide-react";
 export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
   const status = item?.status;
   const canMarkInProgress = status === "Needs Intervention";
   const canMarkResolved = status === "Needs Intervention" || status === "In Progress";
 
+  const menuItems = useCallback(
+    (root) =>
+      Array.from((root ?? menuRef.current)?.querySelectorAll('button[role="menuitem"]') ?? []),
+    []
+  );
+
+  const closeMenu = useCallback((refocus) => {
+    setOpen(false);
+    if (refocus) triggerRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     if (!open) return undefined;
+
+    const focusFirst = () => menuItems()[0]?.focus();
+    const frame = requestAnimationFrame(focusFirst);
+
     const handlePointerDown = (event) => {
       if (rootRef.current && !rootRef.current.contains(event.target)) {
-        setOpen(false);
+        closeMenu(false);
       }
     };
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu(true);
+      }
     };
+
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      cancelAnimationFrame(frame);
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open]);
+  }, [open, closeMenu, menuItems]);
+
+  const handleMenuKeyDown = (event) => {
+    const items = menuItems();
+    if (items.length === 0) return;
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const index = items.indexOf(document.activeElement);
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      items[(index + delta + items.length) % items.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      (event.key === "Home" ? items[0] : items[items.length - 1])?.focus();
+    } else if (event.key === "Tab") {
+      setOpen(false);
+    }
+  };
 
   const run = (action) => {
-    setOpen(false);
+    closeMenu(true);
     action();
   };
 
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? "case-row-menu" : undefined}
         aria-label={`Quick actions for ${item?.student?.full_name ?? "this learner"}`}
         onClick={() => setOpen((current) => !current)}
         disabled={disabled}
@@ -62,8 +103,11 @@ export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false })
 
       {open ? (
         <div
+          id="case-row-menu"
+          ref={menuRef}
           role="menu"
           aria-label="Quick actions"
+          onKeyDown={handleMenuKeyDown}
           className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-lg"
         >
           {canMarkInProgress ? (
