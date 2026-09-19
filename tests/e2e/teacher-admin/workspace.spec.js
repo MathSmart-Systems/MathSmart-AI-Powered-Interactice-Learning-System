@@ -10,9 +10,10 @@ import {
 
 const describe = hasAccount(TEACHER_ADMIN_ACCOUNT) ? test.describe : test.describe.skip;
 
-const PLACEHOLDER_ROUTES = TEACHER_ADMIN_ROUTES.filter(
-  (route) => route !== "/teacher/interventions",
-);
+/** Destinations that have grown their own workspace and are covered by its spec. */
+const LIVE_ROUTES = new Set(["/teacher/interventions", "/teacher/grades-sections"]);
+
+const PLACEHOLDER_ROUTES = TEACHER_ADMIN_ROUTES.filter((route) => !LIVE_ROUTES.has(route));
 
 describe("teacher/administrator workspace", () => {
   test.beforeEach(async ({ page }) => {
@@ -36,6 +37,13 @@ describe("teacher/administrator workspace", () => {
       await expect(page).toHaveURL(new RegExp(`${route}$`));
       await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
     }
+  });
+
+  test("the grades and sections destination renders the live directory", async ({ page }) => {
+    await page.goto("/teacher/grades-sections");
+    await expect(page).toHaveURL(/\/teacher\/grades-sections$/);
+    await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Grades and Sections" })).toBeVisible();
   });
 
   test("the interventions destination renders the live dashboard", async ({ page }) => {

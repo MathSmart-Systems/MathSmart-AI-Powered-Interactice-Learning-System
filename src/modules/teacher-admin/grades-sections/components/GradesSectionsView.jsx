@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { GraduationCap, Pencil, Plus, Power } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { GraduationCap, Pencil, Plus, Power, PowerOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +18,9 @@ import {
 } from "../services/api";
 import { GradeFormDialog } from "./GradeFormDialog";
 import { SectionFormDialog } from "./SectionFormDialog";
+
+/** How long a completed-action message stays before it clears itself. */
+const NOTICE_TIMEOUT_MS = 6000;
 
 function StatusPill({ active }) {
   return (
@@ -36,36 +39,56 @@ function EmptyState({ message }) {
 }
 
 /**
- * A single bordered row, matching the reference workspace panels: a bold name
- * on the left, status and a compact action set on the right.
+ * A single bordered row: the name and its status on the left, the two actions
+ * on the right. Both actions carry their own word, because a teacher taking a
+ * live section out of the directory should not have to interpret an icon.
+ *
+ * The row stacks below the `sm` breakpoint so the full action wording survives
+ * a phone, and the buttons share that width evenly instead of being clipped.
  */
-function DirectoryRow({ label, meta, active, onEdit, onToggle, working, editLabel, toggleLabel }) {
+function DirectoryRow({ label, meta, active, onEdit, onToggle, working }) {
+  const toggleText = working
+    ? active
+      ? "Deactivating…"
+      : "Activating…"
+    : active
+      ? "Deactivate"
+      : "Activate";
+  const ToggleIcon = active ? PowerOff : Power;
+
   return (
-    <li className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-foreground">{label}</p>
-        {meta ? <p className="truncate text-[11px] text-muted-foreground">{meta}</p> : null}
+    <li className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <div className="flex min-w-0 flex-1 items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-foreground">{label}</p>
+          {meta ? <p className="truncate text-[11px] text-muted-foreground">{meta}</p> : null}
+        </div>
+        <StatusPill active={active} />
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <StatusPill active={active} />
-        <div className="flex items-center gap-1">
-          <Button size="icon" variant="outline" className="size-7" onClick={onEdit}>
-            <Pencil aria-hidden="true" className="size-3.5" />
-            <span className="sr-only">{editLabel}</span>
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            onClick={onToggle}
-            disabled={working}
-            aria-label={working ? "Working…" : toggleLabel}
-          >
-            <Power aria-hidden="true" className="size-3.5" />
-            <span className="sr-only">{toggleLabel}</span>
-          </Button>
-        </div>
+      <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 sm:flex-none"
+          onClick={onEdit}
+          aria-label={`Edit ${label}`}
+        >
+          <Pencil aria-hidden="true" className="size-3.5" />
+          Edit
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="flex-1 sm:flex-none"
+          onClick={onToggle}
+          disabled={working}
+          aria-busy={working || undefined}
+          aria-label={`${toggleText} ${label}`}
+        >
+          <ToggleIcon aria-hidden="true" className="size-3.5" />
+          {toggleText}
+        </Button>
       </div>
     </li>
   );
@@ -75,7 +98,9 @@ function DirectoryRow({ label, meta, active, onEdit, onToggle, working, editLabe
  * The Grades & Sections workspace.
  *
  * The initial lists arrive from the server component (so the page is useful on
- * first paint) and every mutation refreshes them through the API.
+ * first paint) and every mutation refreshes them through the API. A refresh
+ * keeps the rows it already has on screen — a directory that blanks itself
+ * after every save is harder to follow than one that dims for a moment.
  */
 export function GradesSectionsView({ initialGrades, initialSections, advisers, initialError }) {
   const [grades, setGrades] = useState(initialGrades);
@@ -89,27 +114,53 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
   const [formError, setFormError] = useState(null);
   const [workingGradeId, setWorkingGradeId] = useState(null);
   const [workingSectionId, setWorkingSectionId] = useState(null);
+  const [refreshingGrades, setRefreshingGrades] = useState(false);
+  const [refreshingSections, setRefreshingSections] = useState(false);
 
-  function failAction(message) {
-    setPageError(message);
+  // One live region for the whole page: a busy line while a list is being
+  // re-read, then the outcome. Two regions would talk over each other.
+  const [notice, setNotice] = useState(null);
+  const noticeTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  /** Shows a message that clears itself, so it never becomes stale furniture. */
+  function announce(message) {
+    clearTimeout(noticeTimer.current);
+    setNotice(message);
+    noticeTimer.current = setTimeout(() => setNotice(null), NOTICE_TIMEOUT_MS);
+  }
+
+  /** Shows a message that stays until the work it describes is finished. */
+  function announceBusy(message) {
+    clearTimeout(noticeTimer.current);
+    setNotice(message);
   }
 
   async function refreshGrades() {
+    setRefreshingGrades(true);
     const result = await listGrades();
+    setRefreshingGrades(false);
+
     if (result.error) {
-      failAction(result.error);
-      return;
+      setPageError(result.error);
+      return false;
     }
     setGrades(result.data);
+    return true;
   }
 
   async function refreshSections() {
+    setRefreshingSections(true);
     const result = await listSections();
+    setRefreshingSections(false);
+
     if (result.error) {
-      failAction(result.error);
-      return;
+      setPageError(result.error);
+      return false;
     }
     setSections(result.data);
+    return true;
   }
 
   async function handleGradeSubmit(payload) {
@@ -126,9 +177,13 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
       return;
     }
 
-    await refreshGrades();
+    announceBusy("Updating grade levels…");
+    const refreshed = await refreshGrades();
     setSaving(false);
     setGradeDialog({ open: false, record: null });
+    if (refreshed) {
+      announce(record ? `${payload.name} saved.` : `${payload.name} added.`);
+    }
   }
 
   async function handleSectionSubmit(payload) {
@@ -147,41 +202,61 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
       return;
     }
 
-    await refreshSections();
+    announceBusy("Updating class sections…");
+    const refreshed = await refreshSections();
     setSaving(false);
     setSectionDialog({ open: false, record: null });
+    if (refreshed) {
+      announce(record ? `${payload.name} saved.` : `${payload.name} added.`);
+    }
   }
 
   async function handleToggleGrade(grade) {
+    const deactivating = grade.is_active !== false;
     setWorkingGradeId(grade.grade_id);
     setPageError(null);
+    announceBusy(`${deactivating ? "Deactivating" : "Activating"} ${grade.name}…`);
 
-    const result = grade.is_active
+    const result = deactivating
       ? await deleteGrade(grade.grade_id)
       : await updateGrade(grade.grade_id, { is_active: true });
 
     if (!result.ok) {
       setPageError(result.error ?? "Could not change this grade.");
-    } else {
-      await refreshGrades();
+      setNotice(null);
+      setWorkingGradeId(null);
+      return;
     }
+
+    const refreshed = await refreshGrades();
     setWorkingGradeId(null);
+    if (refreshed) {
+      announce(`${grade.name} ${deactivating ? "deactivated" : "activated"}.`);
+    }
   }
 
   async function handleToggleSection(section) {
+    const deactivating = section.is_active !== false;
     setWorkingSectionId(section.section_id);
     setPageError(null);
+    announceBusy(`${deactivating ? "Deactivating" : "Activating"} ${section.name}…`);
 
-    const result = section.is_active
+    const result = deactivating
       ? await deleteSection(section.section_id)
       : await updateSection(section.section_id, { is_active: true });
 
     if (!result.ok) {
       setPageError(result.error ?? "Could not change this section.");
-    } else {
-      await refreshSections();
+      setNotice(null);
+      setWorkingSectionId(null);
+      return;
     }
+
+    const refreshed = await refreshSections();
     setWorkingSectionId(null);
+    if (refreshed) {
+      announce(`${section.name} ${deactivating ? "deactivated" : "activated"}.`);
+    }
   }
 
   return (
@@ -191,7 +266,7 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
           <GraduationCap aria-hidden="true" className="size-3.5" />
           School directory
         </p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-balance text-foreground sm:text-3xl">
           Grades and Sections
         </h1>
         <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
@@ -203,7 +278,7 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
       {pageError ? (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm break-words text-destructive"
         >
           {pageError}
         </p>
@@ -215,11 +290,21 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
         </p>
       ) : null}
 
+      {/* Reserved height, so an arriving message never pushes the panels down. */}
+      <p
+        role="status"
+        aria-live="polite"
+        className="-mt-4 min-h-5 text-sm text-muted-foreground"
+        data-testid="directory-status"
+      >
+        {notice}
+      </p>
+
       <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
         {/* Grade levels */}
         <Card>
           <CardContent className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-base font-semibold text-foreground">
                 Grade Levels
               </h2>
@@ -238,7 +323,10 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
             {grades.length === 0 ? (
               <EmptyState message="No grade levels yet. Add the first one to begin organizing sections." />
             ) : (
-              <ul className="space-y-2">
+              <ul
+                aria-busy={refreshingGrades || undefined}
+                className={`space-y-2 transition-opacity ${refreshingGrades ? "opacity-60" : ""}`}
+              >
                 {grades.map((grade) => (
                   <DirectoryRow
                     key={grade.grade_id}
@@ -251,8 +339,6 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
                     }}
                     onToggle={() => handleToggleGrade(grade)}
                     working={workingGradeId === grade.grade_id}
-                    editLabel={`Edit ${grade.name}`}
-                    toggleLabel={grade.is_active !== false ? `Deactivate ${grade.name}` : `Activate ${grade.name}`}
                   />
                 ))}
               </ul>
@@ -263,7 +349,7 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
         {/* Class sections */}
         <Card>
           <CardContent className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-base font-semibold text-foreground">
                 Class Sections
               </h2>
@@ -282,13 +368,16 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
             {sections.length === 0 ? (
               <EmptyState message="No sections yet. Add a section to a grade level." />
             ) : (
-              <ul className="space-y-2">
+              <ul
+                aria-busy={refreshingSections || undefined}
+                className={`space-y-2 transition-opacity ${refreshingSections ? "opacity-60" : ""}`}
+              >
                 {sections.map((section) => {
                   const gradeName =
                     grades.find((grade) => grade.grade_id === section.grade_id)?.name ??
                     section.grade_id;
                   const adviserName = section.adviser_id
-                    ? advisers[section.adviser_id] ?? "Assigned"
+                    ? (advisers[section.adviser_id] ?? "Assigned")
                     : null;
                   return (
                     <DirectoryRow
@@ -302,8 +391,6 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
                       }}
                       onToggle={() => handleToggleSection(section)}
                       working={workingSectionId === section.section_id}
-                      editLabel={`Edit ${section.name}`}
-                      toggleLabel={section.is_active !== false ? `Deactivate ${section.name}` : `Activate ${section.name}`}
                     />
                   );
                 })}

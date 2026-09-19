@@ -1,18 +1,16 @@
-import { GradesSectionsView, readGradesSections } from "@/modules/teacher-admin/grades-sections";
+import { Suspense } from "react";
+
+import { GradesSections, GradesSectionsSkeleton } from "@/modules/teacher-admin/grades-sections";
 
 export const metadata = { title: "Grades and Sections | MathSmart" };
 
 export const dynamic = "force-dynamic";
 
-export default async function TeacherGradesSectionsPage() {
-  const { grades, sections, advisers, error } = await readGradesSections();
-
+/** Renders the school directory behind its route-level loading boundary. */
+export default function TeacherGradesSectionsPage() {
   return (
-    <GradesSectionsView
-      initialGrades={grades}
-      initialSections={sections}
-      advisers={advisers}
-      initialError={error}
-    />
+    <Suspense fallback={<GradesSectionsSkeleton />}>
+      <GradesSections />
+    </Suspense>
   );
 }

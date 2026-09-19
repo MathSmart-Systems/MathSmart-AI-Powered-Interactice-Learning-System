@@ -9,12 +9,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-const REQUEST_TIMEOUT_MS = 10_000;
+import {
+  buildAdviserDirectory,
+  directoryReadError,
+  normalizeBaseUrl,
+} from "./directory-transport.js";
 
-function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
-}
+const REQUEST_TIMEOUT_MS = 10_000;
 
 async function accessToken() {
   if (!isSupabaseConfigured()) return null;
@@ -56,7 +57,7 @@ async function readFromApi(path, token, base) {
  * @returns {Promise<{grades: Array, sections: Array, advisers: Object, error?: string}>}
  */
 export async function readGradesSections() {
-  const base = apiBaseUrl();
+  const base = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 
   if (!base) {
     return { grades: [], sections: [], advisers: {}, error: "unconfigured" };
@@ -70,33 +71,17 @@ export async function readGradesSections() {
   const [gradesRes, sectionsRes, usersRes] = await Promise.all([
     readFromApi("/teacher-admin/grades", token, base),
     readFromApi("/teacher-admin/sections", token, base),
-    readFromApi("/teacher-admin/users?role=teacher_admin&account_status=active&page_size=100", token, base),
+    readFromApi(
+      "/teacher-admin/users?role=teacher_admin&account_status=active&page_size=100",
+      token,
+      base,
+    ),
   ]);
-
-  const advisers = {};
-  if (usersRes.ok && Array.isArray(usersRes.data)) {
-    for (const user of usersRes.data) {
-      // Only include users who have all required fields and are valid teacher_admin accounts
-      if (
-        user &&
-        user.user_id &&
-        user.role === "teacher_admin" &&
-        user.account_status === "active" &&
-        user.full_name &&
-        typeof user.full_name === 'string' &&
-        user.full_name.trim()
-      ) {
-        advisers[String(user.user_id)] = user.full_name.trim();
-      }
-    }
-  }
 
   return {
     grades: gradesRes.ok ? gradesRes.data : [],
     sections: sectionsRes.ok ? sectionsRes.data : [],
-    advisers,
-    error: !gradesRes.ok && !sectionsRes.ok
-      ? "unavailable"
-      : undefined,
+    advisers: usersRes.ok ? buildAdviserDirectory(usersRes.data) : {},
+    error: directoryReadError(gradesRes.ok, sectionsRes.ok),
   };
 }
