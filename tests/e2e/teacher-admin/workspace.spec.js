@@ -41,7 +41,7 @@ describe("teacher/administrator workspace", () => {
   test("the interventions destination renders the live dashboard", async ({ page }) => {
     await page.goto("/teacher/interventions");
     await expect(page).toHaveURL(/\/teacher\/interventions$/);
-    await expect(page).not.toHaveText("UI in progress");
+    await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Teacher Intervention Dashboard" }),
     ).toBeVisible();
