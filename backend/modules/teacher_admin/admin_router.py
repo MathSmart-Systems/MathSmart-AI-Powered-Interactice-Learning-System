@@ -136,8 +136,10 @@ async def _read(connection: Any, resource: Resource, key: UUID) -> dict[str, Any
     return {"data": _row(row, resource)}
 
 
-async def _create(connection: Any, resource: Resource, model: Any) -> dict[str, Any]:
-    row = await repository.create(connection, resource, _values(model))
+async def _create(
+    connection: Any, resource: Resource, model: Any, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    row = await repository.create(connection, resource, {**_values(model), **(extra or {})})
     if row is None:
         raise ApiError(422, "The record could not be created", code="not_created")
     return {"data": _row(row, resource)}
@@ -586,19 +588,46 @@ async def _grade_or_404(connection: Any, grade_id: UUID) -> Any:
     return row
 
 
-async def _refuse_grade_outside_scope(connection: Any, grade_id: UUID | None) -> None:
-    """Refuse a section that would belong to anything but the MVP grade.
+async def _mvp_grade_id(connection: Any) -> UUID:
+    """The grade every section belongs to, resolved on the server.
 
-    Read first, write second. A section is the thing learners are enrolled
-    into, so pointing one at an unsupported grade is the step that would carry
-    the scope breach into the roster.
+    The client never names a grade. If the seeded record is missing this
+    refuses rather than inventing one: creating a second grade to hang a
+    section off would be the exact thing the scope rule exists to prevent.
     """
+    grade_id = await repository.mvp_grade(connection, MVP_GRADE_LEVEL)
     if grade_id is None:
+        raise ApiError(
+            503,
+            f"The Grade {MVP_GRADE_LEVEL} record is missing from this deployment, so a "
+            "section cannot be created. Restore it from the database seed.",
+            code="mvp_grade_missing",
+        )
+    return grade_id
+
+
+async def _refuse_unknown_adviser(connection: Any, adviser_id: UUID | None) -> None:
+    """Refuse a section whose adviser is not one who may advise it.
+
+    `sections.adviser_id` references `teacher_admin_profiles.teacher_admin_id`,
+    which is that profile's own key and not the account's `user_id`. Sending
+    the account id used to reach the database and come back as a foreign key
+    violation — a 500 with no CORS headers, which a browser can only report as
+    "Failed to fetch". Checking here turns that into something a teacher can
+    read and act on, and it also catches an adviser who has since been
+    deactivated.
+    """
+    if adviser_id is None:
         return
 
-    grade = await _grade_or_404(connection, grade_id)
-    if not is_mvp_level(grade["level"]):
-        raise ApiError(422, SCOPE_REFUSAL, code=SCOPE_CODE)
+    if await repository.adviser(connection, adviser_id) is None:
+        raise ApiError(
+            422,
+            "That adviser is not an active Teacher/Administrator. "
+            "Choose another, or leave the section unassigned.",
+            code="adviser_unknown",
+            fields={"adviser_id": ["Unknown or inactive adviser."]},
+        )
 
 
 @router.get("/teacher-admin/grades")
@@ -693,9 +722,15 @@ async def list_sections(
 async def create_section(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: SectionDraft
 ) -> dict[str, Any]:
-    """Create a section, which may only belong to the grade MathSmart teaches."""
-    await _refuse_grade_outside_scope(connection, body.grade_id)
-    return await _create(connection, SECTIONS, body)
+    """Create a section under the one grade MathSmart teaches.
+
+    The grade is the server's to decide. A client cannot name one — the schema
+    forbids the field — so there is no request a caller can craft that puts a
+    section anywhere else.
+    """
+    grade_id = await _mvp_grade_id(connection)
+    await _refuse_unknown_adviser(connection, body.adviser_id)
+    return await _create(connection, SECTIONS, body, {"grade_id": grade_id})
 
 
 @router.patch("/teacher-admin/sections/{section_id}")
@@ -706,12 +741,12 @@ async def update_section(
     section_id: UUID,
     body: SectionChanges,
 ) -> dict[str, Any]:
-    """Update a section, including assigning its adviser.
+    """Update a section's name, adviser or availability.
 
-    Moving a section to another grade is the one change that could carry it out
-    of scope, so the destination is checked before anything is written.
+    Its grade is not among them: there is one grade, the schema has no field
+    for it, and a request that tries to add one is refused.
     """
-    await _refuse_grade_outside_scope(connection, body.grade_id)
+    await _refuse_unknown_adviser(connection, body.adviser_id)
     return await _update(connection, SECTIONS, section_id, body)
 
 
@@ -731,8 +766,13 @@ async def deactivate_section(
 
 
 def _user(row: Any) -> dict[str, Any]:
+    # `teacher_admin_id` is what a section's adviser_id points at. It is absent
+    # for a learner, and stated explicitly rather than left to be inferred from
+    # the account id, which is a different value.
+    teacher_admin_id = row["teacher_admin_id"] if "teacher_admin_id" in row else None
     return {
         "user_id": str(row["user_id"]),
+        "teacher_admin_id": str(teacher_admin_id) if teacher_admin_id else None,
         "full_name": row["full_name"],
         "email": row["email"],
         "role": str(row["role"]),

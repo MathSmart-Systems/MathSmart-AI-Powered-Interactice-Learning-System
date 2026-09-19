@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import asyncpg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -120,6 +121,36 @@ def install_error_handlers(app: FastAPI) -> None:
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         return error_response(
             422, "The request contains invalid fields.", fields=_fields_from(exc)
+        )
+
+    @app.exception_handler(asyncpg.exceptions.IntegrityConstraintViolationError)
+    async def _integrity_violation(
+        request: Request, exc: asyncpg.exceptions.IntegrityConstraintViolationError
+    ) -> JSONResponse:
+        """A constraint the request broke, answered as a refusal not a crash.
+
+        Reaching the database with a value it cannot accept is the caller's
+        mistake, not the server falling over, and it has to come back as a 4xx
+        the browser will actually let the page read. An unhandled exception is
+        answered by Starlette's outermost error middleware, which sits above
+        the CORS middleware — so that reply carries no
+        `Access-Control-Allow-Origin`, and a browser can only report it as
+        "Failed to fetch". Handling it here keeps the reply inside CORS.
+
+        The exception text is logged, never rendered: it carries the table,
+        the column and the constraint name.
+        """
+        logger.warning(
+            "Constraint violation on %s %s: %s",
+            request.method,
+            request.url.path,
+            type(exc).__name__,
+        )
+        return error_response(
+            422,
+            "The request refers to a record that does not exist, or one that "
+            "another record already uses.",
+            code="constraint_violation",
         )
 
     @app.exception_handler(Exception)

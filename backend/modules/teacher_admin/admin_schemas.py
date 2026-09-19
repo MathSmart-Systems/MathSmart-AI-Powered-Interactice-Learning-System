@@ -268,18 +268,30 @@ class GradeChanges(BaseModel):
 
 
 class SectionDraft(BaseModel):
+    """A new class section.
+
+    There is deliberately no `grade_id`. MathSmart teaches one grade, so the
+    server resolves it; `extra="forbid"` then means a client that sends one is
+    refused rather than quietly obeyed, which is what stops a section being
+    created under a grade the product does not teach.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    grade_id: UUID
     name: str = Field(min_length=1, max_length=60)
     adviser_id: UUID | None = None
     is_active: bool = True
 
 
 class SectionChanges(BaseModel):
+    """What may be changed about a section.
+
+    No `grade_id` for the same reason: a section cannot be moved to another
+    grade, because there is no other grade to move it to.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    grade_id: UUID | None = None
     name: str | None = Field(default=None, min_length=1, max_length=60)
     adviser_id: UUID | None = None
     is_active: bool | None = None

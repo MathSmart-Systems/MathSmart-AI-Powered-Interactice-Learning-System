@@ -21,7 +21,7 @@ function RowSkeleton() {
   );
 }
 
-/** One placeholder panel, matching the Grade Level or Class Sections card. */
+/** One placeholder panel, matching the Sections card. */
 function PanelSkeleton({ rows }) {
   return (
     <Card>
@@ -41,32 +41,27 @@ function PanelSkeleton({ rows }) {
 }
 
 /**
- * The school directory while it is still being read.
+ * The class sections while they are still being read.
  *
  * It reserves the same shape the finished page occupies — heading, then the
- * two side-by-side panels — so nothing jumps when the grades and sections
- * arrive, and it announces itself once for screen readers instead of leaving
- * them on a silent page.
+ * list panel — so nothing jumps when the sections arrive, and it announces
+ * itself once for screen readers instead of leaving them on a silent page.
  */
 export function GradesSectionsSkeleton() {
   return (
     <div className="flex flex-col gap-8">
       <p role="status" className="sr-only">
-        Loading the school directory
+        Loading the class sections
       </p>
 
       <header className="flex flex-col gap-3">
-        <Block className="h-6 w-36 rounded-full" />
-        <Block className="h-9 w-64 max-w-full" />
+        <Block className="h-6 w-24 rounded-full" />
+        <Block className="h-9 w-56 max-w-full" />
         <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
         <Block className="h-4 w-full max-w-prose" />
       </header>
 
-      <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
-        {/* One grade level, and however many sections belong to it. */}
-        <PanelSkeleton rows={1} />
-        <PanelSkeleton rows={3} />
-      </div>
+      <PanelSkeleton rows={3} />
     </div>
   );
 }

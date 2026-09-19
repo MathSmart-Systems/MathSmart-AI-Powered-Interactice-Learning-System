@@ -17,7 +17,18 @@ function SidebarBody({ workspace, email, renderNav, onNavigate }) {
         <p className="text-xs text-shell-muted">{workspace.detail}</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-5">{renderNav(onNavigate)}</div>
+      {/*
+       * The navigation is the only part that scrolls: the wordmark above and
+       * the sign-out below stay put. Its scrollbar is hidden rather than the
+       * overflow, so every destination is still reachable by wheel, touch,
+       * trackpad and keyboard on a short screen or at 200% zoom.
+       */}
+      <div
+        data-slot="workspace-nav-scroll"
+        className="scrollbar-hidden flex-1 overflow-y-auto py-5"
+      >
+        {renderNav(onNavigate)}
+      </div>
 
       <div className="flex flex-col gap-3 border-t border-shell-border px-4 py-4">
         {email ? (

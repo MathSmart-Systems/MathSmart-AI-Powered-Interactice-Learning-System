@@ -13,7 +13,6 @@ import { describe, it } from "node:test";
 import {
   MVP_GRADE_LEVEL,
   MVP_GRADE_NAME,
-  gradeNameFor,
   isMvpGrade,
   nameContradictsLevel,
   partitionDirectory,
@@ -203,24 +202,5 @@ describe("partitionDirectory", () => {
     const broken = partitionDirectory({ grades: null, sections: undefined });
     assert.equal(broken.grade, null);
     assert.deepEqual(broken.sections, []);
-  });
-});
-
-describe("gradeNameFor", () => {
-  it("names the grade a section belongs to", () => {
-    assert.equal(gradeNameFor(section("s1", "g6", "Rizal"), [GRADE_6]), "Grade 6");
-  });
-
-  it("falls back to the identifier rather than inventing Grade 6", () => {
-    assert.equal(gradeNameFor(section("s1", "gone", "Orphan"), [GRADE_6]), "gone");
-  });
-
-  it("says so plainly when there is nothing to fall back to", () => {
-    assert.equal(gradeNameFor({ section_id: "s1" }, [GRADE_6]), "Unknown grade");
-    assert.equal(gradeNameFor(null, [GRADE_6]), "Unknown grade");
-  });
-
-  it("survives a grade list that failed to load", () => {
-    assert.equal(gradeNameFor(section("s1", "g6", "Rizal"), null), "g6");
   });
 });

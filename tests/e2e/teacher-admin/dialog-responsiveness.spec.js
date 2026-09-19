@@ -23,7 +23,7 @@ const describe = hasAccount(TEACHER_ADMIN_ACCOUNT) ? test.describe : test.descri
 /** Each case opens one dialog and says what it is there to prove. */
 const DIALOGS = [
   {
-    name: "a short form (Grades and Sections)",
+    name: "a short form (Class Sections)",
     route: "/teacher/grades-sections",
     trigger: { role: "button", name: "Add section", exact: true },
     ready: { role: "heading", name: "Add Section" },

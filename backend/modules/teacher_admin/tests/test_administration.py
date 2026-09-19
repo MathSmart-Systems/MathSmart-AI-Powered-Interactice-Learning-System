@@ -1230,8 +1230,13 @@ def test_a_grade_outside_the_scope_can_be_retired():
     assert response.status_code == 204
 
 
-def test_a_section_cannot_be_created_under_an_unsupported_grade():
-    connection = grade_connection(LEGACY_GRADE_ROW)
+#: The statement that resolves the one grade a section may belong to.
+MVP_GRADE_READ = "order by grade_levels.is_active desc"
+
+
+def test_a_client_cannot_name_a_grade_when_creating_a_section():
+    """The request has no field for it, so a crafted one is refused."""
+    connection = grade_connection(**{MVP_GRADE_READ: GRADE, "returning": SECTION_ROW})
     client = build_client(connection)
 
     response = client.post(
@@ -1241,26 +1246,12 @@ def test_a_section_cannot_be_created_under_an_unsupported_grade():
     )
 
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "grade_scope"
     assert not any("insert into app.sections" in query for query in connection.queries())
 
 
-def test_a_section_under_the_supported_grade_is_created():
+def test_a_section_cannot_be_moved_to_another_grade():
+    """There is one grade, so there is nowhere to move a section to."""
     connection = grade_connection(**{"returning": SECTION_ROW})
-    client = build_client(connection)
-
-    response = client.post(
-        "/api/v1/teacher-admin/sections",
-        json={"grade_id": str(GRADE), "name": "Rizal", "is_active": True},
-        headers=ADVISER_HEADERS,
-    )
-
-    assert response.status_code == 201
-    assert response.json()["data"]["name"] == "Rizal"
-
-
-def test_a_section_cannot_be_moved_to_an_unsupported_grade():
-    connection = grade_connection(LEGACY_GRADE_ROW)
     client = build_client(connection)
 
     response = client.patch(
@@ -1270,12 +1261,65 @@ def test_a_section_cannot_be_moved_to_an_unsupported_grade():
     )
 
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "grade_scope"
     assert not any("update app.sections" in query for query in connection.queries())
 
 
-def test_a_section_change_that_leaves_its_grade_alone_needs_no_grade_read():
-    """Renaming a section is not a scope decision, so it does not become one."""
+def test_the_server_fills_in_the_grade_a_section_belongs_to():
+    connection = grade_connection(**{MVP_GRADE_READ: GRADE, "returning": SECTION_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={"name": "Rizal", "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    inserts = [
+        (query, args)
+        for query, args in connection.calls
+        if "insert into app.sections" in query
+    ]
+    assert inserts, "the section was never inserted"
+    assert GRADE in inserts[0][1], "the resolved grade never reached the insert"
+
+
+def test_the_grade_is_resolved_by_level_not_taken_from_the_request():
+    connection = grade_connection(**{MVP_GRADE_READ: GRADE, "returning": SECTION_ROW})
+    client = build_client(connection)
+
+    client.post(
+        "/api/v1/teacher-admin/sections",
+        json={"name": "Rizal", "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    lookups = [
+        (query, args) for query, args in connection.calls if MVP_GRADE_READ in query
+    ]
+    assert lookups, "the grade was never resolved"
+    assert lookups[0][1] == (6,)
+
+
+def test_a_missing_grade_six_record_refuses_rather_than_creating_one():
+    """The configuration error the scope rule exists to make safe."""
+    connection = grade_connection(**{MVP_GRADE_READ: None, "returning": SECTION_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={"name": "Rizal", "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "mvp_grade_missing"
+    assert not any("insert into app.grade_levels" in query for query in connection.queries())
+    assert not any("insert into app.sections" in query for query in connection.queries())
+
+
+def test_renaming_a_section_reads_neither_the_grade_nor_the_adviser():
+    """A rename is not a scope decision and not an adviser decision."""
     connection = grade_connection(**{"returning": SECTION_ROW})
     client = build_client(connection)
 
@@ -1312,3 +1356,267 @@ def test_a_learner_cannot_reach_the_grade_directory():
     )
 
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# A section's adviser is a teacher_admin profile, not an account
+# ---------------------------------------------------------------------------
+#
+# `sections.adviser_id` references `teacher_admin_profiles.teacher_admin_id`,
+# which is that profile's own key. The account's `user_id` is a different
+# value. Sending the account id reached the database and came back as a
+# foreign key violation — an unhandled 500, answered above the CORS middleware,
+# which a browser can only report as "Failed to fetch".
+
+#: The statement that decides whether an id may advise a section.
+ADVISER_READ = "from app.teacher_admin_profiles"
+
+ADVISER_ID = UUID("7c1f0000-0000-4000-8000-0000000000a1")
+ADVISER_ACCOUNT_ID = UUID("a0000000-0000-4000-8000-0000000000a1")
+
+
+def section_connection(*, adviser=None, **overrides):
+    """An admin connection whose adviser lookup answers with `adviser`."""
+    return grade_connection(
+        **{
+            MVP_GRADE_READ: GRADE,
+            ADVISER_READ: adviser,
+            "returning": {**SECTION_ROW, "adviser_id": adviser},
+            **overrides,
+        }
+    )
+
+
+def test_a_section_is_created_without_an_adviser():
+    """Case 1: no adviser assigned."""
+    connection = section_connection()
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={"name": "Rizal", "is_active": True},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    # With no adviser to check, the adviser statement is never run.
+    assert not any(ADVISER_READ in query for query in connection.queries())
+
+
+def test_a_section_is_created_with_a_valid_adviser():
+    """Case 2: a real, active Teacher/Administrator profile."""
+    connection = section_connection(adviser=ADVISER_ID)
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={
+            "name": "Rizal",
+            "adviser_id": str(ADVISER_ID),
+            "is_active": True,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    assert any("insert into app.sections" in query for query in connection.queries())
+
+
+def test_an_adviser_can_be_assigned_to_an_existing_section():
+    """Case 3: assigning an adviser to a section that had none."""
+    connection = section_connection(adviser=ADVISER_ID)
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/sections/{SECTION}",
+        json={"adviser_id": str(ADVISER_ID)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+
+
+def test_the_assigned_adviser_can_be_changed():
+    """Case 4: swapping one adviser for another."""
+    other = UUID("7c1f0000-0000-4000-8000-0000000000a2")
+    connection = section_connection(adviser=other)
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/sections/{SECTION}",
+        json={"adviser_id": str(other)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+
+
+def test_the_adviser_can_be_cleared():
+    """Case 5: an explicit null clears the assignment and checks nothing."""
+    connection = section_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/sections/{SECTION}",
+        json={"adviser_id": None},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert not any(ADVISER_READ in query for query in connection.queries())
+
+
+def test_an_unknown_adviser_is_refused_before_it_reaches_the_table():
+    """Case 6: the defect. An account id is not a teacher_admin_id."""
+    connection = section_connection(adviser=None)
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={
+            "name": "Rizal",
+            "adviser_id": str(ADVISER_ACCOUNT_ID),
+            "is_active": True,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "adviser_unknown"
+    assert "adviser_id" in response.json()["error"]["fields"]
+    # Refused before the insert, so the constraint is never reached.
+    assert not any("insert into app.sections" in query for query in connection.queries())
+
+
+def test_an_inactive_adviser_is_refused():
+    """An account that has been deactivated can no longer take a section."""
+    connection = section_connection(adviser=None)
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/sections/{SECTION}",
+        json={"adviser_id": str(ADVISER_ID)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "adviser_unknown"
+    assert not any("update app.sections" in query for query in connection.queries())
+
+
+def test_the_adviser_check_reads_the_profile_table_not_the_account_table():
+    """The check has to be against the table the foreign key points at."""
+    connection = section_connection(adviser=ADVISER_ID)
+    client = build_client(connection)
+
+    client.post(
+        "/api/v1/teacher-admin/sections",
+        json={
+            "name": "Rizal",
+            "adviser_id": str(ADVISER_ID),
+            "is_active": True,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    checks = [query for query in connection.queries() if ADVISER_READ in query]
+    assert checks, "the adviser was never checked"
+    assert "teacher_admin_profiles.teacher_admin_id = $1" in checks[0]
+    assert "account_status = 'active'" in checks[0]
+
+
+def test_the_account_listing_carries_the_id_a_section_points_at():
+    """The frontend can only send the right id if the API supplies it."""
+    connection = admin_connection(
+        **{
+            "from app.user_profiles": [{**USER_ROW, "teacher_admin_id": ADVISER_ID}],
+            TOTAL: 1,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/users?role=teacher_admin", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    row = response.json()["data"][0]
+    assert row["teacher_admin_id"] == str(ADVISER_ID)
+    # The two ids are reported separately, so neither can be mistaken for the
+    # other by a caller reading the envelope.
+    assert row["user_id"] != row["teacher_admin_id"]
+
+
+def test_a_learner_has_no_adviser_id_to_be_assigned_by():
+    connection = admin_connection(
+        **{"from app.user_profiles": [{**USER_ROW, "teacher_admin_id": None}], TOTAL: 1}
+    )
+    client = build_client(connection)
+
+    response = client.get("/api/v1/teacher-admin/users", headers=ADVISER_HEADERS)
+
+    assert response.json()["data"][0]["teacher_admin_id"] is None
+
+
+def test_a_constraint_violation_is_a_refusal_not_a_crash():
+    """The last line of defence, and the reason the browser saw nothing.
+
+    An unhandled exception is answered by Starlette's outermost error
+    middleware, which sits above the CORS middleware, so that reply carries no
+    `Access-Control-Allow-Origin` and the browser reports only "Failed to
+    fetch". A handled one stays inside CORS and can be read and shown.
+    """
+    import asyncpg
+
+    class ExplodingConnection(FakeConnection):
+        async def fetchrow(self, query: str, *args):
+            if "insert into app.sections" in query:
+                raise asyncpg.exceptions.ForeignKeyViolationError(
+                    'insert or update on table "sections" violates foreign key '
+                    'constraint "sections_adviser_id_fkey"'
+                )
+            return await super().fetchrow(query, *args)
+
+    connection = ExplodingConnection(
+        results={
+            MVP_GRADE_READ: GRADE,
+            GRADE_READ: MVP_GRADE_ROW,
+            ADVISER_READ: ADVISER_ID,
+            "returning": SECTION_ROW,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={
+            "name": "Rizal",
+            "adviser_id": str(ADVISER_ID),
+            "is_active": True,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "constraint_violation"
+    # The constraint name, the table and the column stay in the log.
+    assert "sections_adviser_id_fkey" not in response.text
+
+
+def test_a_refused_request_still_carries_the_cors_header_a_browser_needs():
+    """Without this header the page cannot read the refusal at all."""
+    connection = section_connection(adviser=None)
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/sections",
+        json={
+            "name": "Rizal",
+            "adviser_id": str(ADVISER_ACCOUNT_ID),
+            "is_active": True,
+        },
+        headers={**ADVISER_HEADERS, "Origin": "http://localhost:3000"},
+    )
+
+    assert response.status_code == 422
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"

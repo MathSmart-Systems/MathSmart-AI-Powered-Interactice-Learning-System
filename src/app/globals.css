@@ -342,6 +342,30 @@
   }
 }
 
+/*
+ * A scroll area with no scrollbar drawn.
+ *
+ * For the workspace sidebar, where the navigation has to scroll on a short
+ * screen but a track running down the middle of the shell reads as a seam.
+ * The area still scrolls by wheel, trackpad, touch, keyboard and programmatic
+ * focus — only the painted scrollbar is gone, and no space is reserved for it.
+ *
+ * Deliberately not `overflow: hidden`, which would make the overflow
+ * unreachable, and deliberately not paired with `scrollbar-gutter: stable`,
+ * which would reserve the space this is removing.
+ */
+@utility scrollbar-hidden {
+  /* Firefox */
+  scrollbar-width: none;
+  /* Legacy Edge and IE */
+  -ms-overflow-style: none;
+
+  /* Chrome, Edge and Safari */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer components {
   /*
    * MathSmart signature: 24px graphing-paper ruling. Used on the login page and

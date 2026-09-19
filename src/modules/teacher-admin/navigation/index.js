@@ -46,7 +46,9 @@ export const TEACHER_ADMIN_NAV = Object.freeze([
   Object.freeze({
     heading: "Class administration",
     items: Object.freeze([
-      { href: "/teacher/grades-sections", label: "Grades and Sections", icon: School },
+      // The route keeps its original path so existing links still resolve; only
+      // the language a teacher reads has changed.
+      { href: "/teacher/grades-sections", label: "Class Sections", icon: School },
       { href: "/teacher/reports-analytics", label: "Reports and Analytics", icon: ChartColumn },
       { href: "/teacher/settings", label: "Settings", icon: Settings },
     ]),

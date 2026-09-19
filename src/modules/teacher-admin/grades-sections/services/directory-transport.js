@@ -113,11 +113,15 @@ export function extractList(response) {
 /**
  * The body for creating a section.
  *
- * An unassigned adviser is an omission, not an empty string: the API forbids
- * unknown and mistyped fields, and a blank string is not a user id.
+ * There is deliberately no grade. MathSmart teaches one, the server resolves
+ * it, and the API forbids unknown fields — so sending one would be refused,
+ * which is what stops a crafted request putting a section anywhere else.
+ *
+ * An unassigned adviser is an omission, not an empty string: a blank string is
+ * not an identifier.
  */
-export function sectionCreatePayload({ grade_id, name, adviser_id, is_active }) {
-  const payload = { grade_id, name, is_active };
+export function sectionCreatePayload({ name, adviser_id, is_active }) {
+  const payload = { name, is_active };
   if (typeof adviser_id === "string" && adviser_id.trim()) {
     payload.adviser_id = adviser_id;
   }
@@ -129,9 +133,11 @@ export function sectionCreatePayload({ grade_id, name, adviser_id, is_active }) 
  *
  * Clearing the adviser has to be explicit: an absent key leaves the current
  * adviser alone, so a blank choice becomes `null` rather than disappearing.
+ * A grade never travels, for the same reason it never travels on a create.
  */
 export function sectionPatchPayload(patch) {
   const cleaned = { ...patch };
+  delete cleaned.grade_id;
   if ("adviser_id" in cleaned) {
     const value = cleaned.adviser_id;
     if (typeof value !== "string" || !value.trim()) {
@@ -172,11 +178,18 @@ export function clarifySectionFailure(result) {
 /**
  * Maps the account directory onto the adviser choices a section may use.
  *
+ * Keyed by `teacher_admin_id`, which is what `sections.adviser_id` references.
+ * That is the profile's own key, not the account's `user_id`: they are
+ * different values, and sending the account id reached the database and came
+ * back as a foreign key violation the browser could only report as "Failed to
+ * fetch". An account with no teacher_admin profile has no id to be assigned
+ * by, so it is left out rather than offered and then refused.
+ *
  * Only an active Teacher/Administrator with a usable name can advise a
- * section, so anything else is left out rather than offered and then refused.
+ * section, so anything else is left out too.
  *
  * @param {unknown} users
- * @returns {Record<string, string>} user id to display name
+ * @returns {Record<string, string>} teacher_admin_id to display name
  */
 export function buildAdviserDirectory(users) {
   const advisers = {};
@@ -185,13 +198,13 @@ export function buildAdviserDirectory(users) {
   for (const user of users) {
     if (
       user &&
-      user.user_id &&
+      user.teacher_admin_id &&
       user.role === "teacher_admin" &&
       user.account_status === "active" &&
       typeof user.full_name === "string" &&
       user.full_name.trim()
     ) {
-      advisers[String(user.user_id)] = user.full_name.trim();
+      advisers[String(user.teacher_admin_id)] = user.full_name.trim();
     }
   }
   return advisers;

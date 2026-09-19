@@ -39,11 +39,11 @@ describe("teacher/administrator workspace", () => {
     }
   });
 
-  test("the grades and sections destination renders the live directory", async ({ page }) => {
+  test("the class sections destination renders its live workspace", async ({ page }) => {
     await page.goto("/teacher/grades-sections");
     await expect(page).toHaveURL(/\/teacher\/grades-sections$/);
     await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Grades and Sections" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Class Sections" })).toBeVisible();
   });
 
   test("the interventions destination renders the live dashboard", async ({ page }) => {

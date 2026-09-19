@@ -276,6 +276,9 @@ def deactivate_sql(resource: Resource) -> str:
     )
 
 
+#: A section's adviser is a `teacher_admin_profiles.teacher_admin_id`, which is
+#: that profile's own key and not the account's `user_id`. The listing carries
+#: both so a caller never has to guess which one a section wants.
 _USERS_SQL = """
 select
   user_profiles.user_id,
@@ -284,8 +287,11 @@ select
   user_profiles.role,
   user_profiles.account_status,
   user_profiles.archived_at,
-  user_profiles.created_at
+  user_profiles.created_at,
+  teacher_admin_profiles.teacher_admin_id
 from app.user_profiles
+left join app.teacher_admin_profiles
+  on teacher_admin_profiles.user_id = user_profiles.user_id
 where ($1::app.user_role is null or user_profiles.role = $1)
   and ($2::app.account_status is null or user_profiles.account_status = $2)
   and ($3::text is null
@@ -499,6 +505,42 @@ async def archive(connection: ActorConnection, resource: Resource, key: UUID) ->
 
 async def deactivate(connection: ActorConnection, resource: Resource, key: UUID) -> Any:
     return await connection.fetchval(deactivate_sql(resource), key)
+
+
+#: The one grade MathSmart teaches. Ordered and limited so a directory that
+#: somehow holds two level-6 rows still resolves to one answer rather than
+#: failing, and so a retired row is never chosen over a live one.
+_MVP_GRADE_SQL = """
+select grade_levels.grade_id
+from app.grade_levels
+where grade_levels.level = $1
+order by grade_levels.is_active desc, grade_levels.created_at
+limit 1
+"""
+
+
+async def mvp_grade(connection: ActorConnection, level: int) -> Any:
+    """The grade every section belongs to, read rather than taken on trust."""
+    return await connection.fetchval(_MVP_GRADE_SQL, level)
+
+
+#: Whether a teacher_admin profile may be given a section to advise. The role
+#: and the account status are checked here rather than trusted from the
+#: request, because a section outlives the page that created it.
+_ADVISER_SQL = """
+select teacher_admin_profiles.teacher_admin_id
+from app.teacher_admin_profiles
+join app.user_profiles
+  on user_profiles.user_id = teacher_admin_profiles.user_id
+where teacher_admin_profiles.teacher_admin_id = $1
+  and user_profiles.role = 'teacher_admin'
+  and user_profiles.account_status = 'active'
+"""
+
+
+async def adviser(connection: ActorConnection, teacher_admin_id: UUID) -> Any:
+    """The adviser profile behind this id, when it may still advise a section."""
+    return await connection.fetchval(_ADVISER_SQL, teacher_admin_id)
 
 
 async def users(

@@ -31,9 +31,10 @@ function FieldLabel({ htmlFor, children }) {
  * The form body. It is keyed by the section it edits, so React remounts it each
  * time the dialog opens for a different section and state starts fresh.
  *
- * The grade is not a field. Every section in MathSmart belongs to the one
- * grade the product teaches, so the form states which grade that is rather
- * than offering a choice that the API would refuse.
+ * The grade is not a field and is not shown. Every section in MathSmart
+ * belongs to the one grade the product teaches, so it is filled in from the
+ * directory rather than asked for. The dialog's own description says which
+ * grade that is, which is the only place it needs saying.
  */
 function SectionFormFields({ record, grade, advisers, onCancel, onSubmit, busy, error }) {
   const editing = Boolean(record);
@@ -50,7 +51,6 @@ function SectionFormFields({ record, grade, advisers, onCancel, onSubmit, busy, 
     event.preventDefault();
     onSubmit({
       name: name.trim(),
-      grade_id: grade.grade_id,
       adviser_id: adviserId,
       is_active: isActive,
     });
@@ -64,8 +64,8 @@ function SectionFormFields({ record, grade, advisers, onCancel, onSubmit, busy, 
         </DialogTitle>
         <DialogDescription>
           {editing
-            ? `Update the name, adviser, or availability of this ${grade.name} section.`
-            : `Create a new class section inside ${grade.name}.`}
+            ? "Update the name, adviser, or availability of this section."
+            : `Create a new class section. It joins ${grade.name} automatically.`}
         </DialogDescription>
       </DialogHeader>
 
@@ -81,16 +81,6 @@ function SectionFormFields({ record, grade, advisers, onCancel, onSubmit, busy, 
             minLength={1}
             maxLength={60}
           />
-        </div>
-
-        <div>
-          <FieldLabel htmlFor="section-grade">Grade Level</FieldLabel>
-          <p
-            id="section-grade"
-            className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
-          >
-            {grade.name} — every section belongs to it
-          </p>
         </div>
 
         <div>

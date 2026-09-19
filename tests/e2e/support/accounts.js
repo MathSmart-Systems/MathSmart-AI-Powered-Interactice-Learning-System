@@ -65,7 +65,7 @@ export const TEACHER_ADMIN_NAV_LABELS = [
   "Learning Modules",
   "Activities",
   "Question Bank",
-  "Grades and Sections",
+  "Class Sections",
   "Reports and Analytics",
   "Settings",
 ];

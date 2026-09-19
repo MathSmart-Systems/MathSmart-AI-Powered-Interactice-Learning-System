@@ -50,9 +50,10 @@ export function nameContradictsLevel(name, level) {
  * Splits the directory into what this workspace manages and what it does not.
  *
  * Everything the API returns is accounted for. The Grade 6 record and its
- * sections are the working directory; a legacy grade at another level, a
- * duplicate Grade 6, and any section hanging off one of them are set aside so
- * a teacher can retire them rather than lose sight of them.
+ * sections are the working directory. A legacy grade at another level, a
+ * duplicate Grade 6, and any section hanging off one of them are set aside:
+ * the workspace does not show them, because there is no curriculum behind
+ * them to manage. They stay in the database, untouched.
  *
  * @param {{grades?: Array, sections?: Array}} directory
  */
@@ -75,17 +76,4 @@ export function partitionDirectory({ grades, sections } = {}) {
     sections: allSections.filter(inScope),
     outOfScopeSections: allSections.filter((section) => !inScope(section)),
   };
-}
-
-/**
- * The display name for a grade a section points at.
- *
- * Falls back to the raw identifier rather than inventing a name, so a section
- * whose grade is missing reads as a problem instead of as Grade 6.
- */
-export function gradeNameFor(section, grades) {
-  const match = (Array.isArray(grades) ? grades : []).find(
-    (grade) => grade.grade_id === section?.grade_id,
-  );
-  return match?.name ?? section?.grade_id ?? "Unknown grade";
 }

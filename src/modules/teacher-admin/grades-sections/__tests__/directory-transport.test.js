@@ -327,38 +327,36 @@ describe("extractList", () => {
 });
 
 describe("sectionCreatePayload", () => {
-  it("omits an unassigned adviser instead of sending an empty string", () => {
+  it("never sends a grade, because the server decides it", () => {
     const payload = sectionCreatePayload({
-      grade_id: "g-1",
       name: "Rizal",
-      adviser_id: "",
       is_active: true,
+      grade_id: "a-grade-a-client-chose",
     });
 
-    assert.deepEqual(payload, { grade_id: "g-1", name: "Rizal", is_active: true });
+    assert.equal("grade_id" in payload, false);
+    assert.deepEqual(Object.keys(payload).sort(), ["is_active", "name"]);
+  });
+
+  it("omits an unassigned adviser instead of sending an empty string", () => {
+    const payload = sectionCreatePayload({ name: "Rizal", adviser_id: "", is_active: true });
+
+    assert.deepEqual(payload, { name: "Rizal", is_active: true });
     assert.equal("adviser_id" in payload, false);
   });
 
   it("omits an adviser choice that is only whitespace", () => {
-    const payload = sectionCreatePayload({
-      grade_id: "g-1",
-      name: "Rizal",
-      adviser_id: "   ",
-      is_active: true,
-    });
+    const payload = sectionCreatePayload({ name: "Rizal", adviser_id: "   ", is_active: true });
 
     assert.equal("adviser_id" in payload, false);
   });
 
   it("omits the adviser when the form never offered one", () => {
-    const payload = sectionCreatePayload({ grade_id: "g-1", name: "Rizal", is_active: true });
-
-    assert.equal("adviser_id" in payload, false);
+    assert.equal("adviser_id" in sectionCreatePayload({ name: "Rizal", is_active: true }), false);
   });
 
   it("keeps a chosen adviser", () => {
     const payload = sectionCreatePayload({
-      grade_id: "g-1",
       name: "Rizal",
       adviser_id: "4a39d286-e93e-4e75-9644-b873fcac185c",
       is_active: true,
@@ -369,24 +367,28 @@ describe("sectionCreatePayload", () => {
 
   it("sends only the fields the API accepts, so an extra one cannot be refused", () => {
     const payload = sectionCreatePayload({
-      grade_id: "g-1",
       name: "Rizal",
       is_active: true,
       section_id: "should-not-travel",
       created_at: "2026-01-01",
     });
 
-    assert.deepEqual(Object.keys(payload).sort(), ["grade_id", "is_active", "name"]);
+    assert.deepEqual(Object.keys(payload).sort(), ["is_active", "name"]);
   });
 
   it("carries an inactive choice through rather than defaulting it to active", () => {
-    const payload = sectionCreatePayload({ grade_id: "g-1", name: "Rizal", is_active: false });
-
-    assert.equal(payload.is_active, false);
+    assert.equal(sectionCreatePayload({ name: "Rizal", is_active: false }).is_active, false);
   });
 });
 
 describe("sectionPatchPayload", () => {
+  it("never sends a grade, so a section cannot be moved out of Grade 6", () => {
+    const patch = sectionPatchPayload({ name: "Rizal", grade_id: "another-grade" });
+
+    assert.equal("grade_id" in patch, false);
+    assert.deepEqual(patch, { name: "Rizal" });
+  });
+
   it("clears an adviser explicitly, because an absent key would keep the old one", () => {
     const patch = sectionPatchPayload({ name: "Rizal", adviser_id: "" });
 
@@ -416,10 +418,11 @@ describe("sectionPatchPayload", () => {
   });
 
   it("does not mutate the change it was given", () => {
-    const original = { name: "Rizal", adviser_id: "" };
+    const original = { name: "Rizal", adviser_id: "", grade_id: "g6" };
     sectionPatchPayload(original);
 
     assert.equal(original.adviser_id, "");
+    assert.equal(original.grade_id, "g6");
   });
 });
 
@@ -486,17 +489,35 @@ describe("clarifySectionFailure", () => {
 });
 
 describe("buildAdviserDirectory", () => {
+  // A section's adviser_id references teacher_admin_profiles.teacher_admin_id,
+  // which is a different value from the account's user_id. Sending the account
+  // id broke the foreign key, and the 500 that came back carried no CORS
+  // headers, so the browser could only say "Failed to fetch".
+  const ACCOUNT_ID = "b0000000-0000-4000-8000-00000000000e";
+  const ADVISER_ID = "4a39d286-e93e-4e75-9644-b873fcac185c";
+
   const adviser = {
-    user_id: "4a39d286-e93e-4e75-9644-b873fcac185c",
+    user_id: ACCOUNT_ID,
+    teacher_admin_id: ADVISER_ID,
     role: "teacher_admin",
     account_status: "active",
     full_name: "Maria Santos",
   };
 
-  it("maps an eligible adviser onto their display name", () => {
-    assert.deepEqual(buildAdviserDirectory([adviser]), {
-      "4a39d286-e93e-4e75-9644-b873fcac185c": "Maria Santos",
-    });
+  it("keys an adviser by the id a section actually points at", () => {
+    assert.deepEqual(buildAdviserDirectory([adviser]), { [ADVISER_ID]: "Maria Santos" });
+  });
+
+  it("never keys an adviser by their account id", () => {
+    const directory = buildAdviserDirectory([adviser]);
+
+    assert.equal(ACCOUNT_ID in directory, false);
+    assert.equal(Object.keys(directory)[0], ADVISER_ID);
+  });
+
+  it("leaves out an account with no teacher_admin profile to be assigned by", () => {
+    assert.deepEqual(buildAdviserDirectory([{ ...adviser, teacher_admin_id: null }]), {});
+    assert.deepEqual(buildAdviserDirectory([{ ...adviser, teacher_admin_id: undefined }]), {});
   });
 
   it("leaves out a learner, who cannot advise a section", () => {
@@ -513,28 +534,22 @@ describe("buildAdviserDirectory", () => {
     assert.deepEqual(buildAdviserDirectory([{ ...adviser, full_name: undefined }]), {});
   });
 
-  it("leaves out an account with no id, which could never be saved", () => {
-    assert.deepEqual(buildAdviserDirectory([{ ...adviser, user_id: null }]), {});
-  });
-
   it("trims the surrounding whitespace off a name", () => {
     const directory = buildAdviserDirectory([{ ...adviser, full_name: "  Maria Santos  " }]);
 
-    assert.equal(directory["4a39d286-e93e-4e75-9644-b873fcac185c"], "Maria Santos");
+    assert.equal(directory[ADVISER_ID], "Maria Santos");
   });
 
   it("keeps the eligible advisers and drops the rest from the same page", () => {
     const directory = buildAdviserDirectory([
       adviser,
-      { ...adviser, user_id: "b-2", role: "student" },
-      { ...adviser, user_id: "c-3", full_name: "Jose Cruz" },
+      { ...adviser, teacher_admin_id: "b-2", role: "student" },
+      { ...adviser, teacher_admin_id: "c-3", full_name: "Jose Cruz" },
+      { ...adviser, teacher_admin_id: null, full_name: "No Profile" },
       null,
     ]);
 
-    assert.deepEqual(Object.keys(directory).sort(), [
-      "4a39d286-e93e-4e75-9644-b873fcac185c",
-      "c-3",
-    ]);
+    assert.deepEqual(Object.keys(directory).sort(), [ADVISER_ID, "c-3"]);
   });
 
   it("gives an empty directory when the account read failed", () => {
