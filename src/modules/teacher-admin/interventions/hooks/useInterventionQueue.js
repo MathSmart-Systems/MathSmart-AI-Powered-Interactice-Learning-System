@@ -1,0 +1,167 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { listInterventionCases } from "../services/interventions-api";
+import { normalizeCase, sortCases } from "../utils/intervention-helpers";
+
+/**
+ * Manages the deterministic intervention queue.
+ *
+ * The initial cases come from the server component; this hook owns the live
+ * state, applies the documented filters through the API, and keeps the queue
+ * sorted by severity deterministically. AI is never consulted here.
+ *
+ * @param {Array<object>} initialCases
+ */
+export function useInterventionQueue(initialCases = []) {
+  const [cases, setCases] = useState(() => sortCases(initialCases.map(normalizeCase)));
+  const [filters, setFilters] = useState({
+    gradeId: null,
+    sectionId: null,
+    competencyId: null,
+    severity: null,
+    status: null,
+    dateFrom: null,
+    dateTo: null,
+    minAttempts: null,
+    minScoreDrop: null,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  // True once any client request has loaded the queue, which retires the error
+  // the server component reported for its own initial read.
+  const [loaded, setLoaded] = useState(false);
+  const mounted = useRef(true);
+  // Filter changes and silent refreshes can overlap. Only the newest request
+  // may commit, or an older reply replaces the queue the controls describe.
+  const requestToken = useRef(0);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const load = useCallback(async (nextFilters, { silent = false } = {}) => {
+    const token = (requestToken.current += 1);
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    const result = await listInterventionCases({
+      gradeId: nextFilters.gradeId,
+      sectionId: nextFilters.sectionId,
+      competencyId: nextFilters.competencyId,
+      severity: nextFilters.severity,
+      status: nextFilters.status,
+      dateFrom: nextFilters.dateFrom,
+      dateTo: nextFilters.dateTo,
+      minAttempts: nextFilters.minAttempts,
+      minScoreDrop: nextFilters.minScoreDrop,
+      page: 1,
+      pageSize: 100,
+    });
+
+    if (!mounted.current || token !== requestToken.current) return undefined;
+
+    if (result.ok && Array.isArray(result.data)) {
+      setCases(sortCases(result.data.map(normalizeCase)));
+      setLoaded(true);
+      if (silent) setRefreshing(false);
+      else setLoading(false);
+      return result.data;
+    }
+
+    setError(result.error ?? "Could not load the intervention queue.");
+    if (silent) setRefreshing(false);
+    else setLoading(false);
+    return null;
+  }, []);
+
+  const setFilter = useCallback(
+    (key, value) => {
+      const next = { ...filters, [key]: value || null };
+      setFilters(next);
+      load(next);
+    },
+    [filters, load]
+  );
+
+  /**
+   * Applies a full filter snapshot at once and reloads the queue. Used by the
+   * saved-preset flow so every documented key is restored, not just one.
+   *
+   * @param {object} nextFilters
+   */
+  const applyFilters = useCallback((nextFilters) => {
+    const next = {
+      gradeId: nextFilters.gradeId ?? null,
+      sectionId: nextFilters.sectionId ?? null,
+      competencyId: nextFilters.competencyId ?? null,
+      severity: nextFilters.severity ?? null,
+      status: nextFilters.status ?? null,
+      dateFrom: nextFilters.dateFrom ?? null,
+      dateTo: nextFilters.dateTo ?? null,
+      minAttempts: nextFilters.minAttempts ?? null,
+      minScoreDrop: nextFilters.minScoreDrop ?? null,
+    };
+    setFilters(next);
+    load(next);
+  }, [load]);
+
+  const clearFilters = useCallback(() => {
+    const reset = {
+      gradeId: null,
+      sectionId: null,
+      competencyId: null,
+      severity: null,
+      status: null,
+      dateFrom: null,
+      dateTo: null,
+      minAttempts: null,
+      minScoreDrop: null,
+    };
+    setFilters(reset);
+    load(reset);
+  }, [load]);
+
+  /**
+   * Replaces one case in place after a mutation, so the queue reflects the
+   * change immediately. The next `refresh` reconciles with the server.
+   *
+   * @param {object} updated - The case returned by the mutation
+   */
+  const applyCase = useCallback((updated) => {
+    if (!updated?.id) return;
+    setCases((current) => {
+      const next = current.map((item) =>
+        item.id === updated.id ? normalizeCase({ ...item, ...updated }) : item
+      );
+      return sortCases(next);
+    });
+  }, []);
+
+  const refresh = useCallback(() => {
+    load(filters, { silent: true });
+  }, [filters, load]);
+
+  return {
+    cases,
+    filters,
+    loading,
+    refreshing,
+    loaded,
+    error,
+    setFilter,
+    applyFilters,
+    clearFilters,
+    applyCase,
+    refresh,
+  };
+}

@@ -12,6 +12,7 @@ and nothing about a case's severity, status or lifecycle depends on it.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -67,32 +68,46 @@ def _summary_fields(row: Any) -> dict[str, Any]:
         "severity": str(row["severity"]),
         "status": str(row["status"]),
         "intervention_type": str(row["intervention_type"]),
+        "evidence": {
+            "diagnostic_score": _number(row["diagnostic_score"]),
+            "current_score": _number(row["current_score"]),
+            "attempt_count": row["attempt_count"] or 0,
+            "unsuccessful_attempts": row["unsuccessful_attempts"] or 0,
+        },
         "recorded_by": row["recorded_by"],
         "recorded_at": row["recorded_at"],
         "created_at": row["created_at"],
         "resolved_at": row["resolved_at"],
+        "educator_notes": row["educator_notes"],
+        "reopen_reason": row["reopen_reason"],
     }
 
 
 def _detail(row: Any) -> InterventionDetail:
     return InterventionDetail(
         **_summary_fields(row),
-        evidence={
-            "diagnostic_score": _number(row["diagnostic_score"]),
-            "current_score": _number(row["current_score"]),
-            "attempt_count": row["attempt_count"] or 0,
-            "unsuccessful_attempts": row["unsuccessful_attempts"] or 0,
-        },
         incorrect_patterns=_json_list(row["incorrect_patterns"]),
         modules_attempted=_json_list(row["modules_attempted"]),
-        educator_notes=row["educator_notes"],
-        reopen_reason=row["reopen_reason"],
         ai_insight=row["ai_insight"],
         ai_recommendation=row["ai_recommendation"],
         ai_provider=row["ai_provider"],
         ai_model=row["ai_model"],
         ai_confidence_score=_number(row["ai_confidence_score"]),
     )
+
+
+def _exclusive_end(value: datetime | None) -> datetime | None:
+    """The upper bound the queue SQL expects, which is exclusive.
+
+    The date picker sends `YYYY-MM-DD`, which parses to midnight. Advancing a
+    midnight bound by one day keeps every case opened on the selected date; a
+    caller that supplies a time of day keeps the instant it asked for.
+    """
+    if value is None:
+        return None
+    if (value.hour, value.minute, value.second, value.microsecond) == (0, 0, 0, 0):
+        return value + timedelta(days=1)
+    return value
 
 
 @router.get("/interventions")
@@ -105,10 +120,19 @@ async def list_interventions(
     competency_id: Annotated[UUID | None, Query()] = None,
     severity: Annotated[Severity | None, Query()] = None,
     status: Annotated[CaseStatus | None, Query()] = None,
+    date_from: Annotated[datetime | None, Query()] = None,
+    date_to: Annotated[datetime | None, Query()] = None,
+    min_attempts: Annotated[int | None, Query(ge=0)] = None,
+    min_score_drop: Annotated[int | None, Query(ge=0)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    """The intervention queue, with the documented filters."""
+    """The intervention queue, with the documented filters.
+
+    The advanced filters stay deterministic: a date range on when the case was
+    opened, an attempt-count floor, and a minimum diagnostic-to-current score
+    drop. None of these are computed by AI.
+    """
     offset = (page - 1) * page_size
     filters = {
         "student_id": student_id,
@@ -117,6 +141,10 @@ async def list_interventions(
         "competency_id": competency_id,
         "severity": severity.value if severity else None,
         "status": status.value if status else None,
+        "date_from": date_from,
+        "date_to": _exclusive_end(date_to),
+        "min_attempts": min_attempts,
+        "min_score_drop": min_score_drop,
     }
     rows = await repository.queue(connection, limit=page_size, offset=offset, **filters)
     total = await repository.queue_total(connection, **filters)
