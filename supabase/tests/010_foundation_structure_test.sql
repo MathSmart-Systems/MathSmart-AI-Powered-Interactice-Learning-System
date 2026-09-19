@@ -162,7 +162,11 @@ select ok(not has_table_privilege('authenticated', 'app.user_profiles'::regclass
 select ok(not has_table_privilege('authenticated', 'app.student_profiles'::regclass, 'delete'),       'authenticated cannot delete app.student_profiles');
 select ok(not has_table_privilege('authenticated', 'app.teacher_admin_profiles'::regclass, 'delete'), 'authenticated cannot delete app.teacher_admin_profiles');
 select ok(not has_table_privilege('authenticated', 'app.grade_levels'::regclass, 'delete'),           'authenticated cannot delete app.grade_levels');
-select ok(not has_table_privilege('authenticated', 'app.sections'::regclass, 'delete'),               'authenticated cannot delete app.sections');
+-- A section is the one record here that may be removed outright, because one
+-- created by mistake has no learner history to protect. The privilege exists;
+-- the sections_delete policy is what narrows it to a Teacher/Administrator and
+-- to a section that has already been deactivated.
+select ok(has_table_privilege('authenticated', 'app.sections'::regclass, 'delete'),                   'authenticated may delete app.sections, subject to sections_delete');
 
 -- ---------------------------------------------------------------------------
 -- The FastAPI backend identity keeps full access

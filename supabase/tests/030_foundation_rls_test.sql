@@ -111,9 +111,6 @@ select throws_ok($$ update app.user_profiles set role = 'teacher_admin'
 select throws_ok($$ delete from app.student_profiles where learner_id = 'LRN-900001' $$,
                  '42501', null::text, 'A learner cannot delete learner records');
 
-select throws_ok($$ delete from app.sections where section_id = 'e0000000-0000-4000-8000-0000000000a1' $$,
-                 '42501', null::text, 'A learner cannot delete sections');
-
 -- WITH CHECK denials.
 select throws_ok($$ insert into app.grade_levels (name, level) values ('Grade 1', 1) $$,
                  '42501', null::text, 'A learner cannot create a grade level');
@@ -133,6 +130,10 @@ update app.student_profiles set monitoring_status = 'mastered' where learner_id 
 update app.student_profiles set learner_id = 'LRN-999999' where learner_id = 'LRN-900001';
 update app.user_profiles set full_name = 'Tampered Name' where user_id = 'b0000000-0000-4000-8000-0000000000b2';
 update app.sections set name = 'Renamed Section' where section_id = 'e0000000-0000-4000-8000-0000000000a1';
+-- A learner now holds the delete privilege, because it is granted to the role
+-- rather than to a person; sections_delete is what stops the statement from
+-- matching anything.
+delete from app.sections where section_id = 'e0000000-0000-4000-8000-0000000000a1';
 
 -- The one write a learner is allowed, proved by re-reading it.
 update app.user_profiles set full_name = 'Learner One Preferred'
@@ -158,6 +159,10 @@ select is((select full_name from app.user_profiles where user_id = 'b0000000-000
 select is((select name from app.sections where section_id = 'e0000000-0000-4000-8000-0000000000a1'),
           'Section Alpha',
           'A learner cannot rename a section');
+
+select is((select count(*) from app.sections where section_id = 'e0000000-0000-4000-8000-0000000000a1'),
+          1::bigint,
+          'A learner cannot delete a section');
 
 -- ===========================================================================
 -- Learner Two — cross-learner isolation from the other side
@@ -226,15 +231,40 @@ select is((select section_id from app.student_profiles where learner_id = 'LRN-9
           'e0000000-0000-4000-8000-0000000000b1'::uuid,
           'A teacher_admin can move a learner between sections');
 
+-- Deleting a section is allowed only once it has been retired. A live one is
+-- filtered out by sections_delete, so this matches zero rows and raises
+-- nothing; the row is re-read below to prove it survived.
+delete from app.sections where name = 'Section Gamma';
+
+select is((select count(*) from app.sections where name = 'Section Gamma'), 1::bigint,
+          'A teacher_admin cannot delete a section that is still active');
+
+-- Retired first, which is the separate and reversible decision, and only then
+-- does the same statement remove it.
+update app.sections set is_active = false where name = 'Section Gamma';
+delete from app.sections where name = 'Section Gamma';
+
+select is((select count(*) from app.sections where name = 'Section Gamma'), 0::bigint,
+          'A teacher_admin can delete a section once it is deactivated');
+
+-- A section a learner still belongs to is refused by the foreign key, whatever
+-- the policy allows. Section Beta holds LRN-900001, moved there above.
+update app.sections set is_active = false
+where section_id = 'e0000000-0000-4000-8000-0000000000b1';
+
+select throws_ok($$ delete from app.sections
+                    where section_id = 'e0000000-0000-4000-8000-0000000000b1' $$,
+                 '23503', null::text,
+                 'A section a learner still belongs to cannot be deleted');
+
+update app.sections set is_active = true
+where section_id = 'e0000000-0000-4000-8000-0000000000b1';
+
 -- Still denied, even school-wide.
 select throws_ok($$ update app.user_profiles set role = 'student'
                     where user_id = 'a0000000-0000-4000-8000-0000000000a1' $$,
                  '42501', null::text,
                  'A teacher_admin cannot change a role through the Data API roles; that is a backend operation');
-
-select throws_ok($$ delete from app.sections where name = 'Section Gamma' $$,
-                 '42501', null::text,
-                 'A teacher_admin cannot delete a section; archiving is the supported path');
 
 select throws_ok($$ delete from app.user_profiles where user_id = 'b0000000-0000-4000-8000-0000000000b3' $$,
                  '42501', null::text,
