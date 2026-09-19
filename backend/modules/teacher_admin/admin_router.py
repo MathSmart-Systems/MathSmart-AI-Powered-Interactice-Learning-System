@@ -20,6 +20,13 @@ from fastapi import APIRouter, Query, Request, Response
 from app.dependencies import ActorDb, CurrentActor, SensitiveActor, TeacherAdmin
 from middleware.errors import ApiError
 from middleware.request_context import current_request_id
+from modules.shared.grade_scope import (
+    MVP_GRADE_LEVEL,
+    SCOPE_CODE,
+    SCOPE_REFUSAL,
+    is_mvp_level,
+    name_contradicts_level,
+)
 from modules.shared.rules import DEFAULT_ACTIVITY_PASS_PERCENTAGE, DEFAULT_INTERVENTION_TRIGGER
 from modules.teacher_admin import admin_repository as repository
 from modules.teacher_admin.admin_repository import (
@@ -54,13 +61,6 @@ from modules.teacher_admin.admin_schemas import (
     SettingsChanges,
     UserChanges,
     UserRole,
-)
-from modules.teacher_admin.grade_scope import (
-    MVP_GRADE_LEVEL,
-    SCOPE_CODE,
-    SCOPE_REFUSAL,
-    is_mvp_level,
-    name_contradicts_level,
 )
 
 router = APIRouter(tags=["teacher-admin"])

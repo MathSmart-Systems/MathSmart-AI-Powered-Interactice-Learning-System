@@ -21,6 +21,11 @@ STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
 SECTION = UUID("cc7ef387-7435-4af0-8c50-0a7ce6aa5f5c")
 GRADE = UUID("3f0f0000-0000-4000-8000-000000000006")
 
+#: Reads the enrolment guard makes before a write: the grade's level, and the
+#: grade and liveness of the section a learner is being placed in.
+GRADE_LEVEL = "select grade_levels.level"
+SECTION_PLACEMENT = "select sections.grade_id, sections.is_active"
+
 OWN_LEARNER = "where student_profiles.user_id = $1"
 BY_STUDENT_ID = "where student_profiles.student_id = $1"
 PROFILE_UPDATE = "update app.user_profiles"
@@ -43,6 +48,8 @@ ROW = {
 
 def student_connection(**overrides):
     results = {
+        GRADE_LEVEL: 6,
+        SECTION_PLACEMENT: {"grade_id": GRADE, "is_active": True},
         OWN_LEARNER: ROW,
         BY_STUDENT_ID: ROW,
         PROFILE_UPDATE: ROW,
@@ -182,3 +189,213 @@ def test_a_learner_who_has_no_record_is_not_found():
     response = client.get(f"/api/v1/students/{STUDENT_ID}", headers=ADVISER_HEADERS)
 
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# A learner is enrolled into the one grade MathSmart teaches, or not at all
+# ---------------------------------------------------------------------------
+#
+# The interface never offers another grade, but the interface is not the
+# boundary. These prove a crafted request cannot put a learner somewhere the
+# curriculum does not reach.
+
+LEGACY_GRADE = UUID("3f0f0000-0000-4000-8000-000000000003")
+LEGACY_SECTION = UUID("cc7ef387-7435-4af0-8c50-0a7ce6aa5f5c")
+ENROL_HEADERS = {**ADVISER_HEADERS, "Idempotency-Key": "enrol-key-000001"}
+
+ENROLMENT = {
+    "email": "learner@example.com",
+    "full_name": "Juan Dela Cruz",
+    "learner_id": "STU-2026-777",
+    "grade_id": str(GRADE),
+}
+
+
+def test_a_learner_is_enrolled_into_grade_six():
+    connection = student_connection()
+    client = build_client(connection)
+
+    response = client.post("/api/v1/students", json=ENROLMENT, headers=ENROL_HEADERS)
+
+    # The enrolment itself runs on the elevated provisioning path, which this
+    # client does not stand up; what matters here is that the scope guard let
+    # it through rather than refusing it.
+    assert response.status_code != 422
+    assert any(GRADE_LEVEL in query for query in connection.queries())
+
+
+def test_enrolling_into_another_grade_is_refused():
+    connection = student_connection(**{GRADE_LEVEL: 3})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/students",
+        json={**ENROLMENT, "grade_id": str(LEGACY_GRADE)},
+        headers=ENROL_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert "grade_id" in response.json()["error"]["fields"]
+
+
+def test_enrolling_into_a_grade_that_does_not_exist_is_refused():
+    connection = student_connection(**{GRADE_LEVEL: None})
+    client = build_client(connection)
+
+    response = client.post("/api/v1/students", json=ENROLMENT, headers=ENROL_HEADERS)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+
+
+class GradeAwareConnection(FakeConnection):
+    """Answers the level lookup from the grade it was actually asked about.
+
+    The shared fake matches on a query fragment alone, which cannot tell the
+    learner's grade from the grade a section belongs to. This one reads the
+    argument, which is the whole point of the test below.
+    """
+
+    def __init__(self, levels, **kwargs):
+        super().__init__(**kwargs)
+        self.levels = levels
+
+    async def fetchval(self, query: str, *args):
+        if GRADE_LEVEL in query:
+            return self.levels.get(args[0])
+        return await super().fetchval(query, *args)
+
+
+def test_a_section_in_another_grade_cannot_hold_a_learner():
+    """A Grade 6 grade_id with a section that belongs somewhere else."""
+    connection = GradeAwareConnection(
+        {GRADE: 6, LEGACY_GRADE: 3},
+        results={
+            SECTION_PLACEMENT: {"grade_id": LEGACY_GRADE, "is_active": True},
+            BY_STUDENT_ID: ROW,
+            LEARNER_UPDATE: ROW,
+        },
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/students",
+        json={**ENROLMENT, "section_id": str(LEGACY_SECTION)},
+        headers=ENROL_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert "section_id" in response.json()["error"]["fields"]
+
+
+def test_a_deactivated_section_cannot_hold_a_learner():
+    connection = student_connection(
+        **{SECTION_PLACEMENT: {"grade_id": GRADE, "is_active": False}}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/students",
+        json={**ENROLMENT, "section_id": str(SECTION)},
+        headers=ENROL_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert "deactivated" in response.json()["error"]["message"]
+
+
+def test_a_section_that_does_not_exist_is_refused():
+    connection = student_connection(**{SECTION_PLACEMENT: None})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/students",
+        json={**ENROLMENT, "section_id": str(SECTION)},
+        headers=ENROL_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+
+
+def test_enrolling_with_no_section_checks_no_section():
+    connection = student_connection()
+    client = build_client(connection)
+
+    client.post("/api/v1/students", json=ENROLMENT, headers=ENROL_HEADERS)
+
+    assert not any(SECTION_PLACEMENT in query for query in connection.queries())
+
+
+def test_the_scope_guard_runs_before_anything_is_provisioned():
+    """A refused enrolment leaves no account behind to clean up."""
+    connection = student_connection(**{GRADE_LEVEL: 3})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/students",
+        json={**ENROLMENT, "grade_id": str(LEGACY_GRADE)},
+        headers=ENROL_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not any("insert into app.student_profiles" in query for query in connection.queries())
+
+
+def test_moving_a_learner_to_another_grade_is_refused():
+    connection = student_connection(**{GRADE_LEVEL: 3})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/students/{STUDENT_ID}",
+        json={"grade_id": str(LEGACY_GRADE)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "grade_scope"
+    assert not any(LEARNER_UPDATE in query for query in connection.queries())
+
+
+def test_moving_a_learner_into_a_deactivated_section_is_refused():
+    connection = student_connection(
+        **{SECTION_PLACEMENT: {"grade_id": GRADE, "is_active": False}}
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/students/{STUDENT_ID}",
+        json={"section_id": str(SECTION)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not any(LEARNER_UPDATE in query for query in connection.queries())
+
+
+def test_a_monitoring_change_alone_checks_no_enrolment():
+    """Changing how a learner is watched is not an enrolment decision."""
+    connection = student_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/students/{STUDENT_ID}",
+        json={"monitoring_status": "improving"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert not any(GRADE_LEVEL in query for query in connection.queries())
+    assert not any(SECTION_PLACEMENT in query for query in connection.queries())
+
+
+def test_a_learner_cannot_enrol_anybody():
+    connection = student_connection()
+    client = build_client(connection)
+
+    response = client.post("/api/v1/students", json=ENROLMENT, headers=LEARNER_HEADERS)
+
+    assert response.status_code == 403

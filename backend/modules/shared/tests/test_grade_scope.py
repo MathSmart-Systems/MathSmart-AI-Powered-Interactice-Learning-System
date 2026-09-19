@@ -5,7 +5,7 @@ level counts as in scope, and when a grade's name is claiming to be a grade it
 is not.
 """
 
-from modules.teacher_admin.grade_scope import (
+from modules.shared.grade_scope import (
     MVP_GRADE_LEVEL,
     is_mvp_level,
     name_contradicts_level,

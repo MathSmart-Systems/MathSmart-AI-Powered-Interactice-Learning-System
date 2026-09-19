@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Pencil, Plus, Search, Users } from "lucide-react";
 
 const PREFS_KEY = "mathsmart.teacher_preferences";
@@ -31,6 +32,13 @@ import { Input } from "@/components/ui/input";
 
 import { diagnosticStatus, monitoringStatus } from "../utils/labels";
 import { createStudent, listStudents, updateStudent } from "../services/api";
+import {
+  MVP_GRADE_NAME,
+  assignableSections,
+  learnerName,
+  mvpGrade,
+  rosterTruncationMessage,
+} from "../utils/roster";
 import { EnrollStudentDialog } from "./EnrollStudentDialog";
 import { EditStudentDialog } from "./EditStudentDialog";
 
@@ -54,14 +62,18 @@ const FILTER_STYLE =
  *
  * The initial roster, grade directory and section directory arrive from the
  * server component (so the page is useful on first paint) and every filter
- * change or enrolment mutation refreshes them through the API. Search happens
- * on the already-loaded roster; grade and section filters are sent to the API.
+ * change or enrollment mutation refreshes them through the API. Search happens
+ * on the already-loaded roster; the section filter is sent to the API.
  */
-export function StudentsView({ initialLearners, initialGrades, initialSections, initialError, initialTruncated }) {
+export function StudentsView({ initialLearners, initialGrades, initialSections, initialError, initialTruncated, initialTotal = 0 }) {
   const [learners, setLearners] = useState(initialLearners);
   const [grades, setGrades] = useState(initialGrades);
   const [sections, setSections] = useState(initialSections);
-  const [rosterTruncated, setRosterTruncated] = useState(Boolean(initialTruncated));
+    // The API's own count of the whole roster, not the size of the page it
+  // returned. The difference is what the truncation line reports.
+  const [rosterTotal, setRosterTotal] = useState(
+    Number(initialTotal) || (initialTruncated ? initialLearners.length : 0),
+  );
   const [pageError, setPageError] = useState(null);
 
   // Density preference: read on mount and listen for live changes from Settings > Display.
@@ -83,7 +95,6 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
   const headPadding = density === "compact" ? "px-4 py-2" : "px-4 py-3";
 
   const [search, setSearch] = useState("");
-  const [gradeFilter, setGradeFilter] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
   const [filtering, setFiltering] = useState(false);
 
@@ -92,31 +103,15 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const gradeById = useMemo(() => {
-    const map = new Map();
-    for (const grade of grades) map.set(grade.grade_id, grade);
-    return map;
-  }, [grades]);
-
   const sectionById = useMemo(() => {
     const map = new Map();
     for (const section of sections) map.set(section.section_id, section);
     return map;
   }, [sections]);
 
-  function gradeName(gradeId) {
-    return gradeById.get(gradeId)?.name ?? null;
-  }
-
   function sectionName(sectionId) {
     return sectionById.get(sectionId)?.name ?? null;
   }
-
-  /** Sections that may be picked next to the current grade filter. */
-  const sectionsForGrade = useMemo(
-    () => (gradeFilter ? sections.filter((section) => section.grade_id === gradeFilter) : sections),
-    [sections, gradeFilter]
-  );
 
   const visibleLearners = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -128,14 +123,27 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
     });
   }, [learners, search]);
 
+  // Reported from the API's own total, so a page of 100 out of 412 says 412.
+  // Searching narrows what is on screen without changing what the roster holds,
+  // so the message follows the loaded page rather than the filtered view.
+  const truncationMessage = rosterTruncationMessage(learners.length, rosterTotal);
+
+  // MathSmart teaches one grade, so there is nothing to filter by and nothing
+  // to choose. Everything below works from this record, and says so plainly
+  // when the deployment is missing it.
+  const grade = useMemo(() => mvpGrade(grades), [grades]);
+  const gradeSections = useMemo(() => assignableSections(sections, grade), [sections, grade]);
+
   function failAction(message) {
     setPageError(message);
   }
 
-  async function fetchRoster({ gradeId = gradeFilter, sectionId = sectionFilter }) {
+  async function fetchRoster({ sectionId = sectionFilter } = {}) {
+    // The grade is never a filter: every learner in the roster is in the one
+    // grade MathSmart teaches.
     setFiltering(true);
     setPageError(null);
-    const result = await listStudents({ gradeId: gradeId || null, sectionId: sectionId || null });
+    const result = await listStudents({ sectionId: sectionId || null });
     setFiltering(false);
 
     if (result.error) {
@@ -143,17 +151,7 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
       return;
     }
     setLearners(result.data);
-    setRosterTruncated(result.total > result.data.length);
-  }
-
-  function handleGradeFilterChange(nextGradeId) {
-    setGradeFilter(nextGradeId);
-    const nextSection = sectionFilter && sectionsForGrade.some((s) => s.section_id === sectionFilter) ? sectionFilter : "";
-    setSectionFilter(nextSection);
-    fetchRoster({
-      gradeId: nextGradeId || null,
-      sectionId: nextSection || null,
-    });
+    setRosterTotal(result.total);
   }
 
   function handleSectionFilterChange(nextSectionId) {
@@ -202,16 +200,26 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
       <header className="flex flex-col gap-3">
         <p className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
           <Users aria-hidden="true" className="size-3.5" />
-          Student records
+          {grade?.name ?? MVP_GRADE_NAME}
         </p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-balance text-foreground sm:text-3xl">
           Students
         </h1>
         <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-          Enrol learners and keep their grade and section placement up to date.
+          Enroll learners and keep their section placement up to date.
         </p>
       </header>
+
+      {!grade ? (
+        <p
+          role="alert"
+          className="max-w-prose rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          The {MVP_GRADE_NAME} record is missing from this deployment, so a learner has nothing to
+          be enrolled into. Restore it from the database seed before enrolling anyone.
+        </p>
+      ) : null}
 
       {pageError ? (
         <p
@@ -229,10 +237,11 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
       ) : null}
 
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-base font-semibold text-foreground">Student roster</h2>
           <Button
             size="sm"
+            disabled={!grade}
             onClick={() => {
               setFormError(null);
               setEnrollOpen(true);
@@ -261,27 +270,6 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-foreground" htmlFor="students-grade-filter">
-              Grade
-            </label>
-            <select
-              id="students-grade-filter"
-              className={FILTER_STYLE}
-              value={gradeFilter}
-              onChange={(event) => handleGradeFilterChange(event.target.value)}
-              disabled={filtering}
-              aria-label="Filter by grade level"
-            >
-              <option value="">All grades</option>
-              {grades.map((grade) => (
-                <option key={grade.grade_id} value={grade.grade_id}>
-                  {grade.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
             <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-foreground" htmlFor="students-section-filter">
               Section
             </label>
@@ -290,25 +278,22 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
               className={FILTER_STYLE}
               value={sectionFilter}
               onChange={(event) => handleSectionFilterChange(event.target.value)}
-              disabled={filtering || sectionsForGrade.length === 0}
+              disabled={filtering || gradeSections.length === 0}
               aria-label="Filter by class section"
             >
               <option value="">All sections</option>
-              {sectionsForGrade.map((section) => {
-                const grade = gradeName(section.grade_id);
-                return (
-                  <option key={section.section_id} value={section.section_id}>
-                    {grade ? `${section.name} (${grade})` : section.name}
-                  </option>
-                );
-              })}
+              {gradeSections.map((section) => (
+                <option key={section.section_id} value={section.section_id}>
+                  {section.name}
+                </option>
+              ))}
             </select>
           </div>
         </div>
 
-        {rosterTruncated ? (
-          <p className="text-xs text-muted-foreground">
-            Showing the first {learners.length} enrolled learners. Search or filter to narrow the list.
+        {truncationMessage ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            {truncationMessage}
           </p>
         ) : null}
       </div>
@@ -317,12 +302,12 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
         <EmptyState
           message={
             learners.length === 0
-              ? "No enrolled learners yet. Enrol the first student to begin building your roster."
+              ? "No enrolled learners yet. Enroll the first student to begin building your roster."
               : "No learners match that search or those filters."
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="relative overflow-hidden rounded-lg border border-border bg-card">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <caption className="sr-only">Enrolled students</caption>
@@ -331,10 +316,10 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
                   <th scope="col" className={`${headPadding} font-semibold`}>
                     Student
                   </th>
-                  <th scope="col" className={`${headPadding} font-semibold`}>
+                  <th scope="col" className={`${headPadding} hidden font-semibold sm:table-cell`}>
                     Class section
                   </th>
-                  <th scope="col" className={`${headPadding} font-semibold`}>
+                  <th scope="col" className={`${headPadding} hidden font-semibold sm:table-cell`}>
                     Diagnostic
                   </th>
                   <th scope="col" className={`${headPadding} font-semibold`}>
@@ -347,21 +332,41 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
               </thead>
               <tbody className="divide-y divide-border">
                 {visibleLearners.map((learner) => {
-                  const grade = gradeName(learner.grade_id);
                   const section = sectionName(learner.section_id);
                   return (
                     <tr key={learner.student_id} className="hover:bg-secondary/40">
                       <td className={rowPadding}>
-                        <p className="font-semibold text-foreground">{learner.full_name ?? "Unnamed learner"}</p>
+                        {/*
+                         * The name is the way into the learner's record: a link
+                         * rather than a row click, so it is reachable by
+                         * keyboard, announced as a link, and openable in a new
+                         * tab like any other.
+                         */}
+                        <Link
+                          href={`/teacher/students/${learner.student_id}`}
+                          className="rounded-sm font-semibold text-foreground underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                        >
+                          {learnerName(learner)}
+                        </Link>
                         <p className="font-mono text-[11px] text-muted-foreground">{learner.learner_id}</p>
-                      </td>
-                      <td className={rowPadding}>
-                        <p className="text-foreground">{grade ?? "—"}</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {section ? `Section ${section}` : "No section assigned"}
+                        {/*
+                         * The two columns hidden on a narrow screen, said once
+                         * here instead, so nothing is lost and nothing scrolls.
+                         */}
+                        <p className="text-[11px] text-muted-foreground sm:hidden">
+                          {section ?? "No section assigned"} ·{" "}
+                          {diagnosticStatus(learner.diagnostic_status).label}
                         </p>
                       </td>
-                      <td className={rowPadding}>
+                      {/*
+                       * The grade is not a column. Every learner on this page
+                       * is in the one grade MathSmart teaches, so repeating it
+                       * on every row would say nothing.
+                       */}
+                      <td className={`${rowPadding} hidden sm:table-cell`}>
+                        <p className="text-foreground">{section ?? "No section assigned"}</p>
+                      </td>
+                      <td className={`${rowPadding} hidden sm:table-cell`}>
                         <StatusPill status={diagnosticStatus(learner.diagnostic_status)} />
                       </td>
                       <td className={rowPadding}>
@@ -391,7 +396,7 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
       )}
 
       <EnrollStudentDialog
-        grades={grades}
+        grade={grade}
         sections={sections}
         open={enrollOpen}
         onOpenChange={(open) => {
@@ -404,7 +409,7 @@ export function StudentsView({ initialLearners, initialGrades, initialSections, 
 
       <EditStudentDialog
         student={editRecord}
-        grades={grades}
+        grade={grade}
         sections={sections}
         open={Boolean(editRecord)}
         onOpenChange={(open) => {

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { MONITORING_STATUS } from "../utils/labels";
+import { MVP_GRADE_NAME, assignableSections } from "../utils/roster";
 
 function FieldLabel({ htmlFor, children }) {
   return (
@@ -30,32 +31,26 @@ const SELECT_STYLE =
  * The edit form body. Keyed by the student it edits, so React remounts it each
  * time the dialog opens for a different learner and state starts fresh.
  */
-function EditStudentFields({ student, grades, sections, onCancel, onSubmit, busy, error }) {
-  const [gradeId, setGradeId] = useState(student?.grade_id ?? grades[0]?.grade_id ?? "");
+function EditStudentFields({ student, grade, sections, onCancel, onSubmit, busy, error }) {
   const originalSectionId = student?.section_id ?? "";
+
+  // MathSmart teaches one grade, so a learner is never moved between grades.
+  // The only placement decision left is which of its active sections they are
+  // in, or none.
+  const availableSections = assignableSections(sections, grade);
   const [sectionId, setSectionId] = useState(
-    sections.some((section) => section.section_id === originalSectionId) ? originalSectionId : ""
+    availableSections.some((section) => section.section_id === originalSectionId)
+      ? originalSectionId
+      : "",
   );
   const [monitoring, setMonitoring] = useState(student?.monitoring_status ?? "active");
-
-  const originalGradeId = student?.grade_id ?? "";
-  const gradeChanged = gradeId !== originalGradeId;
-  const sectionsForGrade = sections.filter((section) => section.grade_id === gradeId);
-
-  function handleGradeChange(nextGradeId) {
-    setGradeId(nextGradeId);
-    if (nextGradeId === originalGradeId) {
-      setSectionId(sections.some((section) => section.section_id === originalSectionId) ? originalSectionId : "");
-      return;
-    }
-    setSectionId(sectionsForGrade[0]?.section_id ?? "");
-  }
 
   function handleSubmit(event) {
     event.preventDefault();
 
     const payload = {
-      grade_id: gradeId,
+      // The grade is never changed here; there is only one, and the learner is
+      // already in it. Sending it would be asking the API to re-confirm a fact.
       monitoring_status: monitoring,
     };
     if (sectionId) payload.section_id = sectionId;
@@ -75,49 +70,32 @@ function EditStudentFields({ student, grades, sections, onCancel, onSubmit, busy
       </DialogHeader>
 
       <DialogBody className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <FieldLabel htmlFor="edit-student-grade">Grade Level</FieldLabel>
-            <select
-              id="edit-student-grade"
-              className={SELECT_STYLE}
-              value={gradeId}
-              onChange={(event) => handleGradeChange(event.target.value)}
-              required
-            >
-              {grades.map((grade) => (
-                <option key={grade.grade_id} value={grade.grade_id}>
-                  {grade.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <FieldLabel htmlFor="edit-student-section">Section</FieldLabel>
-            <select
-              id="edit-student-section"
-              className={SELECT_STYLE}
-              value={sectionId}
-              onChange={(event) => setSectionId(event.target.value)}
-            >
-              {sectionsForGrade.length === 0 ? (
-                <option value="">No sections in this grade</option>
-              ) : (
-                <>
-                  <option value="">No section assigned</option>
-                  {sectionsForGrade.map((section) => (
-                    <option key={section.section_id} value={section.section_id}>
-                      {section.name}
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-            {gradeChanged && sectionsForGrade.length > 0 && !sectionId ? (
-              <p className="mt-1 text-xs text-muted-foreground">Pick a section in this grade to move them into it.</p>
-            ) : null}
-          </div>
+        <div>
+          <FieldLabel htmlFor="edit-student-section">Section</FieldLabel>
+          <select
+            id="edit-student-section"
+            className={SELECT_STYLE}
+            value={sectionId}
+            onChange={(event) => setSectionId(event.target.value)}
+          >
+            {availableSections.length === 0 ? (
+              <option value="">No active sections yet</option>
+            ) : (
+              <>
+                <option value="">No section assigned</option>
+                {availableSections.map((section) => (
+                  <option key={section.section_id} value={section.section_id}>
+                    {section.name}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+          {availableSections.length === 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add a {MVP_GRADE_NAME} section in Class Sections before placing a learner in one.
+            </p>
+          ) : null}
         </div>
 
         <div>
@@ -157,12 +135,12 @@ function EditStudentFields({ student, grades, sections, onCancel, onSubmit, busy
 }
 
 /**
- * Edit a learner's enrolment. `student` is the record being edited, or `null`
+ * Edit a learner's enrollment. `student` is the record being edited, or `null`
  * when the dialog is closed. Grades and sections supply the dropdowns; the
  * section list follows the chosen grade.
  */
-export function EditStudentDialog({ student, grades, sections, open, onOpenChange, onSubmit, busy, error }) {
-  const hasGrades = grades && grades.length > 0;
+export function EditStudentDialog({ student, grade, sections, open, onOpenChange, onSubmit, busy, error }) {
+  const hasGrades = Boolean(grade);
   const noGradesError = !hasGrades && open ? "No grade levels exist, so this student cannot be placed." : null;
 
   return (
@@ -186,7 +164,7 @@ export function EditStudentDialog({ student, grades, sections, open, onOpenChang
           <EditStudentFields
             key={student.student_id}
             student={student}
-            grades={grades}
+            grade={grade}
             sections={sections}
             onCancel={() => onOpenChange(false)}
             onSubmit={onSubmit}

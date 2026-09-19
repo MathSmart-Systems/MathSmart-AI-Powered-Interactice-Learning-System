@@ -68,14 +68,29 @@ class FakeVerifier:
 
 
 class FakeConnection:
+    """Answers nothing by default, and whatever a test named by query fragment.
+
+    Enrolment reads the grade's level before it provisions anything, so a test
+    that enrols has to be able to answer that read.
+    """
+
+    def __init__(self, results: dict[str, object] | None = None):
+        self.results = results or {}
+
+    def _matched(self, query):
+        for fragment, result in self.results.items():
+            if fragment in query:
+                return result
+        return None
+
     async def fetch(self, query, *args):
-        return []
+        return self._matched(query) or []
 
     async def fetchrow(self, query, *args):
-        return None
+        return self._matched(query)
 
     async def fetchval(self, query, *args):
-        return None
+        return self._matched(query)
 
     async def execute(self, query, *args):
         return "OK"
@@ -95,7 +110,9 @@ class FakeDatabase:
     async def actor(self, token):
         if not self.account_active:
             raise AccountDisabled("The account is not active")
-        yield FakeConnection()
+        # Enrolment checks the grade is the one MathSmart teaches before it
+        # provisions anything, so the connection has to be able to answer that.
+        yield FakeConnection(results={"select grade_levels.level": 6})
 
 
 class FakeSessionGateway:

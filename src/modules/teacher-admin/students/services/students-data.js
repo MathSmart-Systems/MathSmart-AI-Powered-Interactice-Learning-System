@@ -62,7 +62,7 @@ function rosterQuery(gradeId, sectionId) {
 /**
  * Reads the initial roster, grade directory and section directory.
  *
- * @returns {Promise<{learners: Array, grades: Array, sections: Array, rosterTruncated?: boolean, error?: string}>}
+ * @returns {Promise<{learners: Array, grades: Array, sections: Array, rosterTotal?: number, rosterTruncated?: boolean, error?: string}>}
  */
 export async function readStudentsData({ gradeId = null, sectionId = null } = {}) {
   const base = apiBaseUrl();
@@ -82,12 +82,16 @@ export async function readStudentsData({ gradeId = null, sectionId = null } = {}
     readFromApi("/teacher-admin/sections", token, base),
   ]);
 
+  // The API's own count, not the length of the page it returned. A roster of
+  // 400 learners answers with 100 rows and a total of 400, and the difference
+  // is the whole point of the message the view shows.
   const total = rosterRes.meta?.total_items ?? rosterRes.data?.length ?? 0;
 
   return {
     learners: rosterRes.ok ? rosterRes.data : [],
     grades: gradesRes.ok ? gradesRes.data : [],
     sections: sectionsRes.ok ? sectionsRes.data : [],
+    rosterTotal: rosterRes.ok ? total : 0,
     rosterTruncated: rosterRes.ok && total > (rosterRes.data?.length ?? 0),
     error: !rosterRes.ok ? "unavailable" : undefined,
   };

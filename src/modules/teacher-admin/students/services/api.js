@@ -6,7 +6,7 @@
  * Supabase access token from the session cookie and forward it to the
  * MathSmart API.
  *
- * Enrolment is idempotent: `POST /students` needs an `Idempotency-Key` header,
+ * Enrollment is idempotent: `POST /students` needs an `Idempotency-Key` header,
  * so a retried request returns the original creation instead of provisioning a
  * second account.
  */
@@ -33,9 +33,9 @@ async function getAccessToken() {
   }
 }
 
-/** A fresh key for one enrolment request; a UUID is long enough and unique. */
+/** A fresh key for one enrollment request; a UUID is long enough and unique. */
 function newIdempotencyKey() {
-  return globalThis.crypto?.randomUUID?.() ?? `enrol-${Date.now()}`;
+  return globalThis.crypto?.randomUUID?.() ?? `enroll-${Date.now()}`;
 }
 
 /** Build a query string from the filter values that are set. */
@@ -115,7 +115,7 @@ export async function listStudents({ gradeId = null, sectionId = null } = {}) {
 }
 
 /**
- * Enrol a learner. The request must carry an `Idempotency-Key`, so a browser
+ * Enroll a learner. The request must carry an `Idempotency-Key`, so a browser
  * retry after a network blip cannot create a duplicate account.
  */
 export async function createStudent({ email, full_name, learner_id, grade_id, section_id, school_name }) {
@@ -136,4 +136,25 @@ export async function createStudent({ email, full_name, learner_id, grade_id, se
 
 export async function updateStudent(studentId, patch) {
   return apiRequest("PATCH", `/students/${studentId}`, { body: patch });
+}
+
+/**
+ * One learner's record: identity and enrollment, nothing else.
+ *
+ * `GET /students/{id}` is Teacher/Administrator-only and runs under the
+ * caller's own row-level policies, so a learner they may not see is a 404
+ * rather than a partial answer.
+ */
+export async function fetchStudent(studentId) {
+  return apiRequest("GET", `/students/${studentId}`);
+}
+
+/**
+ * One learner's deterministic progress evidence.
+ *
+ * Scores, mastery bands, growth and attempt counts all come from here and are
+ * never inferred in the browser. Nothing on this path involves Groq.
+ */
+export async function fetchStudentProgress(studentId) {
+  return apiRequest("GET", `/progress/${studentId}`);
 }

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from app.dependencies import ActorDb, CurrentActor, SensitiveActor, TeacherAdmin
 from middleware.errors import ApiError
 from middleware.request_context import current_request_id
+from modules.shared.grade_scope import MVP_GRADE_LEVEL, SCOPE_CODE, SCOPE_REFUSAL, is_mvp_level
 from modules.students import repository
 from modules.students.provisioning import (
     IdempotencyMismatch,
@@ -35,6 +36,64 @@ router = APIRouter(tags=["students"])
 MAX_PAGE_SIZE = 100
 DEFAULT_PAGE_SIZE = 20
 MIN_IDEMPOTENCY_KEY_LENGTH = 8
+
+
+async def _refuse_enrolment_outside_scope(
+    connection: Any, grade_id: UUID | None, section_id: UUID | None
+) -> None:
+    """Refuse an enrolment that would put a learner outside the curriculum.
+
+    MathSmart teaches one grade. The interface never offers another, but the
+    interface is not the boundary: a request is checked here so a crafted one
+    cannot enrol a learner into a grade that has no competencies, no modules
+    and no assessments behind it, or into a section that belongs to one.
+
+    Read first, write second. Both reads run on the caller's own connection, so
+    a grade or section they cannot see is indistinguishable from one that does
+    not exist — which is the right answer either way.
+    """
+    if grade_id is not None:
+        level = await repository.grade_level(connection, grade_id)
+        if level is None:
+            raise ApiError(
+                422,
+                "That grade level is not in the directory.",
+                code=SCOPE_CODE,
+                fields={"grade_id": ["Unknown grade level."]},
+            )
+        if not is_mvp_level(level):
+            raise ApiError(
+                422, SCOPE_REFUSAL, code=SCOPE_CODE, fields={"grade_id": [SCOPE_REFUSAL]}
+            )
+
+    if section_id is None:
+        return
+
+    placement = await repository.section_placement(connection, section_id)
+    if placement is None:
+        raise ApiError(
+            422,
+            "That section is not in the directory.",
+            code=SCOPE_CODE,
+            fields={"section_id": ["Unknown section."]},
+        )
+    if not placement["is_active"]:
+        raise ApiError(
+            422,
+            "That section has been deactivated, so a learner cannot be placed in it.",
+            code=SCOPE_CODE,
+            fields={"section_id": ["This section is no longer active."]},
+        )
+
+    section_level = await repository.grade_level(connection, placement["grade_id"])
+    if not is_mvp_level(section_level):
+        raise ApiError(
+            422,
+            f"That section belongs to another grade. Only a Grade {MVP_GRADE_LEVEL} "
+            "section can hold a learner.",
+            code=SCOPE_CODE,
+            fields={"section_id": [SCOPE_REFUSAL]},
+        )
 
 
 def _learner(row: Any) -> dict[str, Any]:
@@ -132,6 +191,7 @@ Provisioning = Annotated[StudentProvisioning, Depends(get_provisioning)]
 async def enrol_learner(
     actor: TeacherAdmin,
     _session: SensitiveActor,
+    connection: ActorDb,
     provisioning: Provisioning,
     body: EnrolLearnerRequest,
     response: Response,
@@ -142,7 +202,8 @@ async def enrol_learner(
     Requires a Teacher/Administrator, a live session, and an `Idempotency-Key`,
     so a retried request returns the original result instead of creating a
     second account. The learner's role is set by the server and cannot be
-    chosen by the request.
+    chosen by the request, and neither can a grade outside the one MathSmart
+    teaches.
     """
     if not idempotency_key or len(idempotency_key) < MIN_IDEMPOTENCY_KEY_LENGTH:
         raise ApiError(
@@ -150,6 +211,10 @@ async def enrol_learner(
             "An Idempotency-Key header of at least 8 characters is required",
             code="idempotency_key_required",
         )
+
+    # Checked before an account is provisioned, so a refused enrolment leaves
+    # nothing behind to clean up.
+    await _refuse_enrolment_outside_scope(connection, body.grade_id, body.section_id)
 
     try:
         learner, created = await provisioning.enrol(
@@ -204,8 +269,11 @@ async def update_learner(
     """Change a learner's enrolment: their class, grade, school or monitoring.
 
     Not their identity and not their access. Moving a learner between classes is
-    a security-critical school record, so it needs a live session too.
+    a security-critical school record, so it needs a live session too — and the
+    class has to be one that exists inside the curriculum MathSmart teaches.
     """
+    await _refuse_enrolment_outside_scope(connection, body.grade_id, body.section_id)
+
     updated = await repository.update_learner(
         connection,
         student_id=student_id,

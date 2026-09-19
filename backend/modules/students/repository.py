@@ -105,6 +105,33 @@ returning student_profiles.student_id
 """
 
 
+#: The grade a learner is being enrolled into, read so the level can be checked
+#: rather than trusted from the request.
+_GRADE_LEVEL_SQL = """
+select grade_levels.level
+from app.grade_levels
+where grade_levels.grade_id = $1
+"""
+
+#: The section a learner is being placed in, with the grade it belongs to and
+#: whether it is still live. One read answers both questions.
+_SECTION_PLACEMENT_SQL = """
+select sections.grade_id, sections.is_active
+from app.sections
+where sections.section_id = $1
+"""
+
+
+async def grade_level(connection: ActorConnection, grade_id: UUID) -> Any:
+    """The numeric level of a grade, or None when there is no such grade."""
+    return await connection.fetchval(_GRADE_LEVEL_SQL, grade_id)
+
+
+async def section_placement(connection: ActorConnection, section_id: UUID) -> Any:
+    """The grade a section belongs to and whether it is still active."""
+    return await connection.fetchrow(_SECTION_PLACEMENT_SQL, section_id)
+
+
 async def own_learner(connection: ActorConnection, user_id: UUID) -> Any:
     return await connection.fetchrow(_OWN_LEARNER_SQL, user_id)
 

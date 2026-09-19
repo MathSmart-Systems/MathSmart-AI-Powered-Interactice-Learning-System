@@ -1,19 +1,16 @@
-import { readStudentsData, StudentsView } from "@/modules/teacher-admin/students";
+import { Suspense } from "react";
+
+import { Students, StudentsSkeleton } from "@/modules/teacher-admin/students";
 
 export const metadata = { title: "Students | MathSmart" };
 
 export const dynamic = "force-dynamic";
 
-export default async function TeacherStudentsPage() {
-  const { learners, grades, sections, rosterTruncated, error } = await readStudentsData();
-
+/** Renders the student roster behind its route-level loading boundary. */
+export default function TeacherStudentsPage() {
   return (
-    <StudentsView
-      initialLearners={learners}
-      initialGrades={grades}
-      initialSections={sections}
-      initialError={error}
-      initialTruncated={rosterTruncated}
-    />
+    <Suspense fallback={<StudentsSkeleton />}>
+      <Students />
+    </Suspense>
   );
 }

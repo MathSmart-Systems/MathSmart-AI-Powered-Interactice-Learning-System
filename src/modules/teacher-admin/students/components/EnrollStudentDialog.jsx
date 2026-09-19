@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
+import { MVP_GRADE_NAME, assignableSections } from "../utils/roster";
+
 function FieldLabel({ htmlFor, children }) {
   return (
     <label htmlFor={htmlFor} className="mb-1 block text-xs font-bold uppercase tracking-wider text-foreground">
@@ -26,23 +28,20 @@ const SELECT_STYLE =
   "h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 /**
- * The enrolment form body. Keyed by the dialog's open state so React remounts
+ * The enrollment form body. Keyed by the dialog's open state so React remounts
  * it and state starts fresh each time the dialog opens.
  */
-function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error }) {
+function EnrollStudentFields({ grade, sections, onCancel, onSubmit, busy, error }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [learnerId, setLearnerId] = useState("");
-  const [gradeId, setGradeId] = useState(grades[0]?.grade_id ?? "");
   const [sectionId, setSectionId] = useState("");
   const [schoolName, setSchoolName] = useState("");
 
-  const sectionsForGrade = sections.filter((section) => section.grade_id === gradeId);
-
-  function handleGradeChange(nextGradeId) {
-    setGradeId(nextGradeId);
-    setSectionId("");
-  }
+  // MathSmart teaches one grade, so there is no grade to choose. The section
+  // list is the sections of that grade which are still active; a retired one
+  // is not somewhere a learner can be put, and the API refuses it.
+  const availableSections = assignableSections(sections, grade);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -51,7 +50,9 @@ function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error
       full_name: fullName.trim(),
       email: email.trim(),
       learner_id: learnerId.trim(),
-      grade_id: gradeId,
+      // Resolved from the directory, never asked for. The API checks it is the
+      // supported grade, so a crafted request cannot enroll anyone elsewhere.
+      grade_id: grade.grade_id,
     };
     if (sectionId) payload.section_id = sectionId;
     if (schoolName.trim()) payload.school_name = schoolName.trim();
@@ -111,24 +112,7 @@ function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <FieldLabel htmlFor="student-grade">Grade Level</FieldLabel>
-            <select
-              id="student-grade"
-              className={SELECT_STYLE}
-              value={gradeId}
-              onChange={(event) => handleGradeChange(event.target.value)}
-              required
-            >
-              {grades.map((grade) => (
-                <option key={grade.grade_id} value={grade.grade_id}>
-                  {grade.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
+        <div>
           <div>
             <FieldLabel htmlFor="student-section">Section</FieldLabel>
             <select
@@ -138,7 +122,7 @@ function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error
               onChange={(event) => setSectionId(event.target.value)}
             >
               <option value="">No section assigned</option>
-              {sectionsForGrade.map((section) => (
+              {availableSections.map((section) => (
                 <option key={section.section_id} value={section.section_id}>
                   {section.name}
                 </option>
@@ -178,12 +162,17 @@ function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error
 }
 
 /**
- * Enrol a learner. `grades` and `sections` supply the placement dropdowns; the
- * section list follows the chosen grade.
+ * Enroll a learner into the one grade MathSmart teaches.
+ *
+ * `grade` is that grade's record, resolved from the directory rather than
+ * chosen: there is no grade field in the form, and the API refuses any other.
+ * `sections` supplies the one placement choice there is, narrowed to the
+ * active sections of that grade.
  */
-export function EnrollStudentDialog({ grades, sections, open, onOpenChange, onSubmit, busy, error }) {
-  const hasGrades = grades && grades.length > 0;
-  const noGradesError = !hasGrades && open ? "Please create at least one grade level before enrolling students." : null;
+export function EnrollStudentDialog({ grade, sections, open, onOpenChange, onSubmit, busy, error }) {
+  const noGradesError = !grade && open
+    ? `The ${MVP_GRADE_NAME} record is missing from this deployment, so a learner has nothing to be enrolled into. Restore it from the database seed first.`
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -205,7 +194,7 @@ export function EnrollStudentDialog({ grades, sections, open, onOpenChange, onSu
         ) : (
           <EnrollStudentFields
             key={`enroll-${open}`}
-            grades={grades}
+            grade={grade}
             sections={sections}
             onCancel={() => onOpenChange(false)}
             onSubmit={onSubmit}

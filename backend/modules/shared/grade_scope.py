@@ -1,5 +1,9 @@
 """The MVP curriculum scope: DepEd Grade 6 mathematics, and nothing else.
 
+Shared rather than owned by one feature: the directory decides which grade a
+section may belong to, and enrolment decides which grade a learner may join.
+Both answers have to be the same one, so the rule is stated here once.
+
 MathSmart teaches one grade. Left to the API alone a Teacher/Administrator
 could add Grade 3, hang sections off it, and enrol learners into a curriculum
 that has no competencies, no modules and no assessments behind it. The refusal
