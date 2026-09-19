@@ -196,6 +196,24 @@ test("buildClassPatternAnalysisPayload returns null without cases or scope", () 
   );
 });
 
+test("buildClassPatternAnalysisPayload returns null when no scope resolves", () => {
+  const cases = [{ severity: "HIGH", status: "Needs Intervention" }];
+
+  // A stale grade filter that the directory no longer contains leaves the
+  // payload with neither a grade nor a competency, so no request is built.
+  assert.equal(
+    buildClassPatternAnalysisPayload(cases, { gradeId: "missing-grade", grades: [] }),
+    null
+  );
+  assert.equal(
+    buildClassPatternAnalysisPayload(cases, {
+      gradeId: "missing-grade",
+      grades: [{ id: "grade-1", name: "Grade 6" }],
+    }),
+    null
+  );
+});
+
 test("buildClassPatternAnalysisPayload aggregates severity and status without names", () => {
   const cases = [
     { severity: "HIGH", status: "Needs Intervention" },

@@ -56,6 +56,27 @@ test("normalizeScore accepts numbers and numeric strings", () => {
   assert.equal(normalizeScore(100), 100);
 });
 
+test("normalizeScore holds values inside the documented range", () => {
+  assert.equal(normalizeScore(-10), 0);
+  assert.equal(normalizeScore(150), 100);
+  assert.equal(normalizeScore("-0.5"), 0);
+  assert.equal(normalizeScore("100.5"), 100);
+});
+
+test("severityRank ignores inherited object properties", () => {
+  assert.equal(severityRank("constructor"), Number.MAX_SAFE_INTEGER);
+  assert.equal(severityRank("toString"), Number.MAX_SAFE_INTEGER);
+  assert.equal(severityRank("hasOwnProperty"), Number.MAX_SAFE_INTEGER);
+});
+
+test("sortCases keeps a malformed severity out of the priority positions", () => {
+  const sorted = sortCases([
+    { id: "inherited", severity: "constructor" },
+    { id: "high", severity: "HIGH" },
+  ]);
+  assert.deepEqual(sorted.map((item) => item.id), ["high", "inherited"]);
+});
+
 test("normalizeScore returns null for missing or invalid values", () => {
   assert.equal(normalizeScore(null), null);
   assert.equal(normalizeScore(undefined), null);
@@ -82,18 +103,21 @@ test("studentContextLine prefers grade and section together", () => {
   assert.equal(studentContextLine({}), "Unassigned");
 });
 
-test("nextStatusOptions follows the documented lifecycle", () => {
-  assert.deepEqual(nextStatusOptions("Needs Intervention"), ["In Progress", "Resolved"]);
-  assert.deepEqual(nextStatusOptions("In Progress"), ["In Progress", "Resolved"]);
+test("nextStatusOptions offers only the lifecycle edges the database allows", () => {
+  assert.deepEqual(nextStatusOptions("Needs Intervention"), ["In Progress"]);
+  assert.deepEqual(nextStatusOptions("In Progress"), ["Resolved"]);
   assert.deepEqual(nextStatusOptions("Resolved"), ["In Progress"]);
   assert.deepEqual(nextStatusOptions(undefined), []);
   assert.deepEqual(nextStatusOptions("Bogus"), []);
 });
 
-test("isReopen only recognises a move back to In Progress", () => {
-  assert.equal(isReopen("In Progress"), true);
-  assert.equal(isReopen("Resolved"), false);
-  assert.equal(isReopen(null), false);
+test("isReopen recognises only a resolved case returning to In Progress", () => {
+  assert.equal(isReopen("Resolved", "In Progress"), true);
+  assert.equal(isReopen("Needs Intervention", "In Progress"), false);
+  assert.equal(isReopen("In Progress", "Resolved"), false);
+  assert.equal(isReopen("Resolved", "Resolved"), false);
+  assert.equal(isReopen(null, "In Progress"), false);
+  assert.equal(isReopen("Resolved", null), false);
 });
 
 test("normalizeCase keeps the documented fields and normalises evidence", () => {
@@ -148,9 +172,10 @@ test("eligibleForStatus never silently reopens a resolved case", () => {
     { id: "b", status: "In Progress" },
     { id: "c", status: "Resolved" },
   ];
+  // "a" still needs to be taken up, so it cannot go straight to Resolved.
   assert.deepEqual(
     eligibleForStatus(cases, "Resolved").map((item) => item.id),
-    ["a", "b"]
+    ["b"]
   );
   assert.deepEqual(
     eligibleForStatus(cases, "In Progress").map((item) => item.id),
@@ -183,6 +208,30 @@ test("casesToCsv writes a header and one escaped row per case", () => {
   assert.ok(csv.includes('"Dela Cruz, Juan"'), "commas inside a field must be quoted");
   assert.ok(csv.includes("35"));
   assert.ok(!casesToCsv(null).includes("case-1"));
+});
+
+test("casesToCsv neutralises spreadsheet formula triggers", () => {
+  const cases = [
+    {
+      id: "case-1",
+      student: { id: "s-1", full_name: "=SUM(A1:A9)", learner_id: "STU-1", section_name: "@Rizal" },
+      competency: { code: "+MATH6", name: "-Integers" },
+      severity: "HIGH",
+      status: "In Progress",
+      intervention_type: "Other",
+      evidence: { diagnostic_score: 35, current_score: 30, attempt_count: 1, unsuccessful_attempts: 1 },
+      created_at: "2026-09-01T00:00:00Z",
+      recorded_by: "Maria Santos",
+    },
+  ];
+
+  const row = casesToCsv(cases).split("\r\n")[1];
+
+  assert.ok(row.includes("'=SUM(A1:A9)"), "a leading = must be prefixed");
+  assert.ok(row.includes("'@Rizal"), "a leading @ must be prefixed");
+  assert.ok(row.includes("'+MATH6"), "a leading + must be prefixed");
+  assert.ok(row.includes("'-Integers"), "a leading - must be prefixed");
+  assert.ok(!row.includes(",=SUM"), "no cell may still start a formula");
 });
 
 test("formatDate renders short dates or an em dash", () => {

@@ -175,6 +175,37 @@ def test_the_advanced_queue_filters_reach_the_query():
     assert 20 in args
 
 
+def test_a_date_only_upper_bound_keeps_the_whole_selected_day():
+    connection = intervention_connection()
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/interventions",
+        params={"date_to": "2026-09-30"},
+        headers=ADVISER_HEADERS,
+    )
+
+    # The query uses an exclusive upper bound, so a date-only filter has to
+    # reach it as the following midnight. Binding 2026-09-30 itself would drop
+    # every case opened during the selected day.
+    _, args = connection.calls[0]
+    assert any(str(value).startswith("2026-10-01") for value in args)
+
+
+def test_an_explicit_time_of_day_is_bound_unchanged():
+    connection = intervention_connection()
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/interventions",
+        params={"date_to": "2026-09-30T15:30:00"},
+        headers=ADVISER_HEADERS,
+    )
+
+    _, args = connection.calls[0]
+    assert any(str(value).startswith("2026-09-30 15:30") for value in args)
+
+
 def test_a_negative_attempt_filter_is_refused():
     client = build_client(intervention_connection())
 
