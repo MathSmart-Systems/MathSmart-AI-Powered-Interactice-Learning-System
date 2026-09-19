@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -72,7 +73,7 @@ export function EditNameDialog({ open, onOpenChange, initialName = "", onSaved }
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:rounded-xl">
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader>
             <DialogTitle className="font-display text-lg font-semibold">Edit your name</DialogTitle>
             <DialogDescription>
@@ -80,7 +81,7 @@ export function EditNameDialog({ open, onOpenChange, initialName = "", onSaved }
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-4 py-4">
+          <DialogBody className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="profile-full-name">Full name</Label>
               <Input
@@ -98,16 +99,16 @@ export function EditNameDialog({ open, onOpenChange, initialName = "", onSaved }
               Your class, your section and your learning status are school records,
               so only your teacher can change those.
             </p>
-          </div>
-
-          {error ? (
-            <p
-              role="alert"
-              className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-            >
-              {error}
-            </p>
-          ) : null}
+          
+            {error ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {error}
+              </p>
+            ) : null}
+          </DialogBody>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>

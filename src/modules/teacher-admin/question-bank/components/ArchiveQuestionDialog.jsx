@@ -5,6 +5,7 @@ import { TriangleAlert } from "lucide-react";
 
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -44,23 +45,25 @@ export function ArchiveQuestionDialog({ question, onOpenChange }) {
           </DialogDescription>
         </DialogHeader>
 
-        {state.formError ? (
-          <p
-            role="alert"
-            className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive"
-          >
-            <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>{state.formError}</span>
-          </p>
-        ) : null}
+        <DialogBody className="flex flex-col gap-5">
+          {state.formError ? (
+            <p
+              role="alert"
+              className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
+              <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+              <span>{state.formError}</span>
+            </p>
+          ) : null}
 
-        <form id={formId} action={formAction}>
-          <input type="hidden" name="id" value={question.id} />
+          <form id={formId} action={formAction}>
+            <input type="hidden" name="id" value={question.id} />
 
-          <p className="max-w-prose text-sm leading-relaxed text-foreground">
-            Archive <span className="font-semibold text-foreground">{question.prompt}</span>?
-          </p>
-        </form>
+            <p className="max-w-prose text-sm leading-relaxed text-foreground">
+              Archive <span className="font-semibold text-foreground">{question.prompt}</span>?
+            </p>
+          </form>
+        </DialogBody>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

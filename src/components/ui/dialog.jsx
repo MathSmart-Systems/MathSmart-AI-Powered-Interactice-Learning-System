@@ -5,6 +5,9 @@ import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { X } from "lucide-react"
 
+/** Carries the root's open state down to the surface, for focus return. */
+const DialogOpenContext = React.createContext(undefined)
+
 /**
  * Root component that manages open/closed state for a dialog modal.
  *
@@ -12,7 +15,11 @@ import { X } from "lucide-react"
  * @returns {JSX.Element}
  */
 function Dialog({ ...props }) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  return (
+    <DialogOpenContext.Provider value={props.open}>
+      <DialogPrimitive.Root data-slot="dialog" {...props} />
+    </DialogOpenContext.Provider>
+  )
 }
 
 /**
@@ -62,36 +69,118 @@ function DialogOverlay({ className, ...props }) {
 }
 
 /**
+ * Sends focus back where it came from when the dialog closes.
+ *
+ * Radix returns focus to its own `DialogTrigger`. Every dialog in MathSmart is
+ * opened from state instead — the row's Edit button sets a flag — so there is
+ * no trigger for Radix to return to, and focus was landing on `<body>`. That
+ * drops a keyboard or screen-reader user at the top of the page each time they
+ * press Escape.
+ *
+ * The control that opened the dialog still has focus on the portal's first
+ * render, before Radix moves focus inside, so that is when it is remembered.
+ *
+ * @returns {(event: Event) => void} a handler for `onCloseAutoFocus`
+ */
+function useFocusReturn(open, onCloseAutoFocus) {
+  const openerRef = React.useRef(null)
+
+  // A dialog that is mounted only while it is open has no closed render to
+  // learn from, so its first render is the moment of opening.
+  const [openerOnMount] = React.useState(() =>
+    typeof document === "undefined" ? null : document.activeElement
+  )
+
+  React.useEffect(() => {
+    if (open) return undefined
+
+    // While the dialog is closed, keep track of what has focus. The last thing
+    // recorded before it opens is the control that opened it.
+    //
+    // Focus moving into a dialog is skipped: that happens in the same commit
+    // as the open, before this listener is torn down, and recording it would
+    // leave the return pointing at a surface that is about to be unmounted.
+    const remember = (event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[role="dialog"]')) return
+      openerRef.current = target
+    }
+    // Deliberately not seeded from `document.activeElement` here. This effect
+    // also runs as the dialog closes, and seeding it then would overwrite the
+    // opener with whatever the dialog left focused.
+    document.addEventListener("focusin", remember)
+    return () => document.removeEventListener("focusin", remember)
+  }, [open])
+
+  return React.useCallback(
+    (event) => {
+      onCloseAutoFocus?.(event)
+      if (event.defaultPrevented) return
+
+      const opener = openerRef.current ?? openerOnMount
+      if (opener && opener.isConnected && typeof opener.focus === "function") {
+        event.preventDefault()
+        opener.focus()
+      }
+    },
+    [onCloseAutoFocus, openerOnMount]
+  )
+}
+
+/**
  * The dialog surface.
  *
  * Radix supplies the parts a hand-rolled overlay keeps missing: the focus trap,
- * Escape to dismiss, the scroll lock, and focus returning to whatever opened
- * the dialog. The surface is a column so a long body scrolls while the header
- * and footer stay put.
+ * Escape to dismiss, and the scroll lock. The surface is a column so a long
+ * body scrolls while the header and footer stay put.
+ *
+ * The gutter is the bed's padding rather than a width computed from `vw`. A
+ * `vw` length counts the scrollbar, so on a scrolled page it let a dialog sit
+ * wider than the space actually on screen and pushed the page sideways. The
+ * bed is `dvh` tall, so a phone's collapsing browser chrome cannot leave the
+ * footer under it.
  */
-function DialogContent({ className, children, showCloseButton = true, ...props }) {
+function DialogContent({
+  className,
+  children,
+  showCloseButton = true,
+  onCloseAutoFocus,
+  ...props
+}) {
+  const handleCloseAutoFocus = useFocusReturn(
+    React.useContext(DialogOpenContext),
+    onCloseAutoFocus
+  )
+
   return (
     <DialogPortal>
       <DialogOverlay />
-      <DialogPrimitive.Content
-        data-slot="dialog-content"
-        className={cn(
-          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100svh-2rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none",
-          className
-        )}
-        {...props}
-      >
-        {children}
-        {showCloseButton ? (
-          <DialogPrimitive.Close
-            data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-md p-1 text-muted-foreground transition-colors outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none"
-          >
-            <X className="size-4" />
-            <span className="sr-only">Close dialog</span>
-          </DialogPrimitive.Close>
-        ) : null}
-      </DialogPrimitive.Content>
+      {/*
+       * The bed lets pointer events through so a click on the overlay still
+       * dismisses; only the surface itself takes them back.
+       */}
+      <div className="pointer-events-none fixed inset-0 z-50 flex h-dvh items-center justify-center p-4">
+        <DialogPrimitive.Content
+          data-slot="dialog-content"
+          className={cn(
+            "pointer-events-auto relative flex max-h-full w-full max-w-lg flex-col overflow-y-auto overscroll-contain rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none",
+            className
+          )}
+          onCloseAutoFocus={handleCloseAutoFocus}
+          {...props}
+        >
+          {children}
+          {showCloseButton ? (
+            <DialogPrimitive.Close
+              data-slot="dialog-close"
+              className="absolute top-4 right-4 rounded-md p-1 text-muted-foreground transition-colors outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none"
+            >
+              <X className="size-4" />
+              <span className="sr-only">Close dialog</span>
+            </DialogPrimitive.Close>
+          ) : null}
+        </DialogPrimitive.Content>
+      </div>
     </DialogPortal>
   )
 }
@@ -186,6 +275,7 @@ function DialogDescription({ className, ...props }) {
 }
 
 export {
+  useFocusReturn,
   Dialog,
   DialogTrigger,
   DialogPortal,

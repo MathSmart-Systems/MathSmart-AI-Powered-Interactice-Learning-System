@@ -6,6 +6,7 @@ import { Minus, Plus, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -184,7 +185,7 @@ export function QuestionDialog({ mode, question, competencies, onOpenChange }) {
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit question" : "New question"}</DialogTitle>
           <DialogDescription>
@@ -194,7 +195,8 @@ export function QuestionDialog({ mode, question, competencies, onOpenChange }) {
           </DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="flex flex-col gap-5">
+        <form action={formAction} className="flex min-h-0 flex-1 flex-col">
+          <DialogBody className="flex flex-col gap-5">
           {isEdit ? <input type="hidden" name="id" value={question.id} /> : null}
 
           {state.formError ? (
@@ -367,6 +369,8 @@ export function QuestionDialog({ mode, question, competencies, onOpenChange }) {
               className="min-h-16"
             />
           </Field>
+
+          </DialogBody>
 
           <DialogFooter>
             <Button

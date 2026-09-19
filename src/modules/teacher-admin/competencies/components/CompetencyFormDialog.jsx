@@ -6,6 +6,7 @@ import { Pencil, X } from "lucide-react";
 import { cn } from "cn";
 
 import { Button } from "@/components/ui/button";
+import { useFocusReturn } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -44,14 +45,18 @@ export function CompetencyFormDialog({
   const editing = Boolean(competency);
   const action = editing ? updateCompetencyAction : createCompetencyAction;
 
+  // Shared with the dialog primitive, so this surface returns focus the
+  // same way the ones built on it do.
+  const handleCloseAutoFocus = useFocusReturn(open);
+
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       {trigger ? <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger> : null}
 
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/45" />
-        <DialogPrimitive.Content className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 outline-none" aria-describedby={undefined}>
-          <div className="max-h-[calc(100svh-2rem)] overflow-y-auto rounded-lg border border-border bg-card p-6 shadow-lg">
+        <DialogPrimitive.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col outline-none" aria-describedby={undefined} onCloseAutoFocus={handleCloseAutoFocus}>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-6 shadow-lg">
             <div className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1">
                 <DialogPrimitive.Title className="font-display text-xl font-semibold tracking-tight text-foreground">

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -63,7 +64,7 @@ function EditStudentFields({ student, grades, sections, onCancel, onSubmit, busy
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <DialogHeader>
         <DialogTitle className="font-display text-lg font-semibold">
           Edit {student?.full_name ?? "student"}
@@ -73,7 +74,7 @@ function EditStudentFields({ student, grades, sections, onCancel, onSubmit, busy
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex flex-col gap-4 py-4">
+      <DialogBody className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <FieldLabel htmlFor="edit-student-grade">Grade Level</FieldLabel>
@@ -135,13 +136,13 @@ function EditStudentFields({ student, grades, sections, onCancel, onSubmit, busy
             ))}
           </select>
         </div>
-      </div>
-
-      {error ? (
-        <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      
+        {error ? (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </DialogBody>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>

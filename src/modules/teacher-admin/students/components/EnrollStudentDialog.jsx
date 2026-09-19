@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -59,7 +60,7 @@ function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <DialogHeader>
         <DialogTitle className="font-display text-lg font-semibold">Enroll Student</DialogTitle>
         <DialogDescription>
@@ -67,7 +68,7 @@ function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex flex-col gap-4 py-4">
+      <DialogBody className="flex flex-col gap-4">
         <div>
           <FieldLabel htmlFor="student-full-name">Full Name</FieldLabel>
           <Input
@@ -156,13 +157,13 @@ function EnrollStudentFields({ grades, sections, onCancel, onSubmit, busy, error
             maxLength={160}
           />
         </div>
-      </div>
-
-      {error ? (
-        <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      
+        {error ? (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </DialogBody>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>

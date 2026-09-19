@@ -6,6 +6,7 @@ import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -112,7 +113,7 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit module" : "New module"}</DialogTitle>
           <DialogDescription>
@@ -122,7 +123,8 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
           </DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="flex flex-col gap-5 px-6 py-5">
+        <form action={formAction} className="flex min-h-0 flex-1 flex-col">
+          <DialogBody className="flex flex-col gap-5">
           {isEdit ? <input type="hidden" name="id" value={module.id} /> : null}
 
           {state.formError ? (
@@ -297,6 +299,8 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
             onChange={setWorkedExamples}
             error={examplesError}
           />
+
+          </DialogBody>
 
           <DialogFooter>
             <Button

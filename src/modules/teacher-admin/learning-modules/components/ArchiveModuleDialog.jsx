@@ -5,6 +5,7 @@ import { TriangleAlert } from "lucide-react";
 
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -43,22 +44,24 @@ export function ArchiveModuleDialog({ module, onOpenChange }) {
           </DialogDescription>
         </DialogHeader>
 
-        {state.formError ? (
-          <p
-            role="alert"
-            className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive"
-          >
-            <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>{state.formError}</span>
-          </p>
-        ) : null}
+        <form action={formAction} className="flex min-h-0 flex-1 flex-col">
+          <DialogBody className="flex flex-col gap-5">
+            {state.formError ? (
+              <p
+                role="alert"
+                className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive"
+              >
+                <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <span>{state.formError}</span>
+              </p>
+            ) : null}
 
-        <form action={formAction} className="flex flex-col gap-5">
-          <input type="hidden" name="id" value={module.id} />
+            <input type="hidden" name="id" value={module.id} />
 
-          <p className="max-w-prose text-sm leading-relaxed text-foreground">
-            Archive <span className="font-semibold text-foreground">{module.title}</span>?
-          </p>
+            <p className="max-w-prose text-sm leading-relaxed text-foreground">
+              Archive <span className="font-semibold text-foreground">{module.title}</span>?
+            </p>
+          </DialogBody>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
