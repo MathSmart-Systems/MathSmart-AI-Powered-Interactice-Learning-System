@@ -30,34 +30,52 @@ import { formatDate, formatScore, sortCases } from "../utils/intervention-helper
  * @param {(report: object) => void} [props.onPrint] - Opens the print/PDF report
  */
 export function StudentDrillDownModal({ open, student, currentCaseId = null, onClose, onPrint }) {
-  const [history, setHistory] = useState(() => ({ ready: false, cases: [], error: null }));
+  const [history, setHistory] = useState(() => ({
+    ready: false,
+    cases: [],
+    error: null,
+    key: null,
+  }));
+
+  // Identifies whose history is loaded. Without it, the previous learner's
+  // cases and educator notes would stay on screen under the new learner's
+  // heading for as long as the new request takes.
+  const requestKey = open && student?.id ? `${student.id}|${currentCaseId ?? ""}` : null;
 
   useEffect(() => {
-    if (!open || !student?.id) return undefined;
+    if (!requestKey || !student?.id) return undefined;
     let cancelled = false;
     listInterventionCases({ studentId: student.id, pageSize: 100 }).then((result) => {
       if (cancelled) return;
       if (result.ok && Array.isArray(result.data)) {
-        setHistory({ ready: true, cases: sortCases(result.data), error: null });
+        setHistory({ ready: true, cases: sortCases(result.data), error: null, key: requestKey });
       } else {
-        setHistory({ ready: true, cases: [], error: result.error ?? "Could not load this learner's intervention history." });
+        setHistory({
+          ready: true,
+          cases: [],
+          error: result.error ?? "Could not load this learner's intervention history.",
+          key: requestKey,
+        });
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [open, student?.id, currentCaseId]);
+  }, [requestKey, student?.id]);
 
-  const loading = !history.ready;
-  const error = history.error;
-  const cases = history.cases;
+  // Anything other than this learner's own reply reads as still loading.
+  const current =
+    history.key === requestKey ? history : { ready: false, cases: [], error: null };
+  const loading = !current.ready;
+  const error = current.error;
+  const cases = current.cases;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         if (!next) {
-          setHistory({ ready: false, cases: [], error: null });
+          setHistory({ ready: false, cases: [], error: null, key: null });
           onClose();
         }
       }}

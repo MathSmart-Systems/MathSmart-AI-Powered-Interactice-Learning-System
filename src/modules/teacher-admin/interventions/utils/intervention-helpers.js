@@ -51,7 +51,7 @@ export const INTERVENTION_TEMPLATES = Object.freeze([
  * @returns {number}
  */
 export function severityRank(severity) {
-  if (typeof severity === "string" && severity in SEVERITY_ORDER) {
+  if (typeof severity === "string" && Object.hasOwn(SEVERITY_ORDER, severity)) {
     return SEVERITY_ORDER[severity];
   }
   return Number.MAX_SAFE_INTEGER;
@@ -84,7 +84,8 @@ export function sortCases(cases) {
 export function normalizeScore(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  if (!Number.isFinite(number)) return null;
+  return Math.min(100, Math.max(0, number));
 }
 
 /**
@@ -124,8 +125,9 @@ export function studentContextLine(student) {
 export function nextStatusOptions(status) {
   switch (status) {
     case "Needs Intervention":
+      return ["In Progress"];
     case "In Progress":
-      return ["In Progress", "Resolved"];
+      return ["Resolved"];
     case "Resolved":
       return ["In Progress"];
     default:
@@ -134,13 +136,16 @@ export function nextStatusOptions(status) {
 }
 
 /**
- * Whether moving a case to the given status opens it again (requires a reason).
+ * Whether a transition opens a case again, which requires an educator-written
+ * reason. Only a resolved case reopens; taking up a case that still needs
+ * intervention is the normal first step and needs no reason.
  *
+ * @param {string|null|undefined} currentStatus
  * @param {string|null|undefined} newStatus
  * @returns {boolean}
  */
-export function isReopen(newStatus) {
-  return newStatus === "In Progress";
+export function isReopen(currentStatus, newStatus) {
+  return currentStatus === "Resolved" && newStatus === "In Progress";
 }
 
 /**
@@ -203,9 +208,14 @@ export function casesToCsv(cases) {
     "created_at",
     "recorded_by",
   ];
+  // Learner names and competency names are free text, and a spreadsheet reads a
+  // leading =, +, -, @, tab, or carriage return as the start of a formula. Such
+  // a cell gets an apostrophe prefix before quoting (CWE-1236).
+  const formulaStart = /^[=+\-@\t\r]/;
   const escape = (value) => {
-    const text = value === null || value === undefined ? "" : String(value);
-    return text.includes(",") || text.includes('"') || text.includes("\n")
+    const raw = value === null || value === undefined ? "" : String(value);
+    const text = formulaStart.test(raw) ? `'${raw}` : raw;
+    return text.includes(",") || text.includes('"') || text.includes("\n") || text.includes("\r")
       ? `"${text.replace(/"/g, '""')}"`
       : text;
   };
@@ -427,8 +437,14 @@ export function buildClassPatternAnalysisPayload(
     ? grades.find((grade) => grade?.id && String(grade.id) === String(gradeId))
     : null;
 
+  const grade = typeof gradeRecord?.name === "string" ? gradeRecord.name.slice(0, 60) : null;
+
+  // A grade filter that no directory entry resolves would leave the payload
+  // with no scope at all, which this advisory contract does not accept.
+  if (!grade && !competencyId) return null;
+
   return {
-    grade: typeof gradeRecord?.name === "string" ? gradeRecord.name.slice(0, 60) : null,
+    grade,
     competencyId,
     displayContext: displayContext.slice(0, 2000),
     incorrectAttempts: [],

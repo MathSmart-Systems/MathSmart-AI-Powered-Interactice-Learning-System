@@ -20,6 +20,7 @@ const CHECKBOX_STYLE = "size-4 accent-primary";
  * @param {(interventionId: string, status: "In Progress"|"Resolved") => void} props.onQuickStatus
  * @param {(interventionId: string, selected: boolean) => void} props.onToggleSelected
  * @param {() => void} props.onToggleSelectAll
+ * @param {Set<string>} [props.selectedIds]
  * @param {boolean} [props.allSelected]
  * @param {boolean} [props.disabled]
  * @param {boolean} [props.loading]
@@ -31,6 +32,7 @@ export function InterventionCaseTable({
   onQuickStatus,
   onToggleSelected,
   onToggleSelectAll,
+  selectedIds = new Set(),
   allSelected = false,
   disabled = false,
   loading = false,
@@ -103,6 +105,7 @@ export function InterventionCaseTable({
                       id={`intervention-select-${item.id}`}
                       type="checkbox"
                       className={CHECKBOX_STYLE}
+                      checked={selectedIds.has(item.id)}
                       onChange={(event) => onToggleSelected(item.id, event.target.checked)}
                       disabled={disabled}
                     />

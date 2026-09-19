@@ -93,6 +93,8 @@ export function InterventionDashboard({
     async (interventionId, status) => {
       const updated = await actions.setCaseStatus(interventionId, status);
       if (updated) applySaved(updated);
+      // Callers need the result: a failed mutation must not look like a save.
+      return updated;
     },
     [actions, applySaved]
   );
@@ -126,7 +128,9 @@ export function InterventionDashboard({
       try {
         for (const item of eligible) {
           const updated = await actions.setCaseStatus(item.id, status);
-          if (updated) applySaved(updated);
+          // applyCase already replaces and re-sorts the row locally, so the
+          // loop does not refresh; the single refresh below reconciles once.
+          if (updated) queue.applyCase(updated);
         }
       } finally {
         setBulkBusy(false);
@@ -134,7 +138,7 @@ export function InterventionDashboard({
         queue.refresh();
       }
     },
-    [actions, applySaved, queue, selectedCases]
+    [actions, queue, selectedCases]
   );
 
   const handleExportCsv = useCallback(() => {
@@ -159,16 +163,21 @@ export function InterventionDashboard({
   const handleResolveReview = useCallback(async () => {
     if (!reviewingCase) return;
     if (reviewingCase.status === "Resolved") return;
-    await handleQuickStatus(reviewingCase.id, "Resolved");
+    const updated = await handleQuickStatus(reviewingCase.id, "Resolved");
+    // On a failed mutation the modal stays open so its error stays visible.
+    if (!updated) return;
+    actions.closeCase();
     setReviewingId(null);
-  }, [reviewingCase, handleQuickStatus]);
+  }, [actions, reviewingCase, handleQuickStatus]);
 
   const filterFocusRef = useQueueShortcuts({
     onNextCase: handleNextCase,
     onResolveReview: handleResolveReview,
+    resolveBusy: actions.saving,
   });
 
-  const pageError = queue.error ?? initialError;
+  // A successful client load retires the server component's own read error.
+  const pageError = queue.error ?? (queue.loaded ? undefined : initialError);
 
   return (
     <div className="flex flex-col gap-6">
@@ -271,6 +280,7 @@ export function InterventionDashboard({
         onQuickStatus={handleQuickStatus}
         onToggleSelected={handleToggleSelected}
         onToggleSelectAll={handleToggleSelectAll}
+        selectedIds={selectedIds}
         allSelected={allSelected}
         disabled={bulkBusy}
         loading={queue.loading}

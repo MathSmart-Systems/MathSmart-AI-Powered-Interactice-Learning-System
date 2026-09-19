@@ -30,7 +30,13 @@ export function useInterventionQueue(initialCases = []) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  // True once any client request has loaded the queue, which retires the error
+  // the server component reported for its own initial read.
+  const [loaded, setLoaded] = useState(false);
   const mounted = useRef(true);
+  // Filter changes and silent refreshes can overlap. Only the newest request
+  // may commit, or an older reply replaces the queue the controls describe.
+  const requestToken = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
@@ -40,6 +46,7 @@ export function useInterventionQueue(initialCases = []) {
   }, []);
 
   const load = useCallback(async (nextFilters, { silent = false } = {}) => {
+    const token = (requestToken.current += 1);
     if (silent) {
       setRefreshing(true);
     } else {
@@ -61,10 +68,11 @@ export function useInterventionQueue(initialCases = []) {
       pageSize: 100,
     });
 
-    if (!mounted.current) return undefined;
+    if (!mounted.current || token !== requestToken.current) return undefined;
 
     if (result.ok && Array.isArray(result.data)) {
       setCases(sortCases(result.data.map(normalizeCase)));
+      setLoaded(true);
       if (silent) setRefreshing(false);
       else setLoading(false);
       return result.data;
@@ -148,6 +156,7 @@ export function useInterventionQueue(initialCases = []) {
     filters,
     loading,
     refreshing,
+    loaded,
     error,
     setFilter,
     applyFilters,

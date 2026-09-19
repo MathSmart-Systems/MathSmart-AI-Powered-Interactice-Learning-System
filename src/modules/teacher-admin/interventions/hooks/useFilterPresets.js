@@ -32,12 +32,16 @@ export function useFilterPresets() {
   }, []);
 
   const persist = useCallback((next) => {
-    setPresets(next);
+    // The write comes first. Updating state before it would show a preset that
+    // a reload then loses, or hide one that a reload brings back.
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       setError("Could not save your filter preset to this browser.");
+      return;
     }
+    setPresets(next);
+    setError(null);
   }, []);
 
   const save = useCallback((name, filters) => {

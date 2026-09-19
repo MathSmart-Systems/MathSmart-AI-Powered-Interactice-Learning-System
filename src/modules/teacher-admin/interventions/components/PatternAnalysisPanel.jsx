@@ -25,15 +25,18 @@ import {
  * @param {Array<object>} props.grades
  */
 export function PatternAnalysisPanel({ cases = [], gradeId = null, competencyId = null, grades = [] }) {
-  const [state, setState] = useState({ result: null, loading: false });
+  const [state, setState] = useState({ result: null, loading: false, key: null });
   const [nonce, setNonce] = useState(0);
 
-  const scopeKey = `${gradeId ?? ""}|${competencyId ?? ""}`;
+  // An empty scope still produces the string "|", which is truthy, so the
+  // panel needs an explicit check rather than the key's own truthiness.
+  const hasScope = Boolean(gradeId || competencyId);
   const hasCases = Array.isArray(cases) && cases.length > 0;
+  const requestKey = `${gradeId ?? ""}|${competencyId ?? ""}|${nonce}`;
 
   useEffect(() => {
     let active = true;
-    if (!hasCases || !scopeKey) return undefined;
+    if (!hasCases || !hasScope) return undefined;
 
     const payload = buildClassPatternAnalysisPayload(cases, {
       gradeId,
@@ -43,24 +46,34 @@ export function PatternAnalysisPanel({ cases = [], gradeId = null, competencyId 
     if (!payload) return undefined;
 
     Promise.resolve()
-      .then(() => setState((current) => ({ result: null, loading: true })))
+      .then(() => setState({ result: null, loading: true, key: requestKey }))
       .then(() => fetchPatternAnalysis(payload))
       .then((result) => {
         if (!active) return;
-        setState({ result: readAdvisory(result, "misconception_summary"), loading: false });
+        setState({
+          result: readAdvisory(result, "misconception_summary"),
+          loading: false,
+          key: requestKey,
+        });
       })
       .catch(() => {
-        if (active) setState({ result: null, loading: false });
+        if (active) setState({ result: null, loading: false, key: requestKey });
       });
 
     return () => {
       active = false;
     };
-  }, [hasCases, scopeKey, gradeId, competencyId, grades, cases, nonce]);
+  }, [hasCases, hasScope, requestKey, gradeId, competencyId, grades, cases]);
 
-  if (!hasCases || !scopeKey) return null;
+  if (!hasCases || !hasScope) return null;
 
-  if (state.loading) {
+  // The stored advisory belongs to one request. Until the effect has committed
+  // state for the current one, the panel reads as loading rather than showing
+  // the previous scope's summary.
+  const current =
+    state.key === requestKey ? state : { result: null, loading: true, key: requestKey };
+
+  if (current.loading) {
     return (
       <p
         role="status"
@@ -73,7 +86,7 @@ export function PatternAnalysisPanel({ cases = [], gradeId = null, competencyId 
     );
   }
 
-  if (state.result) {
+  if (current.result) {
     return (
       <div className="space-y-2 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4">
         <div className="flex items-center justify-between gap-2">
@@ -92,9 +105,9 @@ export function PatternAnalysisPanel({ cases = [], gradeId = null, competencyId 
             Regenerate
           </button>
         </div>
-        <p className="text-sm leading-relaxed text-foreground">{state.result.text}</p>
-        {provenanceLabel(state.result) ? (
-          <p className="text-[11px] text-muted-foreground">{provenanceLabel(state.result)}</p>
+        <p className="text-sm leading-relaxed text-foreground">{current.result.text}</p>
+        {provenanceLabel(current.result) ? (
+          <p className="text-[11px] text-muted-foreground">{provenanceLabel(current.result)}</p>
         ) : null}
         <p className="text-[11px] text-muted-foreground">
           Advisory text is generated and should be reviewed by a teacher before acting on it.

@@ -74,14 +74,18 @@ export async function readInterventionsData() {
     readFromApi(`/teacher-admin/competencies?page_size=${MAX_PAGE_SIZE}`, token, base),
   ]);
 
+  // Every one of these is documented as an array, and the filters map over
+  // each list, so a 2xx body that is not an array is a failure for this page.
+  const list = (result) => (result.ok && Array.isArray(result.data) ? result.data : []);
+  const queueOk = queueRes.ok && Array.isArray(queueRes.data);
+
   return {
-    cases: queueRes.ok && Array.isArray(queueRes.data) ? queueRes.data : [],
-    grades: gradesRes.ok ? gradesRes.data : [],
-    sections: sectionsRes.ok ? sectionsRes.data : [],
-    competencies: competenciesRes.ok ? competenciesRes.data : [],
-    error:
-      !queueRes.ok && !gradesRes.ok && !sectionsRes.ok && !competenciesRes.ok
-        ? "unavailable"
-        : undefined,
+    cases: list(queueRes),
+    grades: list(gradesRes),
+    sections: list(sectionsRes),
+    competencies: list(competenciesRes),
+    // A queue failure is this page's own outage and must be reported, whatever
+    // the directories did. A directory failure alone degrades to empty filters.
+    error: queueOk ? undefined : "unavailable",
   };
 }

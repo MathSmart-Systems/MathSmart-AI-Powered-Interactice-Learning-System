@@ -38,11 +38,13 @@ export function InterventionRecordForm({ onSubmit, currentStatus, saving = false
   const [fieldErrors, setFieldErrors] = useState({});
 
   const statusOptions = useMemo(() => nextStatusOptions(currentStatus), [currentStatus]);
-  const reopening = isReopen(newStatus);
+  const reopening = isReopen(currentStatus, newStatus);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setFieldErrors({});
+    // A success message from an earlier save must not sit beside a new failure.
+    setSubmitted(false);
 
     const errors = {};
     if (!educatorNotes.trim()) {

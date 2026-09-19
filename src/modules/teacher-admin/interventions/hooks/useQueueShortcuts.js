@@ -24,21 +24,26 @@ function isEditableTarget(target) {
  * @param {object} options
  * @param {() => void} options.onNextCase
  * @param {() => void} options.onResolveReview
+ * @param {boolean} [options.resolveBusy] - True while a resolve is in flight
  * @returns {React.RefObject} Attach this to the first filter control.
  */
-export function useQueueShortcuts({ onNextCase, onResolveReview }) {
+export function useQueueShortcuts({ onNextCase, onResolveReview, resolveBusy = false }) {
   const filterFocusRef = useRef(null);
   const nextRef = useRef(onNextCase);
   const resolveRef = useRef(onResolveReview);
+  const resolveBusyRef = useRef(resolveBusy);
 
   useEffect(() => {
     nextRef.current = onNextCase;
     resolveRef.current = onResolveReview;
+    resolveBusyRef.current = resolveBusy;
   });
 
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.defaultPrevented) return;
+      // A held key must not repeat a mutation.
+      if (event.repeat) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (isEditableTarget(event.target)) return;
 
@@ -50,6 +55,8 @@ export function useQueueShortcuts({ onNextCase, onResolveReview }) {
         nextRef.current?.();
       } else if (event.key.toLowerCase() === "r") {
         event.preventDefault();
+        // One resolve at a time, or each press writes another audit event.
+        if (resolveBusyRef.current) return;
         resolveRef.current?.();
       }
     };

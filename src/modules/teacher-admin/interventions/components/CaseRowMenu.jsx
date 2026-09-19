@@ -17,13 +17,19 @@ import { ChevronRight, MoreHorizontal } from "lucide-react";
  * @param {boolean} [props.disabled]
  */
 export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false }) {
-  const [open, setOpen] = useState(false);
+  const [requested, setRequested] = useState(false);
+  // A disabled queue closes the menu beneath the pointer. Deriving the open
+  // state keeps that edge from needing an effect, and the menu cannot outlive
+  // the state that disabled it.
+  const open = requested && !disabled;
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
   const status = item?.status;
   const canMarkInProgress = status === "Needs Intervention";
-  const canMarkResolved = status === "Needs Intervention" || status === "In Progress";
+  // A case must be taken up before it can be resolved, which the database
+  // enforces, so the row never offers a move the server would refuse.
+  const canMarkResolved = status === "In Progress";
 
   const menuItems = useCallback(
     (root) =>
@@ -32,7 +38,7 @@ export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false })
   );
 
   const closeMenu = useCallback((refocus) => {
-    setOpen(false);
+    setRequested(false);
     if (refocus) triggerRef.current?.focus();
   }, []);
 
@@ -76,11 +82,13 @@ export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false })
       event.preventDefault();
       (event.key === "Home" ? items[0] : items[items.length - 1])?.focus();
     } else if (event.key === "Tab") {
-      setOpen(false);
+      setRequested(false);
     }
   };
 
   const run = (action) => {
+    // The trigger is disabled, but an already-open menu must not keep working.
+    if (disabled) return;
     closeMenu(true);
     action();
   };
@@ -94,7 +102,7 @@ export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false })
         aria-expanded={open}
         aria-controls={open ? "case-row-menu" : undefined}
         aria-label={`Quick actions for ${item?.student?.full_name ?? "this learner"}`}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setRequested((current) => !current)}
         disabled={disabled}
         className="inline-flex size-8 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-input hover:bg-muted/40 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-60"
       >

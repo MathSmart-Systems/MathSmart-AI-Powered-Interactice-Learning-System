@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   readInterventionCase,
@@ -21,30 +21,44 @@ export function useInterventionActions() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [lastSaved, setLastSaved] = useState(null);
+  // Rapid case navigation can leave two detail requests in flight. Only the
+  // newest may commit, or the form would submit against the wrong case.
+  const detailToken = useRef(0);
 
   const openCase = useCallback(async (interventionId) => {
+    const token = (detailToken.current += 1);
     setLoadingDetail(true);
     setDetailError(null);
     setSaveError(null);
     setLastSaved(null);
 
-    const result = await readInterventionCase(interventionId);
-    if (result.ok) {
-      setCaseDetail(result.data);
-      setLoadingDetail(false);
-      return result.data;
+    try {
+      const result = await readInterventionCase(interventionId);
+      if (token !== detailToken.current) return null;
+      if (result.ok) {
+        setCaseDetail(result.data);
+        return result.data;
+      }
+      setDetailError(result.error ?? "Could not load this case.");
+      return null;
+    } catch (cause) {
+      if (token !== detailToken.current) return null;
+      console.warn("[MathSmart] Could not open intervention", interventionId, cause);
+      setDetailError("Could not load this case.");
+      return null;
+    } finally {
+      if (token === detailToken.current) setLoadingDetail(false);
     }
-
-    setDetailError(result.error ?? "Could not load this case.");
-    setLoadingDetail(false);
-    return null;
   }, []);
 
   const closeCase = useCallback(() => {
+    // Invalidates any detail request still in flight for the closed case.
+    detailToken.current += 1;
     setCaseDetail(null);
     setDetailError(null);
     setSaveError(null);
     setLastSaved(null);
+    setLoadingDetail(false);
   }, []);
 
   /**
@@ -62,23 +76,29 @@ export function useInterventionActions() {
     setSaveError(null);
     setLastSaved(null);
 
-    const result = await updateIntervention(interventionId, {
-      interventionType: payload.interventionType,
-      educatorNotes: payload.educatorNotes,
-      status: payload.status ?? null,
-      reopenReason: payload.reopenReason ?? null,
-    });
+    try {
+      const result = await updateIntervention(interventionId, {
+        interventionType: payload.interventionType,
+        educatorNotes: payload.educatorNotes,
+        status: payload.status ?? null,
+        reopenReason: payload.reopenReason ?? null,
+      });
 
-    setSaving(false);
+      if (result.ok) {
+        setCaseDetail(result.data);
+        setLastSaved(result.data);
+        return result.data;
+      }
 
-    if (result.ok) {
-      setCaseDetail(result.data);
-      setLastSaved(result.data);
-      return result.data;
+      setSaveError(result.error ?? "Could not record this intervention.");
+      return null;
+    } catch (cause) {
+      console.warn("[MathSmart] Could not record intervention", interventionId, cause);
+      setSaveError("Could not record this intervention.");
+      return null;
+    } finally {
+      setSaving(false);
     }
-
-    setSaveError(result.error ?? "Could not record this intervention.");
-    return null;
   }, []);
 
   /**
@@ -95,22 +115,29 @@ export function useInterventionActions() {
     setSaveError(null);
     setLastSaved(null);
 
-    const result = await updateIntervention(interventionId, {
-      interventionType: null,
-      educatorNotes: null,
-      status,
-      reopenReason: null,
-    });
+    try {
+      const result = await updateIntervention(interventionId, {
+        interventionType: null,
+        educatorNotes: null,
+        status,
+        reopenReason: null,
+      });
 
-    setSaving(false);
-    if (!result.ok) {
-      setSaveError(result.error ?? "Could not update this case.");
+      if (!result.ok) {
+        setSaveError(result.error ?? "Could not update this case.");
+        return null;
+      }
+
+      setCaseDetail((current) => (current?.id === result.data.id ? result.data : current));
+      setLastSaved(result.data);
+      return result.data;
+    } catch (cause) {
+      console.warn("[MathSmart] Could not update intervention", interventionId, cause);
+      setSaveError("Could not update this case.");
       return null;
+    } finally {
+      setSaving(false);
     }
-
-    setCaseDetail((current) => (current?.id === result.data.id ? result.data : current));
-    setLastSaved(result.data);
-    return result.data;
   }, []);
 
   return {

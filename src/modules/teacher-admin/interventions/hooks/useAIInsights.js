@@ -29,16 +29,27 @@ export function useAIInsights(detail) {
   const evidence = useMemo(() => buildCaseAIEvidence(detail), [detail]);
   const context = useMemo(() => buildRemediationContext(detail), [detail]);
   const [nonce, setNonce] = useState(0);
-  const [visible, setVisible] = useState({ insight: null, remediation: null, loading: false });
+  const [visible, setVisible] = useState({
+    insight: null,
+    remediation: null,
+    loading: false,
+    key: null,
+  });
 
   const refresh = useCallback(() => setNonce((value) => value + 1), []);
+
+  // Identifies one advisory request, so a reply is only ever rendered for the
+  // case and regeneration it was asked for.
+  const requestKey = `${detail?.id ?? ""}|${nonce}`;
 
   useEffect(() => {
     if (!evidence.competencyId) return undefined;
 
     let active = true;
     Promise.resolve()
-      .then(() => setVisible((current) => ({ ...current, loading: true })))
+      .then(() =>
+        setVisible({ insight: null, remediation: null, loading: true, key: requestKey })
+      )
       .then(() =>
         Promise.allSettled([
           fetchTeacherInsight(evidence),
@@ -55,24 +66,32 @@ export function useAIInsights(detail) {
           remediationResult.status === "fulfilled"
             ? readAdvisory(remediationResult.value, "recommended_module_title")
             : null;
-        setVisible({ insight, remediation, loading: false });
+        setVisible({ insight, remediation, loading: false, key: requestKey });
       })
       .catch(() => {
-        if (active) setVisible({ insight: null, remediation: null, loading: false });
+        if (active) {
+          setVisible({ insight: null, remediation: null, loading: false, key: requestKey });
+        }
       });
 
     return () => {
       active = false;
     };
-  }, [evidence, context, nonce]);
+  }, [evidence, context, requestKey]);
 
   const idle = !evidence.competencyId;
+  // A key mismatch means the effect for the current case has not committed
+  // yet, which reads as loading rather than the previous case's advisory.
+  const current =
+    visible.key === requestKey
+      ? visible
+      : { insight: null, remediation: null, loading: true, key: requestKey };
 
   return {
-    insight: idle ? null : visible.insight,
-    remediation: idle ? null : visible.remediation,
-    loading: idle ? false : visible.loading,
-    hasContent: !idle && Boolean(visible.insight || visible.remediation),
+    insight: idle ? null : current.insight,
+    remediation: idle ? null : current.remediation,
+    loading: idle ? false : current.loading,
+    hasContent: !idle && Boolean(current.insight || current.remediation),
     refresh,
   };
 }
