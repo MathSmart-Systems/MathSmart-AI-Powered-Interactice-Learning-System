@@ -12,7 +12,7 @@ and nothing about a case's severity, status or lifecycle depends on it.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -96,6 +96,20 @@ def _detail(row: Any) -> InterventionDetail:
     )
 
 
+def _exclusive_end(value: datetime | None) -> datetime | None:
+    """The upper bound the queue SQL expects, which is exclusive.
+
+    The date picker sends `YYYY-MM-DD`, which parses to midnight. Advancing a
+    midnight bound by one day keeps every case opened on the selected date; a
+    caller that supplies a time of day keeps the instant it asked for.
+    """
+    if value is None:
+        return None
+    if (value.hour, value.minute, value.second, value.microsecond) == (0, 0, 0, 0):
+        return value + timedelta(days=1)
+    return value
+
+
 @router.get("/interventions")
 async def list_interventions(
     _actor: TeacherAdmin,
@@ -128,7 +142,7 @@ async def list_interventions(
         "severity": severity.value if severity else None,
         "status": status.value if status else None,
         "date_from": date_from,
-        "date_to": date_to,
+        "date_to": _exclusive_end(date_to),
         "min_attempts": min_attempts,
         "min_score_drop": min_score_drop,
     }

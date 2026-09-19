@@ -75,11 +75,16 @@ where interventions.archived_at is null
   and ($5::app.intervention_severity is null or interventions.severity = $5)
   and ($6::app.intervention_status is null or interventions.status = $6)
   and ($7::timestamptz is null or interventions.created_at >= $7)
-  and ($8::timestamptz is null or interventions.created_at <= $8)
+  -- $8 is an exclusive upper bound, so a date-only filter keeps the whole day.
+  and ($8::timestamptz is null or interventions.created_at < $8)
   and ($9::int is null or competency_progress.attempt_count >= $9)
+  -- A missing score is not a zero. With no diagnostic or no current score the
+  -- drop is unknown, so the row cannot satisfy a score-drop floor.
   and ($10::int is null
-      or coalesce(competency_progress.diagnostic_score, 0)
-         - coalesce(competency_progress.current_score, 0) >= $10)
+      or (competency_progress.diagnostic_score is not null
+      and competency_progress.current_score is not null
+      and competency_progress.diagnostic_score
+          - competency_progress.current_score >= $10))
 """
 
 _QUEUE_SQL = f"""
