@@ -366,6 +366,21 @@ describe("grades and sections workspace", () => {
       );
       expect(overflows, `the page scrolls sideways at ${viewport.width}px`).toBe(false);
 
+      // The row truncates its name, so the name has to keep enough room to say
+      // something. Half the panel is generous; a crushed row leaves it at zero.
+      const room = await page
+        .getByRole("listitem")
+        .filter({ hasText: name })
+        .first()
+        .evaluate((row) => {
+          const title = row.querySelector("p");
+          return { name: title.getBoundingClientRect().width, row: row.clientWidth };
+        });
+      expect(
+        room.name,
+        `the name is squeezed to ${Math.round(room.name)}px at ${viewport.width}px`,
+      ).toBeGreaterThan(room.row * 0.25);
+
       // Every control stays inside the viewport and keeps a tappable height.
       const main = page.getByRole("main");
       for (const button of await main.getByRole("button").all()) {

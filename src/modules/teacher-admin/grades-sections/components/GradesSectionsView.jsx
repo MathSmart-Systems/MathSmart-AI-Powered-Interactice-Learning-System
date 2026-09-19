@@ -43,8 +43,11 @@ function EmptyState({ message }) {
  * on the right. Both actions carry their own word, because a teacher taking a
  * live section out of the directory should not have to interpret an icon.
  *
- * The row stacks below the `sm` breakpoint so the full action wording survives
- * a phone, and the buttons share that width evenly instead of being clipped.
+ * The row stacks until its own panel is wide enough to hold a name beside the
+ * wording — a container query, not a viewport one, because the panel is half
+ * the width of the page from the `md` breakpoint upward. On a panel narrow
+ * enough to be a phone the stacked buttons share the full width, which makes
+ * them easier to hit; wider than that they take their natural size.
  */
 function DirectoryRow({ label, meta, active, onEdit, onToggle, working }) {
   const toggleText = working
@@ -57,7 +60,7 @@ function DirectoryRow({ label, meta, active, onEdit, onToggle, working }) {
   const ToggleIcon = active ? PowerOff : Power;
 
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+    <li className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-2.5 @md:flex-row @md:items-center @md:justify-between @md:gap-3">
       <div className="flex min-w-0 flex-1 items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{label}</p>
@@ -66,11 +69,11 @@ function DirectoryRow({ label, meta, active, onEdit, onToggle, working }) {
         <StatusPill active={active} />
       </div>
 
-      <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+      <div className="flex w-full shrink-0 items-center gap-2 @sm:w-auto">
         <Button
           size="sm"
           variant="outline"
-          className="flex-1 sm:flex-none"
+          className="flex-1 @sm:flex-none"
           onClick={onEdit}
           aria-label={`Edit ${label}`}
         >
@@ -80,7 +83,7 @@ function DirectoryRow({ label, meta, active, onEdit, onToggle, working }) {
         <Button
           size="sm"
           variant="ghost"
-          className="flex-1 sm:flex-none"
+          className="flex-1 @sm:flex-none"
           onClick={onToggle}
           disabled={working}
           aria-busy={working || undefined}
@@ -325,7 +328,9 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
             ) : (
               <ul
                 aria-busy={refreshingGrades || undefined}
-                className={`space-y-2 transition-opacity ${refreshingGrades ? "opacity-60" : ""}`}
+                className={`@container space-y-2 transition-opacity ${
+                  refreshingGrades ? "opacity-60" : ""
+                }`}
               >
                 {grades.map((grade) => (
                   <DirectoryRow
@@ -370,7 +375,9 @@ export function GradesSectionsView({ initialGrades, initialSections, advisers, i
             ) : (
               <ul
                 aria-busy={refreshingSections || undefined}
-                className={`space-y-2 transition-opacity ${refreshingSections ? "opacity-60" : ""}`}
+                className={`@container space-y-2 transition-opacity ${
+                  refreshingSections ? "opacity-60" : ""
+                }`}
               >
                 {sections.map((section) => {
                   const gradeName =

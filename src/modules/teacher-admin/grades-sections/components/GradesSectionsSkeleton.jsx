@@ -7,15 +7,15 @@ function Block({ className }) {
 /** One placeholder row, the same height as a real directory row. */
 function RowSkeleton() {
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+    <li className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-2.5 @md:flex-row @md:items-center @md:justify-between">
       <div className="flex min-w-0 flex-col gap-1.5">
         <Block className="h-4 w-32 max-w-full" />
         <Block className="h-3 w-20 max-w-full" />
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex w-full shrink-0 items-center gap-2 @sm:w-auto">
         <Block className="h-5 w-14 rounded-full" />
-        <Block className="h-8 w-16" />
-        <Block className="h-8 w-24" />
+        <Block className="h-8 flex-1 @sm:w-16 @sm:flex-none" />
+        <Block className="h-8 flex-1 @sm:w-24 @sm:flex-none" />
       </div>
     </li>
   );
@@ -30,7 +30,7 @@ function PanelSkeleton() {
           <Block className="h-5 w-32" />
           <Block className="h-8 w-28" />
         </div>
-        <ul className="space-y-2">
+        <ul className="@container space-y-2">
           <RowSkeleton />
           <RowSkeleton />
           <RowSkeleton />
