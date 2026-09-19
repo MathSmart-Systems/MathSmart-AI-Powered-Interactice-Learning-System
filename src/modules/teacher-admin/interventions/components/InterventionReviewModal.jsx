@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { AlertTriangle, BookOpen, Zap, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, BookOpen, History, Zap, Loader2 } from "lucide-react";
 
 import {
   Dialog,
@@ -14,6 +14,7 @@ import {
 
 import { CaseStatusBadge } from "./CaseStatusBadge";
 import { InterventionRecordForm } from "./InterventionRecordForm";
+import { StudentDrillDownModal } from "./StudentDrillDownModal";
 import { formatScore } from "../utils/intervention-helpers";
 
 function EvidenceStat({ label, value, tone = "default" }) {
@@ -53,6 +54,8 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
     recordAction,
   } = actions;
 
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   useEffect(() => {
     if (caseItem?.id) {
       openCase(caseItem.id);
@@ -60,7 +63,7 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
   }, [caseItem?.id, openCase]);
 
   const summary = caseItem ?? {};
-  const student = summary.student ?? {};
+  const student = caseDetail?.student ?? summary.student ?? {};
   const competency = summary.competency ?? {};
   const evidence = (caseDetail?.evidence ?? summary.evidence ?? {});
   const hasStoredAdvisory =
@@ -119,9 +122,18 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
                     tone={evidence.unsuccessful_attempts > 0 ? "problem" : "default"}
                   />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <CaseStatusBadge kind="severity" value={caseDetail?.severity ?? summary.severity} />
                   <CaseStatusBadge kind="status" value={caseDetail?.status ?? summary.status} />
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen(true)}
+                    disabled={!student.id}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs transition-colors hover:bg-muted/40 disabled:pointer-events-none disabled:opacity-60"
+                  >
+                    <History aria-hidden="true" className="size-3.5" />
+                    Student history
+                  </button>
                 </div>
               </div>
 
@@ -195,6 +207,13 @@ export function InterventionReviewModal({ caseItem, actions, onClose, onRecorded
           ) : null}
         </DialogBody>
       </DialogContent>
+
+      <StudentDrillDownModal
+        open={historyOpen}
+        student={student}
+        currentCaseId={caseDetail?.id ?? null}
+        onClose={() => setHistoryOpen(false)}
+      />
     </Dialog>
   );
 }

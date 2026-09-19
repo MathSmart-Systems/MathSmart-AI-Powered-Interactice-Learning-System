@@ -79,6 +79,8 @@ class InterventionSummary(BaseModel):
     status: str
     intervention_type: str
     evidence: dict[str, Any] = {}
+    educator_notes: str | None = None
+    reopen_reason: str | None = None
     recorded_by: str | None = None
     recorded_at: datetime | None = None
     created_at: datetime | None = None

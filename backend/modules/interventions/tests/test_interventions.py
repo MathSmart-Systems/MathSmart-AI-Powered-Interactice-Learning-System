@@ -128,6 +128,8 @@ def test_a_teacher_admin_reads_the_queue():
     case = response.json()["data"][0]
     assert case["severity"] == "HIGH"
     assert case["student"]["full_name"] == "Juan Dela Cruz"
+    assert case["educator_notes"].startswith("Scheduled a 15-minute")
+    assert case["reopen_reason"] is None
 
 
 def test_the_documented_queue_filters_reach_the_query():
@@ -150,6 +152,57 @@ def test_the_documented_queue_filters_reach_the_query():
     assert COMPETENCY in args
     assert "HIGH" in args
     assert "In Progress" in args
+
+
+def test_the_advanced_queue_filters_reach_the_query():
+    connection = intervention_connection()
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/interventions",
+        params={
+            "date_from": "2026-09-01",
+            "date_to": "2026-09-30",
+            "min_attempts": 3,
+            "min_score_drop": 20,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    _, args = connection.calls[0]
+    assert any("2026-09-01" in str(value) for value in args)
+    assert 3 in args
+    assert 20 in args
+
+
+def test_a_negative_attempt_filter_is_refused():
+    client = build_client(intervention_connection())
+
+    response = client.get(
+        "/api/v1/interventions", params={"min_attempts": -1}, headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+
+
+def test_a_negative_score_drop_filter_is_refused():
+    client = build_client(intervention_connection())
+
+    response = client.get(
+        "/api/v1/interventions", params={"min_score_drop": -5}, headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+
+
+def test_a_malformed_date_filter_is_refused():
+    client = build_client(intervention_connection())
+
+    response = client.get(
+        "/api/v1/interventions", params={"date_from": "not-a-date"}, headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
 
 
 def test_a_learner_cannot_read_the_queue():

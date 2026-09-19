@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, Send } from "lucide-react";
 
 import {
+  INTERVENTION_TEMPLATES,
   INTERVENTION_TYPES,
   isReopen,
   nextStatusOptions,
@@ -102,9 +103,29 @@ export function InterventionRecordForm({ onSubmit, currentStatus, saving = false
       </fieldset>
 
       <div>
-        <label htmlFor="intervention-teacher-notes" className="mb-1 block text-xs font-bold text-foreground">
-          Teacher remediation notes
-        </label>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <label htmlFor="intervention-teacher-notes" className="text-xs font-bold text-foreground">
+            Teacher remediation notes
+          </label>
+          <label className="sr-only" htmlFor="intervention-note-template">Notes template</label>
+          <select
+            id="intervention-note-template"
+            value=""
+            onChange={(event) => {
+              if (!event.target.value) return;
+              const template = INTERVENTION_TEMPLATES.find((item) => item.name === event.target.value);
+              if (template) setEducatorNotes(template.notes);
+            }}
+            className="h-8 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <option value="" className="bg-card text-foreground">Apply a notes template…</option>
+            {INTERVENTION_TEMPLATES.map((template) => (
+              <option key={template.name} value={template.name} className="bg-card text-foreground">
+                {template.name}
+              </option>
+            ))}
+          </select>
+        </div>
         <textarea
           id="intervention-teacher-notes"
           rows={3}

@@ -81,6 +81,38 @@ export function useInterventionActions() {
     return null;
   }, []);
 
+  /**
+   * A quick lifecycle move from a row: mark the case In Progress or Resolved
+   * without opening the record form. Reopens are never done here, because they
+   * need an educator-written reason. The queue applies the returned data.
+   *
+   * @param {string} interventionId
+   * @param {"In Progress"|"Resolved"} status
+   * @returns {Promise<object|null>}
+   */
+  const setCaseStatus = useCallback(async (interventionId, status) => {
+    setSaving(true);
+    setSaveError(null);
+    setLastSaved(null);
+
+    const result = await updateIntervention(interventionId, {
+      interventionType: null,
+      educatorNotes: null,
+      status,
+      reopenReason: null,
+    });
+
+    setSaving(false);
+    if (!result.ok) {
+      setSaveError(result.error ?? "Could not update this case.");
+      return null;
+    }
+
+    setCaseDetail((current) => (current?.id === result.data.id ? result.data : current));
+    setLastSaved(result.data);
+    return result.data;
+  }, []);
+
   return {
     caseDetail,
     loadingDetail,
@@ -91,5 +123,6 @@ export function useInterventionActions() {
     openCase,
     closeCase,
     recordAction,
+    setCaseStatus,
   };
 }

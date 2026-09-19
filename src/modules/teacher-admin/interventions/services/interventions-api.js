@@ -57,6 +57,10 @@ function withQuery(path, params) {
  * @param {string|null} [options.competencyId]
  * @param {"HIGH"|"MEDIUM"|"LOW"|null} [options.severity]
  * @param {"Needs Intervention"|"In Progress"|"Resolved"|null} [options.status]
+ * @param {string|null} [options.dateFrom] - Only cases opened on or after this date
+ * @param {string|null} [options.dateTo] - Only cases opened on or before this date
+ * @param {number|null} [options.minAttempts] - Only cases with at least this many attempts
+ * @param {number|null} [options.minScoreDrop] - Only cases whose diagnostic-to-current drop is this many points or more
  * @param {number} [options.page]
  * @param {number} [options.pageSize]
  */
@@ -67,6 +71,10 @@ export function listInterventionCases({
   competencyId = null,
   severity = null,
   status = null,
+  dateFrom = null,
+  dateTo = null,
+  minAttempts = null,
+  minScoreDrop = null,
   page = 1,
   pageSize = 100,
 } = {}) {
@@ -78,6 +86,10 @@ export function listInterventionCases({
       competency_id: competencyId,
       severity,
       status,
+      date_from: dateFrom,
+      date_to: dateTo,
+      min_attempts: minAttempts,
+      min_score_drop: minScoreDrop,
       page,
       page_size: pageSize,
     })

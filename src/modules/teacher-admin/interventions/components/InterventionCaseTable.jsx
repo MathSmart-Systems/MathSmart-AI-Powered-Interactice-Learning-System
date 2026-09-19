@@ -1,21 +1,41 @@
 import { BookOpen, User, ChevronRight } from "lucide-react";
 
 import { CaseStatusBadge } from "./CaseStatusBadge";
+import { CaseRowMenu } from "./CaseRowMenu";
 import { formatScore } from "../utils/intervention-helpers";
+
+const CHECKBOX_STYLE = "size-4 accent-primary";
 
 /**
  * The prioritized intervention queue.
  *
  * Rows are already server-sorted by severity; score evidence is deterministic
- * and displayed straight from the API.
+ * and displayed straight from the API. Checkboxes feed the bulk action bar;
+ * the row menu offers quick lifecycle moves that need no educator-written
+ * reason.
  *
  * @param {object} props
  * @param {Array<object>} props.cases
  * @param {(interventionId: string) => void} props.onReview
+ * @param {(interventionId: string, status: "In Progress"|"Resolved") => void} props.onQuickStatus
+ * @param {(interventionId: string, selected: boolean) => void} props.onToggleSelected
+ * @param {() => void} props.onToggleSelectAll
+ * @param {boolean} [props.allSelected]
+ * @param {boolean} [props.disabled]
  * @param {boolean} [props.loading]
  * @param {string|null} [props.error]
  */
-export function InterventionCaseTable({ cases, onReview, loading = false, error = null }) {
+export function InterventionCaseTable({
+  cases,
+  onReview,
+  onQuickStatus,
+  onToggleSelected,
+  onToggleSelectAll,
+  allSelected = false,
+  disabled = false,
+  loading = false,
+  error = null,
+}) {
   if (error) {
     return (
       <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -43,6 +63,20 @@ export function InterventionCaseTable({ cases, onReview, loading = false, error 
           <caption className="sr-only">Intervention cases, highest priority first</caption>
           <thead>
             <tr className="border-b border-border bg-muted text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <th scope="col" className="w-10 px-2 py-3">
+                <label className="sr-only" htmlFor="intervention-select-all">
+                  Select all cases
+                </label>
+                <input
+                  id="intervention-select-all"
+                  type="checkbox"
+                  className={CHECKBOX_STYLE}
+                  checked={allSelected}
+                  onChange={onToggleSelectAll}
+                  disabled={disabled || cases.length === 0}
+                  title="Select all cases"
+                />
+              </th>
               <th scope="col" className="px-4 py-3">Priority</th>
               <th scope="col" className="px-4 py-3">Learner</th>
               <th scope="col" className="px-4 py-3">Target competency</th>
@@ -61,6 +95,18 @@ export function InterventionCaseTable({ cases, onReview, loading = false, error 
                   key={item.id}
                   className={`transition-colors hover:bg-muted/40 ${isHigh ? "bg-rose-500/5" : ""}`}
                 >
+                  <td className="px-2 py-3">
+                    <label className="sr-only" htmlFor={`intervention-select-${item.id}`}>
+                      Select case for {item.student.full_name}
+                    </label>
+                    <input
+                      id={`intervention-select-${item.id}`}
+                      type="checkbox"
+                      className={CHECKBOX_STYLE}
+                      onChange={(event) => onToggleSelected(item.id, event.target.checked)}
+                      disabled={disabled}
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <CaseStatusBadge kind="severity" value={item.severity} />
                   </td>
@@ -94,14 +140,22 @@ export function InterventionCaseTable({ cases, onReview, loading = false, error 
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => onReview(item.id)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      Review
-                      <ChevronRight aria-hidden="true" className="size-3.5" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onReview(item.id)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      >
+                        Review
+                        <ChevronRight aria-hidden="true" className="size-3.5" />
+                      </button>
+                      <CaseRowMenu
+                        item={item}
+                        onQuickStatus={onQuickStatus}
+                        onRecord={onReview}
+                        disabled={disabled}
+                      />
+                    </div>
                   </td>
                 </tr>
               );

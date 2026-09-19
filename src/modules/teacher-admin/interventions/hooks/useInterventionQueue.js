@@ -22,6 +22,10 @@ export function useInterventionQueue(initialCases = []) {
     competencyId: null,
     severity: null,
     status: null,
+    dateFrom: null,
+    dateTo: null,
+    minAttempts: null,
+    minScoreDrop: null,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -49,6 +53,10 @@ export function useInterventionQueue(initialCases = []) {
       competencyId: nextFilters.competencyId,
       severity: nextFilters.severity,
       status: nextFilters.status,
+      dateFrom: nextFilters.dateFrom,
+      dateTo: nextFilters.dateTo,
+      minAttempts: nextFilters.minAttempts,
+      minScoreDrop: nextFilters.minScoreDrop,
       page: 1,
       pageSize: 100,
     });
@@ -77,8 +85,40 @@ export function useInterventionQueue(initialCases = []) {
     [filters, load]
   );
 
+  /**
+   * Applies a full filter snapshot at once and reloads the queue. Used by the
+   * saved-preset flow so every documented key is restored, not just one.
+   *
+   * @param {object} nextFilters
+   */
+  const applyFilters = useCallback((nextFilters) => {
+    const next = {
+      gradeId: nextFilters.gradeId ?? null,
+      sectionId: nextFilters.sectionId ?? null,
+      competencyId: nextFilters.competencyId ?? null,
+      severity: nextFilters.severity ?? null,
+      status: nextFilters.status ?? null,
+      dateFrom: nextFilters.dateFrom ?? null,
+      dateTo: nextFilters.dateTo ?? null,
+      minAttempts: nextFilters.minAttempts ?? null,
+      minScoreDrop: nextFilters.minScoreDrop ?? null,
+    };
+    setFilters(next);
+    load(next);
+  }, [load]);
+
   const clearFilters = useCallback(() => {
-    const reset = { gradeId: null, sectionId: null, competencyId: null, severity: null, status: null };
+    const reset = {
+      gradeId: null,
+      sectionId: null,
+      competencyId: null,
+      severity: null,
+      status: null,
+      dateFrom: null,
+      dateTo: null,
+      minAttempts: null,
+      minScoreDrop: null,
+    };
     setFilters(reset);
     load(reset);
   }, [load]);
@@ -110,6 +150,7 @@ export function useInterventionQueue(initialCases = []) {
     refreshing,
     error,
     setFilter,
+    applyFilters,
     clearFilters,
     applyCase,
     refresh,

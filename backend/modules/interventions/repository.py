@@ -74,6 +74,12 @@ where interventions.archived_at is null
   and ($4::uuid is null or interventions.competency_id = $4)
   and ($5::app.intervention_severity is null or interventions.severity = $5)
   and ($6::app.intervention_status is null or interventions.status = $6)
+  and ($7::timestamptz is null or interventions.created_at >= $7)
+  and ($8::timestamptz is null or interventions.created_at <= $8)
+  and ($9::int is null or competency_progress.attempt_count >= $9)
+  and ($10::int is null
+      or coalesce(competency_progress.diagnostic_score, 0)
+         - coalesce(competency_progress.current_score, 0) >= $10)
 """
 
 _QUEUE_SQL = f"""
@@ -81,7 +87,7 @@ select {_QUEUE_COLUMNS}
 {_QUEUE_JOINS}
 {_QUEUE_FILTERS}
 order by interventions.severity, interventions.created_at desc
-limit $7 offset $8
+limit $11 offset $12
 """
 
 _QUEUE_COUNT_SQL = f"""
@@ -115,12 +121,17 @@ async def queue(
     competency_id: UUID | None,
     severity: str | None,
     status: str | None,
+    date_from: object | None,
+    date_to: object | None,
+    min_attempts: int | None,
+    min_score_drop: int | None,
     limit: int,
     offset: int,
 ) -> list[Any]:
     return await connection.fetch(
         _QUEUE_SQL,
-        student_id, grade_id, section_id, competency_id, severity, status, limit, offset,
+        student_id, grade_id, section_id, competency_id, severity, status,
+        date_from, date_to, min_attempts, min_score_drop, limit, offset,
     )
 
 
@@ -133,10 +144,16 @@ async def queue_total(
     competency_id: UUID | None,
     severity: str | None,
     status: str | None,
+    date_from: object | None,
+    date_to: object | None,
+    min_attempts: int | None,
+    min_score_drop: int | None,
 ) -> int:
     return (
         await connection.fetchval(
-            _QUEUE_COUNT_SQL, student_id, grade_id, section_id, competency_id, severity, status
+            _QUEUE_COUNT_SQL,
+            student_id, grade_id, section_id, competency_id, severity, status,
+            date_from, date_to, min_attempts, min_score_drop,
         )
         or 0
     )

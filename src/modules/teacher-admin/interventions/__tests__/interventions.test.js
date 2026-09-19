@@ -2,11 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  INTERVENTION_TEMPLATES,
+  casesToCsv,
+  eligibleForStatus,
+  formatDate,
   formatScore,
   isReopen,
   nextStatusOptions,
   normalizeCase,
   normalizeScore,
+  scoreDrop,
   severityRank,
   sortCases,
   studentContextLine,
@@ -119,4 +124,69 @@ test("normalizeCase degrades a malformed row to a safe shape", () => {
   assert.equal(item.evidence.diagnostic_score, null);
   assert.equal(item.evidence.attempt_count, 0);
   assert.equal(item.student.full_name, "A");
+});
+
+test("scoreDrop is the diagnostic-to-current gap, floored at zero", () => {
+  assert.equal(scoreDrop({ evidence: { diagnostic_score: 80, current_score: 45 } }), 35);
+  assert.equal(scoreDrop({ evidence: { diagnostic_score: 60, current_score: 70 } }), 0);
+  assert.equal(scoreDrop({ evidence: { diagnostic_score: 40, current_score: null } }), 0);
+  assert.equal(scoreDrop({}), 0);
+  assert.equal(scoreDrop(null), 0);
+});
+
+test("INTERVENTION_TEMPLATES are finite and fill the notes field", () => {
+  assert.ok(INTERVENTION_TEMPLATES.length >= 3, "expected several templates");
+  for (const template of INTERVENTION_TEMPLATES) {
+    assert.ok(typeof template.name === "string" && template.name.length > 0);
+    assert.ok(typeof template.notes === "string" && template.notes.length > 0);
+  }
+});
+
+test("eligibleForStatus never silently reopens a resolved case", () => {
+  const cases = [
+    { id: "a", status: "Needs Intervention" },
+    { id: "b", status: "In Progress" },
+    { id: "c", status: "Resolved" },
+  ];
+  assert.deepEqual(
+    eligibleForStatus(cases, "Resolved").map((item) => item.id),
+    ["a", "b"]
+  );
+  assert.deepEqual(
+    eligibleForStatus(cases, "In Progress").map((item) => item.id),
+    ["a"]
+  );
+  assert.deepEqual(eligibleForStatus([], "Resolved"), []);
+  assert.deepEqual(eligibleForStatus(null, "Resolved"), []);
+});
+
+test("casesToCsv writes a header and one escaped row per case", () => {
+  const cases = [
+    {
+      id: "case-1",
+      student: { id: "s-1", full_name: "Dela Cruz, Juan", learner_id: "STU-2026-001", section_name: "Rizal" },
+      competency: { code: "MATH6-INT-02", name: "Integers" },
+      severity: "HIGH",
+      status: "In Progress",
+      intervention_type: "One-on-One Remediation",
+      evidence: { diagnostic_score: 35, current_score: 40, attempt_count: 3, unsuccessful_attempts: 2 },
+      created_at: "2026-09-01T00:00:00Z",
+      recorded_by: "Maria Santos",
+    },
+  ];
+
+  const csv = casesToCsv(cases);
+
+  const lines = csv.split("\r\n");
+  assert.equal(lines[0].split(",")[0], "intervention_id");
+  assert.equal(lines[1].split(",")[0], "case-1");
+  assert.ok(csv.includes('"Dela Cruz, Juan"'), "commas inside a field must be quoted");
+  assert.ok(csv.includes("35"));
+  assert.ok(!casesToCsv(null).includes("case-1"));
+});
+
+test("formatDate renders short dates or an em dash", () => {
+  assert.equal(formatDate("2026-09-19T00:00:00Z").length > 0, true);
+  assert.equal(formatDate(null), "—");
+  assert.equal(formatDate("not-a-date"), "—");
 });
