@@ -14,8 +14,9 @@ import {
   createCompetencyAction,
   updateCompetencyAction,
 } from "../actions/competencies";
-import { COMPETENCY_DOMAINS, DEFAULT_DOMAIN, MVP_GRADE_NAME } from "../utils/constants";
+import { MVP_GRADE_NAME } from "../utils/constants";
 import { FORM_STATUSES } from "../utils/competency-status";
+import { OTHER_STRAND, STRAND_MAX, STRAND_OPTIONS, initialStrand } from "../utils/strand";
 
 const NAME_MAX = 300;
 const DESCRIPTION_MAX = 4000;
@@ -24,8 +25,13 @@ const CODE_MAX = 64;
 /**
  * The create and edit dialog for one competency.
  *
- * A Teacher/Administrator writes the code, name, grade, strand and optional
- * description, then chooses whether it stays a draft or goes live. The chosen
+ * A Teacher/Administrator writes the code, name, strand and optional
+ * description, then chooses whether it stays a draft or goes live.
+ *
+ * There is no grade field. MathSmart teaches one grade and the server resolves
+ * it, so a competency cannot be created or moved outside the curriculum that
+ * has questions, modules and assessments behind it — and the form does not
+ * offer a choice that the API would refuse. The chosen
  * form action runs on the server through the MathSmart API, which validates and
  * persists; the dialog only adds readable copy and the browser's fast rules.
  *
@@ -38,8 +44,6 @@ export function CompetencyFormDialog({
   open,
   onOpenChange,
   competency,
-  grades,
-  gradesUnavailable,
   onSaved,
 }) {
   const editing = Boolean(competency);
@@ -80,8 +84,6 @@ export function CompetencyFormDialog({
               action={action}
               editing={editing}
               competency={competency}
-              grades={grades}
-              gradesUnavailable={gradesUnavailable}
               onSaved={onSaved}
             />
           </div>
@@ -95,8 +97,6 @@ function CompetencyFormContent({
   action,
   editing,
   competency,
-  grades,
-  gradesUnavailable,
   onSaved,
 }) {
   const [state, formAction, isPending] = useActionState(action, { ok: false });
@@ -104,15 +104,16 @@ function CompetencyFormContent({
     editing ? (competency.status === "published" ? "published" : "draft") : "draft",
   );
 
+  const [strand, setStrand] = useState(() =>
+    initialStrand(editing ? competency.domain : ""),
+  );
+  const writingOwnStrand = strand.selection === OTHER_STRAND;
+
   useEffect(() => {
     if (state?.ok) {
       onSaved();
     }
   }, [state, onSaved]);
-
-  const defaultGradeId = editing
-    ? competency.gradeId
-    : grades.find((grade) => grade.name === MVP_GRADE_NAME)?.id ?? "";
 
   return (
     <form action={formAction} className="mt-5 flex flex-col gap-5">
@@ -167,49 +168,57 @@ function CompetencyFormContent({
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="competency-grade">Grade</Label>
-            <select
-              id="competency-grade"
-              name="grade_id"
-              required
-              defaultValue={defaultGradeId}
-              disabled={gradesUnavailable || grades.length === 0}
-              className="h-11 w-full rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {gradesUnavailable ? (
-                <option value="">Grades could not be loaded</option>
-              ) : grades.length === 0 ? (
-                <option value="">No grades available</option>
-              ) : null}
-              {grades.map((grade) => (
-                <option key={grade.id} value={grade.id}>
-                  {grade.name}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="competency-domain">Content strand</Label>
+          {/*
+            The select carries `domain` only while a listed strand is chosen.
+            On "Other" it gives the name up to the text field below, so the
+            form always submits one strand and never the sentinel.
+          */}
           <select
             id="competency-domain"
-            name="domain"
+            name={writingOwnStrand ? undefined : "domain"}
             required
-            defaultValue={
-              editing && COMPETENCY_DOMAINS.includes(competency.domain)
-                ? competency.domain
-                : DEFAULT_DOMAIN
+            value={strand.selection}
+            onChange={(event) =>
+              setStrand((current) => ({ ...current, selection: event.target.value }))
             }
             className="h-11 w-full rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            {COMPETENCY_DOMAINS.map((domain) => (
-              <option key={domain} value={domain}>
-                {domain}
+            {STRAND_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
+
+          {writingOwnStrand ? (
+            <div className="mt-1 flex flex-col gap-2 border-l-[3px] border-border pl-4">
+              <Label htmlFor="competency-domain-other">Name the strand</Label>
+              <Input
+                id="competency-domain-other"
+                name="domain"
+                type="text"
+                required
+                autoFocus
+                value={strand.custom}
+                onChange={(event) =>
+                  setStrand((current) => ({ ...current, custom: event.target.value }))
+                }
+                minLength={2}
+                maxLength={STRAND_MAX}
+                placeholder="e.g. Financial Literacy"
+                className="h-11"
+                aria-describedby="competency-domain-other-help"
+              />
+              <p id="competency-domain-other-help" className="text-xs text-muted-foreground">
+                Saved on this competency only. The strand list stays as it is,
+                so write it the way it should read on the card.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-3">
@@ -261,20 +270,13 @@ function CompetencyFormContent({
         </div>
       </div>
 
-      {gradesUnavailable ? (
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          The grade list could not be loaded, so new competencies cannot be saved until
-          then. Close this dialog and try again in a moment.
-        </p>
-      ) : null}
-
       <div className="flex flex-wrap justify-end gap-3 pt-1">
         <DialogPrimitive.Close asChild>
           <Button type="button" variant="outline" className="h-11 px-5">
             Cancel
           </Button>
         </DialogPrimitive.Close>
-        <Button type="submit" className="h-11 px-5" disabled={isPending || gradesUnavailable}>
+        <Button type="submit" className="h-11 px-5" disabled={isPending}>
           <Pencil aria-hidden="true" className="size-4" />
           {isPending ? "Saving…" : editing ? "Save changes" : "Add competency"}
         </Button>

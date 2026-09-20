@@ -208,10 +208,18 @@ select throws_ok(
      values ('f2000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 9) $$,
   '42501', null::text, 'A learner cannot change assessment membership');
 
-select throws_ok(
+-- `authenticated` now holds the delete privilege, so a learner's attempt is
+-- refused by the policy rather than by the grant — which means it removes no
+-- rows instead of raising. The proof is what survives, not what was thrown.
+select lives_ok(
   $$ delete from app.competencies
      where competencies.competency_id = 'c2000000-0000-4000-8000-000000000001' $$,
-  '42501', null::text, 'A learner cannot delete a competency');
+  'A learner''s delete of a competency runs');
+select is(
+  (select count(*) from app.competencies
+   where competencies.competency_id = 'c2000000-0000-4000-8000-000000000001'),
+  1::bigint,
+  'A learner cannot delete a competency');
 
 -- The two membership tables are the one place `authenticated` holds a
 -- table-level DELETE, because replacing an ordered question set atomically

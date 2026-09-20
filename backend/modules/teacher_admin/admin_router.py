@@ -152,6 +152,31 @@ async def _update(connection: Any, resource: Resource, key: UUID, model: Any) ->
     return {"data": _row(row, resource)}
 
 
+#: What each referencing table is called in a sentence a teacher reads.
+_REFERENCE_NAMES = {
+    "questions": "question",
+    "learning_modules": "learning module",
+    "competency_progress": "learner progress record",
+    "competency_results": "assessment result",
+    "learning_path_items": "learning path item",
+    "interventions": "intervention",
+    "delivered_questions": "delivered question",
+}
+
+
+def _describe_references(holding: dict[str, int]) -> str:
+    """"3 questions and 1 learning module", in the order the plan lists them."""
+    parts = []
+    for key, name in _REFERENCE_NAMES.items():
+        count = holding.get(key)
+        if not count:
+            continue
+        parts.append(f"{count} {name}{'s' if count != 1 else ''}")
+    if len(parts) > 1:
+        return f"{', '.join(parts[:-1])} and {parts[-1]}"
+    return parts[0] if parts else "Other records"
+
+
 async def _archive(connection: Any, resource: Resource, key: UUID) -> Response:
     archived = await repository.archive(connection, resource, key)
     if archived is None:
@@ -180,8 +205,16 @@ async def list_competencies(
 async def create_competency(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: CompetencyDraft
 ) -> dict[str, Any]:
-    """Create a competency draft."""
-    return await _create(connection, COMPETENCIES, body)
+    """Create a competency draft, in the one grade MathSmart teaches.
+
+    The grade is resolved here and never taken from the request, exactly as it
+    is for a section. MathSmart teaches Grade 6; a competency hung off another
+    grade has no learners, no assessments and no modules behind it, and the
+    interface offering only one grade is not the boundary — this is.
+    """
+    return await _create(
+        connection, COMPETENCIES, body, {"grade_id": await _mvp_grade_id(connection)}
+    )
 
 
 @router.get("/teacher-admin/competencies/{competency_id}")
@@ -199,7 +232,96 @@ async def update_competency(
     competency_id: UUID,
     body: CompetencyChanges,
 ) -> dict[str, Any]:
+    """Change a competency, including its publication state.
+
+    Publishing, unpublishing and restoring an archived competency are all this
+    one call with a different `status`. The grade is not among the fields a
+    request may set: a competency cannot be moved out of the grade MathSmart
+    teaches, any more than it could be created outside it.
+    """
     return await _update(connection, COMPETENCIES, competency_id, body)
+
+
+@router.get("/teacher-admin/competencies/{competency_id}/references")
+async def read_competency_references(
+    _actor: TeacherAdmin, connection: ActorDb, competency_id: UUID
+) -> dict[str, Any]:
+    """What still points at this competency.
+
+    Read before archiving, unpublishing or deleting, so each of those can say
+    what it is about to affect. Archiving and unpublishing do not remove
+    anything, but they do take a competency's questions and modules out of
+    every learner's view — and a teacher deserves to know that before, not
+    after.
+    """
+    state = await repository.competency_state(connection, competency_id)
+    if state is None:
+        raise ApiError(404, "No competency was found")
+
+    counts = await repository.competency_references(connection, competency_id)
+    references = {key: int(value or 0) for key, value in dict(counts).items()}
+
+    return {
+        "data": {
+            "competency_id": str(state["competency_id"]),
+            "code": state["code"],
+            "status": str(state["status"]),
+            "references": references,
+            "total": sum(references.values()),
+        }
+    }
+
+
+@router.post("/teacher-admin/competencies/{competency_id}/delete", status_code=204)
+async def delete_competency(
+    _actor: TeacherAdmin,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    competency_id: UUID,
+) -> Response:
+    """Permanently remove a competency that was never used.
+
+    Not the `DELETE` verb: that one archives, and has meant that since this
+    module was written. This is the other thing — a code typed wrong, a draft
+    abandoned, a duplicate — where archiving only leaves an entry nobody can
+    clear.
+
+    Two conditions, neither of them decided here. The row policy admits only an
+    archived competency, so removal is always a second decision after a
+    reversible one. And every foreign key pointing at a competency is
+    ON DELETE RESTRICT, so anything still in use is refused by PostgreSQL
+    whatever this route believes. The count below exists to explain a refusal,
+    not to be trusted instead of it.
+    """
+    state = await repository.competency_state(connection, competency_id)
+    if state is None:
+        raise ApiError(404, "No competency was found")
+
+    if str(state["status"]) != "archived":
+        raise ApiError(
+            422,
+            "Archive this competency before deleting it, so removing one is always a "
+            "second, separate decision.",
+            code="competency_not_archived",
+        )
+
+    counts = await repository.competency_references(connection, competency_id)
+    references = {key: int(value or 0) for key, value in dict(counts).items()}
+    holding = {key: value for key, value in references.items() if value}
+
+    if holding:
+        raise ApiError(
+            422,
+            "This competency is still in use, so it cannot be removed. "
+            f"{_describe_references(holding)} still point at it.",
+            code="competency_in_use",
+            fields={"references": [f"{key}: {value}" for key, value in holding.items()]},
+        )
+
+    deleted = await repository.delete_competency(connection, competency_id)
+    if deleted is None:
+        raise ApiError(404, "No competency was found")
+    return Response(status_code=204)
 
 
 @router.delete("/teacher-admin/competencies/{competency_id}", status_code=204)

@@ -7,11 +7,19 @@ them has a field for an actor: who did it comes from the verified token.
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from modules.shared.rules import (
     validate_activity_pass_percentage,
@@ -68,28 +76,96 @@ class AssessmentType(StrEnum):
     UNIT_QUIZ = "unit_quiz"
 
 
+#: The shape a competency code has to take, stated here as well as in the
+#: database. The CHECK constraint is the boundary; this is what lets the API
+#: say "a code looks like MATH6-NS-01" instead of letting Postgres answer with
+#: a constraint name nobody outside the schema can read.
+COMPETENCY_CODE_PATTERN = r"^[A-Z0-9][A-Z0-9._-]{2,63}$"
+
+COMPETENCY_CODE_HELP = (
+    "A code is upper case and starts with a letter or digit, then letters, "
+    "digits, dots, underscores or hyphens — for example MATH6-NS-01."
+)
+
+
+def _normalised_code(value: str | None) -> str | None:
+    """Upper-cased and trimmed, the way the column stores it.
+
+    `app.competencies` carries `check (code = upper(btrim(code)))`, so a code
+    that merely differs in case is not a different code — it is the same one
+    spelled carelessly, and normalising here means a teacher who types
+    `math6-ns-01` gets the competency they meant rather than a constraint
+    error about records that do not exist.
+    """
+    if value is None:
+        return None
+    return value.strip().upper()
+
+
+#: Trimmed, and refused when nothing is left. The column checks
+#: `btrim(name) <> ''`; without this a name of spaces passes the API and dies
+#: in the database as an unattributable constraint violation.
+NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2)]
+
+
 class CompetencyDraft(BaseModel):
+    """A new competency.
+
+    No `grade_id`. MathSmart teaches one grade and the server resolves it, so
+    a request cannot place a competency outside the curriculum that has
+    questions, modules and assessments behind it.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    code: str = Field(min_length=3, max_length=64)
-    name: str = Field(min_length=2, max_length=MAX_TITLE)
-    grade_id: UUID
-    domain: str = Field(min_length=2, max_length=120)
+    code: Annotated[str, StringConstraints(min_length=3, max_length=64)]
+    name: Annotated[NonBlank, StringConstraints(max_length=MAX_TITLE)]
+    domain: Annotated[NonBlank, StringConstraints(max_length=120)]
     description: str | None = Field(default=None, max_length=MAX_TEXT)
     prerequisite_ids: list[UUID] = Field(default_factory=list)
     status: PublicationStatus = PublicationStatus.DRAFT
 
+    @field_validator("code", mode="before")
+    @classmethod
+    def normalise_code(cls, value: Any) -> Any:
+        return _normalised_code(value) if isinstance(value, str) else value
+
+    @field_validator("code")
+    @classmethod
+    def code_is_well_formed(cls, value: str) -> str:
+        if not re.fullmatch(COMPETENCY_CODE_PATTERN, value):
+            raise ValueError(COMPETENCY_CODE_HELP)
+        return value
+
 
 class CompetencyChanges(BaseModel):
+    """What may be changed about a competency.
+
+    Publishing, unpublishing and restoring an archived competency are all a
+    `status` here. The grade is absent for the same reason it is absent from
+    the draft: a competency cannot be moved out of the grade MathSmart teaches.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    code: str | None = Field(default=None, min_length=3, max_length=64)
-    name: str | None = Field(default=None, min_length=2, max_length=MAX_TITLE)
-    grade_id: UUID | None = None
-    domain: str | None = Field(default=None, min_length=2, max_length=120)
+    code: Annotated[str, StringConstraints(min_length=3, max_length=64)] | None = None
+    name: Annotated[NonBlank, StringConstraints(max_length=MAX_TITLE)] | None = None
+    domain: Annotated[NonBlank, StringConstraints(max_length=120)] | None = None
     description: str | None = Field(default=None, max_length=MAX_TEXT)
     prerequisite_ids: list[UUID] | None = None
     status: PublicationStatus | None = None
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def normalise_code(cls, value: Any) -> Any:
+        return _normalised_code(value) if isinstance(value, str) else value
+
+    @field_validator("code")
+    @classmethod
+    def code_is_well_formed(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(COMPETENCY_CODE_PATTERN, value):
+            raise ValueError(COMPETENCY_CODE_HELP)
+        return value
 
 
 class ModuleDraft(BaseModel):

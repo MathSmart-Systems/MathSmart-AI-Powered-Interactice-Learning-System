@@ -1,4 +1,4 @@
-import { BookOpen, GraduationCap } from "lucide-react";
+import { BookOpen } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 
@@ -9,6 +9,10 @@ import { Badge } from "@/components/ui/badge";
  * badge or a color must never carry meaning alone. The code and name are shown
  * as written; the card only picks the resting order. Interactive actions are
  * passed in from the view, so a future read-only surface can reuse the card.
+ *
+ * The grade is not repeated here. Every competency in this catalogue belongs
+ * to the one grade MathSmart teaches, and the page says so once at the top —
+ * printing it on each card would say nothing.
  */
 export function CompetencyCard({ competency, actions }) {
   return (
@@ -36,12 +40,6 @@ export function CompetencyCard({ competency, actions }) {
           <BookOpen aria-hidden="true" className="size-4" />
           {competency.domain}
         </span>
-        {competency.gradeName ? (
-          <span className="inline-flex items-center gap-1.5">
-            <GraduationCap aria-hidden="true" className="size-4" />
-            {competency.gradeName}
-          </span>
-        ) : null}
       </div>
 
       {actions ? (

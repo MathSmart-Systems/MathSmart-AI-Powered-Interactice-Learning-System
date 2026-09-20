@@ -37,10 +37,13 @@ export async function readCompetenciesCatalogue() {
     return { state: COMPETENCIES_STATE.ERROR, reason: "unconfigured" };
   }
 
-  const [catalogue, grades] = await Promise.all([
-    apiRequest(`/teacher-admin/competencies?page=1&page_size=${AUTHORING_PAGE_SIZE}`),
-    apiRequest(`/teacher-admin/grades?page=1&page_size=${AUTHORING_PAGE_SIZE}`),
-  ]);
+  // No grade list, and no grade filter on the read. The server pins every
+  // competency to the one grade MathSmart teaches, so the catalogue is that
+  // grade's catalogue by construction rather than by a parameter the caller
+  // has to remember.
+  const catalogue = await apiRequest(
+    `/teacher-admin/competencies?page=1&page_size=${AUTHORING_PAGE_SIZE}`,
+  );
 
   if (!catalogue.ok) {
     return { state: COMPETENCIES_STATE.ERROR, reason: "unavailable" };
@@ -51,8 +54,6 @@ export async function readCompetenciesCatalogue() {
     model: buildCompetenciesModel({
       competencies: catalogue.data,
       meta: catalogue.payload?.meta ?? null,
-      grades: grades.ok ? grades.data : [],
-      gradesUnavailable: !grades.ok,
     }),
   };
 }

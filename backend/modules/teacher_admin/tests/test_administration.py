@@ -157,6 +157,12 @@ ATTEMPT_ROW = {
 }
 
 
+#: The Grade 6 lookup the competency and section create routes both make,
+#: named by the clause only that statement carries. `MVP_GRADE_READ` below is
+#: the same fragment; this one exists because the fixture needs it first.
+MVP_GRADE = "order by grade_levels.is_active desc"
+
+
 def admin_connection(**overrides):
     """Build a mock database connection pre-populated with admin fixtures."""
     results = {
@@ -175,6 +181,9 @@ def admin_connection(**overrides):
         "app.set_account_status": USER_ROW,
         "app.reset_diagnostic": ATTEMPT_ROW,
         "returning": COMPETENCY_ROW,
+        # The create route resolves Grade 6 on the server now, so the fake has
+        # to answer that read the way the seeded database does.
+        MVP_GRADE: GRADE,
     }
     results.update(overrides)
     return FakeConnection(results=results)
@@ -228,7 +237,6 @@ def test_a_competency_draft_can_be_created():
         json={
             "code": "MATH6-INT-02",
             "name": "Multiplication and Division of Integers",
-            "grade_id": str(GRADE),
             "domain": "Number Sense",
             "description": "Apply sign rules.",
         },
@@ -247,7 +255,6 @@ def test_creating_a_competency_needs_a_live_session():
         json={
             "code": "MATH6-INT-02",
             "name": "Multiplication and Division of Integers",
-            "grade_id": str(GRADE),
             "domain": "Number Sense",
         },
         headers=ADVISER_HEADERS,
@@ -265,7 +272,6 @@ def test_a_competency_request_cannot_set_an_identifier():
             "competency_id": str(COMPETENCY),
             "code": "MATH6-INT-02",
             "name": "Multiplication and Division of Integers",
-            "grade_id": str(GRADE),
             "domain": "Number Sense",
         },
         headers=ADVISER_HEADERS,
@@ -1824,6 +1830,363 @@ def test_a_database_privilege_refusal_is_not_a_silent_failure():
         headers={**ADVISER_HEADERS, "Origin": "http://localhost:3000"},
     )
 
-    assert response.status_code == 500
+    # A privilege error is never the caller's mistake: the route has already
+    # checked the role, so it means this database is missing a grant the code
+    # expects. 503 and a sentence somebody can act on, rather than a 500 that
+    # reads as "the server fell over".
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "not_configured"
+    # Still inside CORS, or a browser can only report "Failed to fetch".
     assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    # The driver's hint names the exact GRANT, and never reaches the client.
     assert "permission denied" not in response.text
+    assert "GRANT" not in response.text
+
+
+# ---------------------------------------------------------------------------
+# A competency belongs to the one grade MathSmart teaches
+# ---------------------------------------------------------------------------
+#
+# The form offers no grade and the request may not name one. The interface is
+# not the boundary: these prove a crafted request cannot put a competency in a
+# grade that has no learners, modules or assessments behind it.
+
+COMPETENCY_INSERT = "insert into app.competencies"
+COMPETENCY_UPDATE = "update app.competencies"
+COMPETENCY_DELETE = "delete from app.competencies"
+COMPETENCY_REFERENCES = "as delivered_questions"
+COMPETENCY_STATE = "select competencies.competency_id, competencies.code, competencies.status"
+
+NEW_COMPETENCY = {
+    "code": "MATH6-INT-09",
+    "name": "Multiplication and Division of Integers",
+    "domain": "Numbers and Number Sense",
+}
+
+
+def test_a_competency_is_created_in_grade_six_without_being_asked():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/competencies", json=NEW_COMPETENCY, headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 201
+    insert = next(call for call in connection.calls if COMPETENCY_INSERT in call[0])
+    assert GRADE in insert[1], "the server did not pin the grade itself"
+
+
+def test_a_competency_request_cannot_name_its_own_grade():
+    """The refusal a crafted request meets, not a field the form forgot."""
+    client = build_client(admin_connection())
+
+    response = client.post(
+        "/api/v1/teacher-admin/competencies",
+        json={**NEW_COMPETENCY, "grade_id": str(LEGACY_GRADE)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
+def test_a_competency_cannot_be_moved_to_another_grade():
+    client = build_client(admin_connection())
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}",
+        json={"grade_id": str(LEGACY_GRADE)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
+def test_a_missing_grade_six_record_refuses_rather_than_inventing_one():
+    connection = admin_connection(**{MVP_GRADE: None})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/competencies", json=NEW_COMPETENCY, headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "mvp_grade_missing"
+    assert not any(COMPETENCY_INSERT in query for query in connection.queries())
+
+
+# ---------------------------------------------------------------------------
+# A code is normalised, not merely checked
+# ---------------------------------------------------------------------------
+
+
+def test_a_lowercase_code_is_saved_as_the_code_it_means():
+    """The column stores `upper(btrim(code))`, so this is the same code."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/competencies",
+        json={**NEW_COMPETENCY, "code": "  math6-int-09 "},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    insert = next(call for call in connection.calls if COMPETENCY_INSERT in call[0])
+    assert "MATH6-INT-09" in insert[1]
+    assert "  math6-int-09 " not in insert[1]
+
+
+def test_a_code_that_cannot_be_stored_is_refused_with_a_reason():
+    client = build_client(admin_connection())
+
+    for bad in ("MATH 6", "MATH6!", "-LEADING", "AB"):
+        response = client.post(
+            "/api/v1/teacher-admin/competencies",
+            json={**NEW_COMPETENCY, "code": bad},
+            headers=ADVISER_HEADERS,
+        )
+        assert response.status_code == 422, bad
+
+
+def test_a_name_of_only_spaces_is_refused_before_the_database_sees_it():
+    client = build_client(admin_connection())
+
+    response = client.post(
+        "/api/v1/teacher-admin/competencies",
+        json={**NEW_COMPETENCY, "name": "     "},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Publishing, unpublishing and restoring are one call
+# ---------------------------------------------------------------------------
+
+
+def test_a_draft_can_be_published():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    update = next(call for call in connection.calls if COMPETENCY_UPDATE in call[0])
+    assert "published" in update[1]
+
+
+def test_a_published_competency_can_be_unpublished():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}",
+        json={"status": "draft"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    update = next(call for call in connection.calls if COMPETENCY_UPDATE in call[0])
+    assert "draft" in update[1]
+
+
+def test_an_archived_competency_can_be_restored():
+    """Archiving is reversible; nothing else in this module would say so."""
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert not any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+def test_changing_a_publication_state_needs_a_live_session():
+    client = build_client(admin_connection(), live_session=False)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# What still points at a competency
+# ---------------------------------------------------------------------------
+
+NO_REFERENCES = {
+    "questions": 0,
+    "learning_modules": 0,
+    "competency_progress": 0,
+    "competency_results": 0,
+    "learning_path_items": 0,
+    "interventions": 0,
+    "delivered_questions": 0,
+}
+
+ARCHIVED_STATE = {"competency_id": COMPETENCY, "code": "MATH6-INT-09", "status": "archived"}
+
+
+def competency_delete_connection(state=None, references=None, **overrides):
+    """A connection that answers only the statements the delete path makes.
+
+    Built directly rather than through `admin_connection`, because the fake
+    matches the first fragment it finds and the shared fixture answers
+    `from app.competencies` with a list — which is the right answer for the
+    listing and the wrong one for a single row.
+    """
+    results = {
+        COMPETENCY_STATE: dict(ARCHIVED_STATE) if state is None else state,
+        COMPETENCY_REFERENCES: dict(NO_REFERENCES) if references is None else references,
+        COMPETENCY_DELETE: {"competency_id": COMPETENCY},
+        # The archive path, so the `DELETE` verb still has something to return.
+        "set status = 'archived'": {"competency_id": COMPETENCY},
+    }
+    results.update(overrides)
+    return FakeConnection(results=results)
+
+
+def test_the_references_read_counts_every_table_that_could_hold_one():
+    connection = competency_delete_connection(references={**NO_REFERENCES, "questions": 3})
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}/references", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["references"]["questions"] == 3
+    assert data["total"] == 3
+    # Every table in the plan is answered for, so a caller can say what goes
+    # dark rather than guessing.
+    assert set(data["references"]) == set(NO_REFERENCES)
+
+
+def test_a_learner_cannot_read_what_references_a_competency():
+    client = build_client(competency_delete_connection())
+
+    response = client.get(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}/references", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Deleting a competency that was never used
+# ---------------------------------------------------------------------------
+
+
+def delete_it(client, headers=None):
+    return client.post(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}/delete",
+        headers=headers or ADVISER_HEADERS,
+    )
+
+
+def test_an_unused_archived_competency_can_be_deleted():
+    connection = competency_delete_connection()
+    client = build_client(connection)
+
+    assert delete_it(client).status_code == 204
+    assert any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+def test_a_competency_that_is_not_archived_cannot_be_deleted():
+    """Archive first, so removal is always a second, separate decision."""
+    connection = competency_delete_connection(state={**ARCHIVED_STATE, "status": "published"})
+    client = build_client(connection)
+
+    response = delete_it(client)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "competency_not_archived"
+    assert not any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+def test_a_draft_cannot_be_deleted_either():
+    connection = competency_delete_connection(state={**ARCHIVED_STATE, "status": "draft"})
+    client = build_client(connection)
+
+    assert delete_it(client).status_code == 422
+    assert not any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+def test_a_referenced_competency_is_refused_and_told_why():
+    connection = competency_delete_connection(
+        references={**NO_REFERENCES, "questions": 3, "learning_modules": 1}
+    )
+    client = build_client(connection)
+
+    response = delete_it(client)
+
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "competency_in_use"
+    # The refusal names what is in the way, not just that something is.
+    assert "3 questions" in error["message"]
+    assert "1 learning module" in error["message"]
+    assert not any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+def test_a_competency_holding_learner_evidence_is_refused():
+    """The case that matters: a child's recorded work is behind this."""
+    connection = competency_delete_connection(
+        references={**NO_REFERENCES, "competency_progress": 1, "competency_results": 2}
+    )
+    client = build_client(connection)
+
+    response = delete_it(client)
+
+    assert response.status_code == 422
+    assert "learner progress record" in response.json()["error"]["message"]
+    assert not any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+def test_deleting_a_competency_needs_a_live_session():
+    client = build_client(competency_delete_connection(), live_session=False)
+
+    assert delete_it(client).status_code == 401
+
+
+def test_a_learner_cannot_delete_a_competency():
+    connection = competency_delete_connection()
+    client = build_client(connection)
+
+    response = delete_it(client, headers=LEARNER_HEADERS)
+
+    assert response.status_code == 403
+    assert not any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+def test_deleting_a_competency_that_is_not_there_is_not_found():
+    connection = competency_delete_connection(**{COMPETENCY_STATE: None})
+    client = build_client(connection)
+
+    assert delete_it(client).status_code == 404
+
+
+def test_archiving_still_deletes_nothing():
+    """The DELETE verb archives, and has since this module was written."""
+    connection = competency_delete_connection()
+    client = build_client(connection)
+
+    client.delete(
+        f"/api/v1/teacher-admin/competencies/{COMPETENCY}", headers=ADVISER_HEADERS
+    )
+
+    assert not any(COMPETENCY_DELETE in query for query in connection.queries())

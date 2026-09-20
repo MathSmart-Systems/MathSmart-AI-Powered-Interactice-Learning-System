@@ -2,16 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, Pencil, Plus, Search } from "lucide-react";
+import { Archive, Pencil, Plus, RotateCcw, Search, Send, Trash2, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { STATUS_FILTERS } from "../utils/constants";
 
+import { setCompetencyStatusAction } from "../actions/competencies";
+
 import { ArchiveConfirmDialog } from "./ArchiveConfirmDialog";
 import { CompetencyCard } from "./CompetencyCard";
 import { CompetencyFormDialog } from "./CompetencyFormDialog";
+import { DeleteCompetencyDialog } from "./DeleteCompetencyDialog";
 import { EmptyPanel } from "./EmptyPanel";
 
 /**
@@ -29,6 +32,11 @@ export function CompetenciesView({ model }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [archiving, setArchiving] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  // Which competency is mid-change, so its own buttons say so and the rest of
+  // the catalogue stays usable.
+  const [changing, setChanging] = useState(null);
+  const [actionError, setActionError] = useState(null);
 
   const counts = useMemo(() => {
     const tally = { all: model.items.length, draft: 0, published: 0, archived: 0 };
@@ -39,6 +47,107 @@ export function CompetenciesView({ model }) {
     }
     return tally;
   }, [model.items]);
+
+  /**
+   * Publish, unpublish, or restore.
+   *
+   * All three are the same call with a different status, which is why they sit
+   * on the card rather than behind the edit form: changing whether learners
+   * can see a competency is the most common thing a teacher does here, and it
+   * should not require opening a dialog to find a radio group.
+   */
+  async function changeStatus(competency, status) {
+    setChanging(competency.id);
+    setActionError(null);
+
+    const result = await setCompetencyStatusAction(competency.id, status);
+
+    setChanging(null);
+    if (!result.ok) {
+      setActionError(result.error?.message ?? "That change could not be saved.");
+      return;
+    }
+    router.refresh();
+  }
+
+  /** The actions a competency offers, which follow from the state it is in. */
+  function actionsFor(item) {
+    const busy = changing === item.id;
+
+    if (item.status === "archived") {
+      return (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 px-3"
+            disabled={busy}
+            onClick={() => changeStatus(item, "draft")}
+          >
+            <RotateCcw aria-hidden="true" className="size-3.5" />
+            {busy ? "Restoring…" : "Restore"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={busy}
+            onClick={() => setDeleting(item)}
+          >
+            <Trash2 aria-hidden="true" className="size-3.5" />
+            Delete permanently
+          </Button>
+        </>
+      );
+    }
+
+    return (
+      <>
+        {item.status === "draft" ? (
+          <Button
+            type="button"
+            className="h-9 px-3"
+            disabled={busy}
+            onClick={() => changeStatus(item, "published")}
+          >
+            <Send aria-hidden="true" className="size-3.5" />
+            {busy ? "Publishing…" : "Publish"}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 px-3"
+            disabled={busy}
+            onClick={() => changeStatus(item, "draft")}
+          >
+            <Undo2 aria-hidden="true" className="size-3.5" />
+            {busy ? "Unpublishing…" : "Unpublish"}
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 px-3"
+          disabled={busy}
+          onClick={() => setEditing(item)}
+        >
+          <Pencil aria-hidden="true" className="size-3.5" />
+          Edit
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 px-3"
+          disabled={busy}
+          onClick={() => setArchiving(item)}
+        >
+          <Archive aria-hidden="true" className="size-3.5" />
+          Archive
+        </Button>
+      </>
+    );
+  }
 
   const query = search.trim().toLowerCase();
 
@@ -54,7 +163,8 @@ export function CompetenciesView({ model }) {
       if (!query) {
         return true;
       }
-      const haystack = [item.name, item.code, item.domain, item.gradeName, item.description]
+      // The grade is not searched: every competency here is in the same one.
+      const haystack = [item.name, item.code, item.domain, item.description]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -138,10 +248,12 @@ export function CompetenciesView({ model }) {
           </div>
         </div>
 
-        {model.gradesUnavailable ? (
-          <p className="border-l-[3px] border-border bg-card px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-            The grade list could not be loaded, so the catalogue still opens but new
-            competencies cannot be saved until the grade service answers again.
+        {actionError ? (
+          <p
+            role="alert"
+            className="border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm leading-relaxed text-destructive"
+          >
+            {actionError}
           </p>
         ) : null}
 
@@ -184,30 +296,7 @@ export function CompetenciesView({ model }) {
                 <li key={item.id}>
                   <CompetencyCard
                     competency={item}
-                    actions={
-                      item.status === "archived" ? null : (
-                        <>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-9 px-3"
-                            onClick={() => setEditing(item)}
-                          >
-                            <Pencil aria-hidden="true" className="size-3.5" />
-                            Edit
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="h-9 px-3"
-                            onClick={() => setArchiving(item)}
-                          >
-                            <Archive aria-hidden="true" className="size-3.5" />
-                            Archive
-                          </Button>
-                        </>
-                      )
-                    }
+                    actions={actionsFor(item)}
                   />
                 </li>
               ))}
@@ -228,8 +317,6 @@ export function CompetenciesView({ model }) {
       <CompetencyFormDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        grades={model.grades}
-        gradesUnavailable={model.gradesUnavailable}
         onSaved={refreshAndClose}
       />
 
@@ -241,8 +328,6 @@ export function CompetenciesView({ model }) {
           }
         }}
         competency={editing}
-        grades={model.grades}
-        gradesUnavailable={model.gradesUnavailable}
         onSaved={refreshAndClose}
       />
 
@@ -255,6 +340,20 @@ export function CompetenciesView({ model }) {
         }}
         competency={archiving}
         onSaved={refreshAndClose}
+      />
+
+      <DeleteCompetencyDialog
+        competency={deleting}
+        open={Boolean(deleting)}
+        onOpenChange={(openNext) => {
+          if (!openNext) {
+            setDeleting(null);
+          }
+        }}
+        onDeleted={() => {
+          setDeleting(null);
+          router.refresh();
+        }}
       />
     </div>
   );

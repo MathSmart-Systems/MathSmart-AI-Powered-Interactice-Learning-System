@@ -547,11 +547,67 @@ from app.student_profiles
 where student_profiles.section_id = $1
 """
 
+#: Everything that would be orphaned by removing a competency.
+#:
+#: One statement, counted per table, so a refusal can say what is actually in
+#: the way instead of "this is in use". Read before the delete is attempted —
+#: not because the count is the protection, but because it is the explanation.
+#: The protection is the seven ON DELETE RESTRICT foreign keys, which refuse
+#: the statement whatever this returns.
+_COMPETENCY_REFERENCES_SQL = """
+select
+  (select count(*) from app.questions
+     where questions.competency_id = $1) as questions,
+  (select count(*) from app.learning_modules
+     where learning_modules.competency_id = $1) as learning_modules,
+  (select count(*) from app.competency_progress
+     where competency_progress.competency_id = $1) as competency_progress,
+  (select count(*) from app.competency_results
+     where competency_results.competency_id = $1) as competency_results,
+  (select count(*) from app.learning_path_items
+     where learning_path_items.competency_id = $1) as learning_path_items,
+  (select count(*) from app.interventions
+     where interventions.competency_id = $1) as interventions,
+  (select count(*) from app.assessment_responses
+     where assessment_responses.delivered_competency_id = $1) as delivered_questions
+"""
+
+#: The competency a delete or a warning is about, with the one column that
+#: decides whether removal is even in scope.
+_COMPETENCY_STATE_SQL = """
+select competencies.competency_id, competencies.code, competencies.status
+from app.competencies
+where competencies.competency_id = $1
+"""
+
+_DELETE_COMPETENCY_SQL = """
+delete from app.competencies
+where competencies.competency_id = $1
+returning competencies.competency_id
+"""
+
+
 _DELETE_SECTION_SQL = """
 delete from app.sections
 where sections.section_id = $1
 returning sections.section_id
 """
+
+
+async def competency_references(connection: ActorConnection, competency_id: UUID) -> Any:
+    """How many rows in each table still point at this competency."""
+    return await connection.fetchrow(_COMPETENCY_REFERENCES_SQL, competency_id)
+
+
+async def competency_state(connection: ActorConnection, competency_id: UUID) -> Any:
+    """The competency's own code and publication status, or None."""
+    return await connection.fetchrow(_COMPETENCY_STATE_SQL, competency_id)
+
+
+async def delete_competency(connection: ActorConnection, competency_id: UUID) -> Any:
+    """Remove a competency outright. Refused by the policy unless archived, and
+    by the foreign keys unless unused."""
+    return await connection.fetchrow(_DELETE_COMPETENCY_SQL, competency_id)
 
 
 async def section_learner_count(connection: ActorConnection, section_id: UUID) -> int:

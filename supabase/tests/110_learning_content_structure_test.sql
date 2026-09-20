@@ -211,9 +211,17 @@ select ok(not has_any_column_privilege('anon', 'app.activities'::regclass, 'sele
 select ok(not has_any_column_privilege('anon', 'app.activity_questions'::regclass, 'select'),   'anon cannot select app.activity_questions');
 
 -- ---------------------------------------------------------------------------
--- Authored content is archived, never deleted
+-- Authored content is archived, never deleted — with one reviewed exception
 -- ---------------------------------------------------------------------------
-select ok(not has_table_privilege('authenticated', 'app.competencies'::regclass, 'delete'),     'authenticated cannot delete competencies');
+-- A competency that was never used can be removed: a code typed wrong or a
+-- duplicate is not history worth keeping, and archiving only leaves an entry
+-- nobody can clear. The grant is narrowed twice over — `competencies_delete`
+-- admits an archived row only, and every foreign key pointing at a competency
+-- is ON DELETE RESTRICT, so anything actually in use is refused by PostgreSQL.
+-- Modules and questions keep the original rule: they are archived, never
+-- deleted.
+select ok(has_table_privilege('authenticated', 'app.competencies'::regclass, 'delete'),
+          'an unused competency can be removed, under the delete policy');
 select ok(not has_table_privilege('authenticated', 'app.learning_modules'::regclass, 'delete'), 'authenticated cannot delete learning modules');
 select ok(not has_table_privilege('authenticated', 'app.questions'::regclass, 'delete'),        'authenticated cannot delete questions');
 select ok(not has_table_privilege('authenticated', 'app.assessments'::regclass, 'delete'),      'authenticated cannot delete assessments');

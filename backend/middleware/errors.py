@@ -131,6 +131,23 @@ class ErrorSafetyNetMiddleware(BaseHTTPMiddleware):
             return error_response(500, GENERIC_SERVER_MESSAGE)
 
 
+#: Unique constraints a caller can hit, and what to say about each. A
+#: constraint absent from here still answers 409, just without naming a field:
+#: better a correct status with a general sentence than a guess at which input
+#: was at fault.
+_UNIQUE_FIELDS: dict[str, tuple[str, str]] = {
+    "competencies_code_key": (
+        "code",
+        "Another competency already uses that code. Codes are upper case and "
+        "must be unique across the catalogue.",
+    ),
+    "student_profiles_learner_id_key": (
+        "learner_id",
+        "That learner id already belongs to a learner.",
+    ),
+}
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Route every failure through the single envelope."""
 
@@ -147,6 +164,74 @@ def install_error_handlers(app: FastAPI) -> None:
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         return error_response(
             422, "The request contains invalid fields.", fields=_fields_from(exc)
+        )
+
+    @app.exception_handler(asyncpg.exceptions.InsufficientPrivilegeError)
+    async def _insufficient_privilege(
+        request: Request, exc: asyncpg.exceptions.InsufficientPrivilegeError
+    ) -> JSONResponse:
+        """A grant this database does not have, answered as a deployment fault.
+
+        This is never the caller's mistake. Every route that reaches a table
+        has already checked the role, so a privilege error means the database
+        is missing a grant or a policy the code expects — a migration that has
+        not been applied here. Saying so is far more use than "the request
+        could not be completed", and it is a 503 because retrying the same
+        request will not help until somebody deploys.
+
+        The driver's hint names the exact GRANT, which is why it is logged and
+        never rendered.
+        """
+        logger.error(
+            "Missing privilege on %s %s — a migration is probably not applied here",
+            request.method,
+            request.url.path,
+        )
+        return error_response(
+            503,
+            "This action is not set up on this database yet. A pending migration has "
+            "not been applied here.",
+            code="not_configured",
+        )
+
+    @app.exception_handler(asyncpg.exceptions.UniqueViolationError)
+    async def _unique_violation(
+        request: Request, exc: asyncpg.exceptions.UniqueViolationError
+    ) -> JSONResponse:
+        """A value that another record already uses, answered as a conflict.
+
+        Handled ahead of the general constraint case because it is the one a
+        caller can actually act on: something they typed is already taken, and
+        the reply says which field rather than the sentence that covers every
+        constraint in the schema. `docs/API_ROUTES.md` documents 409 for a
+        duplicate code, and this is what makes that true.
+
+        The constraint name is matched, never rendered — it carries the table
+        and the column.
+        """
+        constraint = getattr(exc, "constraint_name", None) or ""
+        field = _UNIQUE_FIELDS.get(constraint)
+
+        logger.warning(
+            "Unique violation on %s %s: %s",
+            request.method,
+            request.url.path,
+            constraint or type(exc).__name__,
+        )
+
+        if field is None:
+            return error_response(
+                409,
+                "Another record already uses one of those values.",
+                code="conflict",
+            )
+
+        label, message = field
+        return error_response(
+            409,
+            message,
+            code="conflict",
+            fields={label: [message]},
         )
 
     @app.exception_handler(asyncpg.exceptions.IntegrityConstraintViolationError)

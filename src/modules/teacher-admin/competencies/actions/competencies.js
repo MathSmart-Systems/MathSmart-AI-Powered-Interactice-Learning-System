@@ -19,38 +19,9 @@
 import { revalidatePath } from "next/cache";
 
 import { apiRequest, readApiError } from "../services/mathsmart-api";
+import { draftFromForm, missingFieldLabel } from "../utils/competency-draft";
 
 const CATALOGUE_PATH = "/teacher/competencies";
-
-/** Human-readable check BEFORE the round trip, so a genuinely empty form gets a
- *  fast, obvious answer. Length and shape rules still belong to the API. */
-function requiredText(value, label) {
-  const text = typeof value === "string" ? value.trim() : "";
-  return text ? text : { missing: label };
-}
-
-/** Returns the label of the first required value that is blank. */
-function raiseFirstMissing(values) {
-  for (const [label, value] of values) {
-    const checked = requiredText(value, label);
-    if (checked?.missing) {
-      return checked.missing;
-    }
-  }
-  return null;
-}
-
-/** Converts submitted fields into the competency payload expected by the API. */
-function draftFromForm(formData) {
-  return {
-    code: String(formData.get("code") ?? "").trim(),
-    name: String(formData.get("name") ?? "").trim(),
-    grade_id: String(formData.get("grade_id") ?? "").trim(),
-    domain: String(formData.get("domain") ?? "").trim(),
-    description: String(formData.get("description") ?? "").trim() || null,
-    status: String(formData.get("status") ?? "draft").trim(),
-  };
-}
 
 /**
  * Creates a new competency draft.
@@ -60,12 +31,7 @@ function draftFromForm(formData) {
  */
 export async function createCompetencyAction(_state, formData) {
   const draft = draftFromForm(formData);
-  const missing = raiseFirstMissing([
-    ["Code", draft.code],
-    ["Name", draft.name],
-    ["Grade", draft.grade_id],
-    ["Domain", draft.domain],
-  ]);
+  const missing = missingFieldLabel(draft);
 
   if (missing) {
     return { ok: false, error: { message: `${missing} is required to save a competency.` } };
@@ -101,12 +67,7 @@ export async function updateCompetencyAction(_state, formData) {
   }
 
   const draft = draftFromForm(formData);
-  const missing = raiseFirstMissing([
-    ["Code", draft.code],
-    ["Name", draft.name],
-    ["Grade", draft.grade_id],
-    ["Domain", draft.domain],
-  ]);
+  const missing = missingFieldLabel(draft);
 
   if (missing) {
     return { ok: false, error: { message: `${missing} is required to save a competency.` } };
@@ -143,6 +104,95 @@ export async function archiveCompetencyAction(_state, formData) {
 
   const result = await apiRequest(`/teacher-admin/competencies/${competencyId}`, {
     method: "DELETE",
+  });
+
+  if (!result.ok) {
+    return { ok: false, error: readApiError(result) };
+  }
+
+  revalidatePath(CATALOGUE_PATH, "page");
+  return { ok: true };
+}
+
+/**
+ * Publishes, unpublishes, or restores one competency.
+ *
+ * Three words for the same call: publication state is a single column, and
+ * moving between draft, published and archived is a `PATCH` either way. Kept
+ * apart from the edit form because it is the change a teacher makes most
+ * often, and it should not require opening a dialog to reach a radio group.
+ *
+ * @param {string} competencyId
+ * @param {"draft"|"published"|"archived"} status
+ */
+export async function setCompetencyStatusAction(competencyId, status) {
+  const id = String(competencyId ?? "").trim();
+
+  if (!id) {
+    return {
+      ok: false,
+      error: { message: "MathSmart could not identify which competency to change." },
+    };
+  }
+
+  const result = await apiRequest(`/teacher-admin/competencies/${id}`, {
+    method: "PATCH",
+    body: { status },
+  });
+
+  if (!result.ok) {
+    return { ok: false, error: readApiError(result) };
+  }
+
+  revalidatePath(CATALOGUE_PATH, "page");
+  return { ok: true };
+}
+
+/**
+ * Reads what still points at a competency.
+ *
+ * Asked before archiving, unpublishing or deleting so each of those can name
+ * what it affects. Archiving and unpublishing remove nothing, but they do take
+ * a competency's questions and modules out of every learner's view, and a
+ * teacher should know that before rather than after.
+ */
+export async function competencyReferencesAction(competencyId) {
+  const id = String(competencyId ?? "").trim();
+
+  if (!id) {
+    return { ok: false, error: { message: "MathSmart could not identify that competency." } };
+  }
+
+  const result = await apiRequest(`/teacher-admin/competencies/${id}/references`);
+
+  if (!result.ok) {
+    return { ok: false, error: readApiError(result) };
+  }
+
+  return { ok: true, data: result.data };
+}
+
+/**
+ * Permanently removes a competency that was never used.
+ *
+ * Not the archive route, which is what `DELETE` means here and has meant since
+ * this module was written. The server refuses anything that is not already
+ * archived, and the database refuses anything still referenced — so a
+ * competency carrying a question, a module or a learner's recorded work cannot
+ * be removed by this, whatever the interface allows.
+ */
+export async function deleteCompetencyAction(competencyId) {
+  const id = String(competencyId ?? "").trim();
+
+  if (!id) {
+    return {
+      ok: false,
+      error: { message: "MathSmart could not identify which competency to delete." },
+    };
+  }
+
+  const result = await apiRequest(`/teacher-admin/competencies/${id}/delete`, {
+    method: "POST",
   });
 
   if (!result.ok) {
