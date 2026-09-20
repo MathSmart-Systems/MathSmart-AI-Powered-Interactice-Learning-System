@@ -6,11 +6,11 @@ import { Plus, RotateCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ResultAnnouncer } from "@/modules/shared";
 
 import {
   DEFAULT_PAGE_SIZE,
   listAssessments,
-  listGrades,
 } from "../services/assessment-admin-service.js";
 
 import { AssessmentArchiveDialog } from "./AssessmentArchiveDialog.jsx";
@@ -18,6 +18,7 @@ import { AssessmentFormModal } from "./AssessmentFormModal.jsx";
 import { AssessmentList, STATUS_TABS, StatusTabs } from "./AssessmentList.jsx";
 import { AssessmentPublishDialog } from "./AssessmentPublishDialog.jsx";
 import { AssessmentQuestionManagerModal } from "./AssessmentQuestionManagerModal.jsx";
+import { AssessmentRestoreDialog } from "./AssessmentRestoreDialog.jsx";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const CONFIRMATION_MS = 6000;
@@ -45,7 +46,6 @@ export function TeacherAssessmentsView() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [grades, setGrades] = useState([]);
   const [dialog, setDialog] = useState(NO_DIALOG);
   const [confirmation, setConfirmation] = useState(null);
 
@@ -90,10 +90,23 @@ export function TeacherAssessmentsView() {
       }
 
       if (result.ok) {
+        // A page beyond the end comes back empty. Archiving the only row on
+        // page 3 used to leave the list saying "no assessment matches this
+        // search and status" under filters that matched plenty.
+        const lastPage = Math.max(1, result.meta?.totalPages || 1);
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
         setAssessments(result.data);
         setMeta(result.meta);
         setError(null);
       } else {
+        // The rows that were on screen are no longer known to exist, and
+        // leaving them under an error banner — with pagination still driven by
+        // the last successful read — invited acting on them.
+        setAssessments([]);
+        setMeta(null);
         setError(result.error);
       }
       setIsLoading(false);
@@ -104,30 +117,6 @@ export function TeacherAssessmentsView() {
       active = false;
     };
   }, [appliedSearch, status, page, reloadIndex]);
-
-  useEffect(() => {
-    let active = true;
-
-    /**
-     * Loads available grade levels for assessment authoring and lookup.
-     */
-    async function load() {
-      const result = await listGrades();
-      if (active && result.ok) {
-        setGrades(result.data);
-      }
-    }
-
-    load();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const gradeNames = {};
-  for (const grade of grades) {
-    gradeNames[grade.grade_id] = grade.name;
-  }
 
   /**
    * Opens a management dialog for a specific action and optional target assessment.
@@ -162,6 +151,25 @@ export function TeacherAssessmentsView() {
 
   const totalItems = meta?.totalItems ?? assessments.length;
   const totalPages = meta?.totalPages ?? 1;
+
+  /** The sentence under the tabs, and the one that gets announced. */
+  const caption = (() => {
+    if (isLoading) {
+      return "Loading assessments…";
+    }
+    if (error) {
+      return "Assessments could not be loaded.";
+    }
+    if (!totalItems) {
+      return hasFilter ? "No assessments match these filters" : "No assessments yet";
+    }
+    const first = (page - 1) * DEFAULT_PAGE_SIZE + 1;
+    const last = Math.min(first + assessments.length - 1, totalItems);
+    const scope = status === "all" ? "assessments" : `${selectedTab.label.toLowerCase()} assessments`;
+    return `Showing ${first}–${last} of ${totalItems} ${scope}${
+      appliedSearch ? ` matching “${appliedSearch}”` : ""
+    }`;
+  })();
   const hasFilter = Boolean(appliedSearch) || status !== "all";
   const selectedTab = STATUS_TABS.find((tab) => tab.value === status) ?? STATUS_TABS[0];
 
@@ -232,17 +240,11 @@ export function TeacherAssessmentsView() {
 
         <StatusTabs value={status} onChange={handleStatusChange} panelId={PANEL_ID} />
 
-        <p className="text-sm text-muted-foreground" aria-live="polite">
-          {isLoading
-            ? "Loading assessments…"
-            : `${totalItems} ${totalItems === 1 ? "assessment" : "assessments"}${
-                status === "all" ? "" : ` in ${selectedTab.label.toLowerCase()}`
-              }${appliedSearch ? ` matching “${appliedSearch}”` : ""}`}
-        </p>
+        <p className="text-sm text-muted-foreground">{caption}</p>
+        <ResultAnnouncer message={isLoading ? "" : caption} />
 
         <AssessmentList
           assessments={assessments}
-          gradeNames={gradeNames}
           isLoading={isLoading}
           hasFilter={hasFilter}
           panelId={PANEL_ID}
@@ -252,6 +254,12 @@ export function TeacherAssessmentsView() {
           onManageQuestions={(assessment) => openDialog("questions", assessment)}
           onPublish={(assessment) => openDialog("publish", assessment)}
           onArchive={(assessment) => openDialog("archive", assessment)}
+          onRestore={(assessment) => openDialog("restore", assessment)}
+          onClearFilter={() => {
+            setSearch("");
+            setStatus("all");
+            setPage(1);
+          }}
         />
 
         {totalPages > 1 ? (
@@ -285,7 +293,6 @@ export function TeacherAssessmentsView() {
         open={dialog.kind === "form"}
         onOpenChange={closeDialog}
         assessment={dialog.assessment}
-        grades={grades}
         onSaved={(saved, action) => {
           setDialog(NO_DIALOG);
           confirm(
@@ -307,6 +314,19 @@ export function TeacherAssessmentsView() {
             `The question list was saved. This assessment now holds ${saved.question_count} ${
               saved.question_count === 1 ? "question" : "questions"
             }.`
+          );
+          reload();
+        }}
+      />
+
+      <AssessmentRestoreDialog
+        open={dialog.kind === "restore"}
+        onOpenChange={closeDialog}
+        assessment={dialog.kind === "restore" ? dialog.assessment : null}
+        onRestored={(restored) => {
+          setDialog(NO_DIALOG);
+          confirm(
+            `${restored?.title ?? dialog.assessment?.title} is a draft again. Publish it when it is ready.`,
           );
           reload();
         }}

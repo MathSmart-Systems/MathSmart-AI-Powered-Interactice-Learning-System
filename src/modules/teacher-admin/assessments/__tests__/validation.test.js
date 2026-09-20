@@ -11,7 +11,6 @@ import {
 
 const VALID_DRAFT = {
   title: "Grade 6 Diagnostic Assessment",
-  grade_id: "78809ff0-cf8d-4be9-b4b3-57774780ce42",
   assessment_type: "diagnostic",
   duration_minutes: 60,
   description: "Evaluates learner foundational numeracy.",
@@ -62,8 +61,13 @@ describe("validateAssessmentDraft", () => {
     assert.ok(validateAssessmentDraft({ ...VALID_DRAFT, title: "   " }).errors.title);
   });
 
-  it("refuses a draft with no grade level", () => {
-    assert.ok(validateAssessmentDraft({ ...VALID_DRAFT, grade_id: "" }).errors.grade_id);
+  it("has nothing to say about a grade level, because the server resolves it", () => {
+    // MathSmart teaches one grade. The workspace used to offer a picker, which
+    // made the product's one curriculum invariant a value a client could send.
+    const result = validateAssessmentDraft(VALID_DRAFT);
+
+    assert.equal(result.isValid, true);
+    assert.equal(result.errors.grade_id, undefined);
   });
 
   it("refuses a type the data model does not hold", () => {
@@ -160,5 +164,16 @@ describe("canPublishAssessment", () => {
 
   it("refuses when there is no assessment at all", () => {
     assert.equal(canPublishAssessment(null, 10).canPublish, false);
+  });
+});
+
+describe("canPublishAssessment after restore exists", () => {
+  it("sends an archived assessment through restore rather than a rewrite", () => {
+    // It used to say "create a new draft instead", which meant rebuilding the
+    // whole question list by hand. Restore keeps it.
+    const { canPublish, reason } = canPublishAssessment({ status: "archived" }, 5);
+
+    assert.equal(canPublish, false);
+    assert.match(reason, /Restore it to a draft/);
   });
 });

@@ -61,12 +61,11 @@ function FieldError({ id, message }) {
  * it fresh: the form is seeded from `assessment` once, and a stale draft from a
  * previous row can never be submitted against a different assessment.
  */
-function AssessmentForm({ assessment, grades, onClose, onSaved }) {
+function AssessmentForm({ assessment, onClose, onSaved }) {
   const isEditing = Boolean(assessment?.assessment_id);
 
   const [values, setValues] = useState(() => ({
     title: assessment?.title ?? "",
-    grade_id: assessment?.grade_id ?? (grades.length === 1 ? grades[0].grade_id : ""),
     assessment_type: assessment?.assessment_type ?? "diagnostic",
     duration_minutes: String(assessment?.duration_minutes ?? 60),
     description: assessment?.description ?? "",
@@ -95,7 +94,6 @@ function AssessmentForm({ assessment, grades, onClose, onSaved }) {
 
     const payload = {
       title: values.title.trim(),
-      grade_id: values.grade_id,
       assessment_type: values.assessment_type,
       duration_minutes: Number(values.duration_minutes),
       description: values.description.trim() || null,
@@ -146,31 +144,14 @@ function AssessmentForm({ assessment, grades, onClose, onSaved }) {
           <FieldError id={`${FIELD_IDS.title}-error`} message={errors.title} />
         </div>
 
+        {/*
+          No grade picker. MathSmart teaches one grade and the server resolves
+          it, exactly as it does for a competency and for a section — offering
+          the choice made the product's one curriculum invariant a value a
+          client could send, and an assessment under another grade has no
+          learners, no competencies and no modules behind it.
+        */}
         <div className="grid gap-5 sm:grid-cols-2">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={FIELD_IDS.grade}>Grade level</Label>
-            <Select
-              value={values.grade_id || undefined}
-              onValueChange={(value) => change("grade_id", value)}
-            >
-              <SelectTrigger
-                id={FIELD_IDS.grade}
-                aria-invalid={Boolean(errors.grade_id)}
-                aria-describedby={errors.grade_id ? `${FIELD_IDS.grade}-error` : undefined}
-              >
-                <SelectValue placeholder="Choose a grade level" />
-              </SelectTrigger>
-              <SelectContent>
-                {grades.map((grade) => (
-                  <SelectItem key={grade.grade_id} value={grade.grade_id}>
-                    {grade.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FieldError id={`${FIELD_IDS.grade}-error`} message={errors.grade_id} />
-          </div>
-
           <div className="flex flex-col gap-2">
             <Label htmlFor={FIELD_IDS.type}>Type</Label>
             <Select
@@ -268,7 +249,7 @@ function AssessmentForm({ assessment, grades, onClose, onSaved }) {
  * publication, which checks that it is safe to deliver, and never as a side
  * effect of saving the form.
  */
-export function AssessmentFormModal({ open, onOpenChange, onSaved, assessment, grades = [] }) {
+export function AssessmentFormModal({ open, onOpenChange, onSaved, assessment }) {
   const isEditing = Boolean(assessment?.assessment_id);
 
   return (
@@ -288,7 +269,6 @@ export function AssessmentFormModal({ open, onOpenChange, onSaved, assessment, g
         <AssessmentForm
           key={assessment?.assessment_id ?? "new"}
           assessment={assessment}
-          grades={grades}
           onClose={() => onOpenChange(false)}
           onSaved={onSaved}
         />

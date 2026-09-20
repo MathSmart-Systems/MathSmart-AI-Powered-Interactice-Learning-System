@@ -314,9 +314,21 @@ class QuestionChanges(BaseModel):
 
 
 class AssessmentDraft(BaseModel):
+    """A new assessment.
+
+    No `grade_id`, for the same reason a competency and a section have none:
+    MathSmart teaches one grade and the server resolves it. The workspace
+    offered a grade picker, which made the one product invariant a value a
+    client could send — and an assessment hung off another grade has no
+    learners, no competencies and no modules behind it. `extra="forbid"` then
+    means a request that sends one is refused rather than quietly obeyed.
+
+    `description` is the assessment's instructions: the contract has one prose
+    field and this is it.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    grade_id: UUID
     title: str = Field(min_length=2, max_length=MAX_TITLE)
     assessment_type: AssessmentType
     duration_minutes: int = Field(ge=1, le=480)
@@ -325,9 +337,15 @@ class AssessmentDraft(BaseModel):
 
 
 class AssessmentChanges(BaseModel):
+    """What may be changed about an assessment.
+
+    The grade is absent for the same reason it is absent from the draft: an
+    assessment cannot be moved out of the grade MathSmart teaches, because
+    there is no other grade to move it to.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    grade_id: UUID | None = None
     title: str | None = Field(default=None, min_length=2, max_length=MAX_TITLE)
     assessment_type: AssessmentType | None = None
     duration_minutes: int | None = Field(default=None, ge=1, le=480)

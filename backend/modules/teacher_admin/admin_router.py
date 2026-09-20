@@ -829,7 +829,18 @@ async def list_assessment_drafts(
 async def create_assessment(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: AssessmentDraft
 ) -> dict[str, Any]:
-    return await _create(connection, ASSESSMENTS, body)
+    """Create an assessment draft, in the one grade MathSmart teaches.
+
+    The grade is resolved here and never taken from the request, exactly as it
+    is for a competency and for a section. The workspace used to offer a grade
+    picker, which made the product's one curriculum invariant a value a client
+    could choose; an assessment under another grade has no learners and no
+    competencies behind it. The interface offering one grade is not the
+    boundary — this is.
+    """
+    return await _create(
+        connection, ASSESSMENTS, body, {"grade_id": await _mvp_grade_id(connection)}
+    )
 
 
 @router.get("/teacher-admin/assessments/{assessment_id}")

@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef } from "react";
-import { Archive, ListOrdered, PencilLine, Send } from "lucide-react";
+import { Archive, ArchiveRestore, ListOrdered, PencilLine, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
+import { DEFAULT_PAGE_SIZE } from "../services/api-client.js";
 import {
   formatAssessmentType,
   formatDate,
@@ -90,12 +91,20 @@ function StatusTabs({ value, onChange, panelId }) {
   );
 }
 
-/** What a row looks like before its data arrives. */
-function LoadingRows() {
+/**
+ * What a row looks like before its data arrives.
+ *
+ * It reserves a page of them rather than three, so the list does not grow by
+ * seventeen rows the moment the read resolves.
+ */
+function LoadingRows({ rows = DEFAULT_PAGE_SIZE }) {
   return (
     <ul className="divide-y divide-border border border-border bg-card">
-      {[0, 1, 2].map((row) => (
-        <li key={row} className="flex flex-col gap-3 px-5 py-5">
+      <li className="sr-only" role="status">
+        Loading assessments
+      </li>
+      {Array.from({ length: rows }).map((_, row) => (
+        <li key={row} className="flex animate-pulse flex-col gap-3 px-5 py-5 motion-reduce:animate-none">
           <div className="h-4 w-2/5 bg-muted" />
           <div className="h-3 w-3/5 bg-muted" />
           <div className="h-3 w-1/4 bg-muted" />
@@ -114,7 +123,6 @@ function LoadingRows() {
  */
 export function AssessmentList({
   assessments = [],
-  gradeNames = {},
   isLoading = false,
   hasFilter = false,
   panelId,
@@ -123,7 +131,9 @@ export function AssessmentList({
   onManageQuestions,
   onPublish,
   onArchive,
+  onRestore,
   onCreateDraft,
+  onClearFilter,
 }) {
   if (isLoading) {
     return (
@@ -143,7 +153,11 @@ export function AssessmentList({
               ? "No assessment matches this search and status. Clear the search, or choose another status, to see the rest."
               : "No assessment has been authored yet. Create the first draft, add its questions, then publish it when it is ready for learners."}
           </p>
-          {hasFilter ? null : (
+          {hasFilter ? (
+            <Button type="button" variant="outline" className="h-11 px-5" onClick={onClearFilter}>
+              Clear the filters
+            </Button>
+          ) : (
             <Button type="button" className="h-11 px-5" onClick={onCreateDraft}>
               Create the first assessment
             </Button>
@@ -159,7 +173,6 @@ export function AssessmentList({
         {assessments.map((assessment) => {
           const status = (assessment.status || "draft").toLowerCase();
           const questionCount = assessment.question_count ?? 0;
-          const gradeName = gradeNames[assessment.grade_id];
 
           return (
             <li
@@ -167,15 +180,15 @@ export function AssessmentList({
               className="flex flex-col gap-4 px-5 py-5 sm:px-6"
             >
               <div className="flex flex-col gap-2">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <h3 className="font-display text-base font-semibold tracking-tight text-foreground">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+                  <h3 className="font-display text-base font-semibold tracking-tight break-words text-foreground">
                     {assessment.title}
                   </h3>
                   <AssessmentStatusBadge status={assessment.status} />
                 </div>
 
                 {assessment.description ? (
-                  <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+                  <p className="max-w-prose text-sm leading-relaxed break-words text-muted-foreground">
                     {assessment.description}
                   </p>
                 ) : null}
@@ -185,12 +198,6 @@ export function AssessmentList({
                     <dt className="sr-only">Type</dt>
                     <dd>{formatAssessmentType(assessment.assessment_type)}</dd>
                   </div>
-                  {gradeName ? (
-                    <div className="flex gap-1.5">
-                      <dt className="sr-only">Grade level</dt>
-                      <dd>{gradeName}</dd>
-                    </div>
-                  ) : null}
                   <div className="flex gap-1.5">
                     <dt className="sr-only">Questions</dt>
                     <dd>{formatQuestionCount(questionCount)}</dd>
@@ -246,7 +253,19 @@ export function AssessmentList({
                   </Button>
                 ) : null}
 
-                {status === "archived" ? null : (
+                {status === "archived" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11 sm:min-h-9"
+                    onClick={() => onRestore?.(assessment)}
+                  >
+                    <ArchiveRestore aria-hidden="true" />
+                    Restore
+                    <span className="sr-only"> {assessment.title}</span>
+                  </Button>
+                ) : (
                   <Button
                     type="button"
                     variant="ghost"

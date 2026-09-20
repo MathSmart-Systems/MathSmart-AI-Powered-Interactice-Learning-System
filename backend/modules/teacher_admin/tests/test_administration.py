@@ -1574,7 +1574,6 @@ def test_an_assessment_type_outside_the_enum_is_refused():
     response = client.post(
         "/api/v1/teacher-admin/assessments",
         json={
-            "grade_id": str(GRADE),
             "title": "Grade 6 Summative",
             "assessment_type": "summative",
             "duration_minutes": 45,
@@ -1599,7 +1598,6 @@ def test_each_assessment_type_in_the_enum_is_accepted():
         response = client.post(
             "/api/v1/teacher-admin/assessments",
             json={
-                "grade_id": str(GRADE),
                 "title": f"Grade 6 {assessment_type}",
                 "assessment_type": assessment_type,
                 "duration_minutes": 45,
@@ -1609,6 +1607,64 @@ def test_each_assessment_type_in_the_enum_is_accepted():
 
         assert response.status_code == 201
         assert response.json()["data"]["assessment_type"] == assessment_type
+
+
+def test_an_assessment_is_created_in_grade_six_without_being_asked():
+    """The one grade MathSmart teaches is resolved, never chosen.
+
+    The workspace offered a grade picker, which made the product's one
+    curriculum invariant a value a client could send — and an assessment under
+    another grade has no learners, no competencies and no modules behind it.
+    """
+    connection = admin_connection(**{"returning": ASSESSMENT_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/assessments",
+        json={
+            "title": "Grade 6 Diagnostic",
+            "assessment_type": "diagnostic",
+            "duration_minutes": 45,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 201
+    insert = next(call for call in connection.calls if "insert into app.assessments" in call[0])
+    assert GRADE in insert[1]
+
+
+def test_an_assessment_request_cannot_name_its_own_grade():
+    connection = admin_connection(**{"returning": ASSESSMENT_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/assessments",
+        json={
+            "grade_id": str(GRADE),
+            "title": "Grade 6 Diagnostic",
+            "assessment_type": "diagnostic",
+            "duration_minutes": 45,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not [call for call in connection.calls if "insert into app.assessments" in call[0]]
+
+
+def test_an_assessment_cannot_be_moved_to_another_grade():
+    connection = admin_connection(**{"returning": ASSESSMENT_ROW})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}",
+        json={"grade_id": str(GRADE)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not [call for call in connection.calls if "update app.assessments" in call[0]]
 
 
 # ---------------------------------------------------------------------------

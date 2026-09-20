@@ -30,7 +30,6 @@ export function characterLength(value) {
  *
  * @param {object} draft
  * @param {string} [draft.title]
- * @param {string} [draft.grade_id]
  * @param {string} [draft.assessment_type]
  * @param {number|string} [draft.duration_minutes]
  * @param {string} [draft.description]
@@ -47,11 +46,6 @@ export function validateAssessmentDraft(draft = {}) {
     errors.title = `Use at least ${MIN_TITLE_LENGTH} characters.`;
   } else if (titleLength > MAX_TITLE_LENGTH) {
     errors.title = `Use at most ${MAX_TITLE_LENGTH} characters.`;
-  }
-
-  const gradeId = typeof draft.grade_id === "string" ? draft.grade_id.trim() : "";
-  if (!gradeId) {
-    errors.grade_id = "Choose the grade level this assessment belongs to.";
   }
 
   const assessmentType =
@@ -136,7 +130,9 @@ export function canPublishAssessment(assessment, questionCount = 0) {
   if (assessment.status === "archived") {
     return {
       canPublish: false,
-      reason: "An archived assessment cannot be published. Create a new draft instead.",
+      reason:
+        "An archived assessment cannot be published. Restore it to a draft first, then " +
+        "publish it.",
     };
   }
 

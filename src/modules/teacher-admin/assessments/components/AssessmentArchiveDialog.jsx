@@ -56,7 +56,7 @@ function ArchiveDialogContent({ assessment, onClose, onArchived }) {
           </p>
         ) : null}
 
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+        <p className="max-w-prose text-sm leading-relaxed break-words text-muted-foreground">
           Nothing is deleted. Attempts learners have already made are kept, and the
           assessment stays visible under Archived. An archived assessment cannot be
           published again — create a new draft instead.

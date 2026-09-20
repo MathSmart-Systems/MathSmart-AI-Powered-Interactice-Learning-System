@@ -166,12 +166,36 @@ export function listGrades({ page = 1, pageSize = DEFAULT_PAGE_SIZE, token = nul
   return request(`/teacher-admin/grades?${pageQuery({ search: "", page, pageSize })}`, { token });
 }
 
-/** Question bank rows, for choosing an assessment's membership. */
+/**
+ * Question bank rows, for choosing an assessment's membership.
+ *
+ * No response from this route can carry an answer key: the column grant on
+ * `app.questions` withholds it from the caller entirely.
+ */
 export function listQuestions({
   search = "",
+  status = null,
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   token = null,
 } = {}) {
-  return request(`/teacher-admin/questions?${pageQuery({ search, page, pageSize })}`, { token });
+  return request(
+    `/teacher-admin/questions?${pageQuery({ search, status, page, pageSize })}`,
+    { token },
+  );
+}
+
+/**
+ * Restores an archived assessment to draft.
+ *
+ * There was no way to do this: the workspace archived an assessment and then
+ * offered nothing on the row, while `canPublishAssessment` told the teacher to
+ * "create a new draft instead". The PATCH route has always accepted a status.
+ */
+export function restoreAssessment(assessmentId, { token = null } = {}) {
+  return request(`/teacher-admin/assessments/${encodeURIComponent(assessmentId)}`, {
+    method: "PATCH",
+    body: { status: "draft" },
+    token,
+  });
 }
