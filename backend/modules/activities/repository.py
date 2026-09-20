@@ -111,6 +111,41 @@ where activity_questions.activity_id = $1
 order by activity_questions.position
 """
 
+# The questions one in-progress attempt was actually given, read from the copy
+# frozen against it rather than from the activity's current membership.
+#
+# Delivery used to re-read `app.activity_questions` on every load. A question
+# archived while a learner had the activity open then vanished from their
+# screen — but the attempt still holds a snapshot row for it and still grades
+# it, so they were marked on an item they could no longer see. This is the same
+# rule assessments already follow.
+#
+# No answer key, no explanation, no hint: those columns are not granted to the
+# caller at all, and none of them is named here.
+_ATTEMPT_QUESTIONS_SQL = """
+select
+  activity_responses.question_id,
+  activity_responses.delivered_competency_id as competency_id,
+  activity_responses.delivered_payload ->> 'competency_name' as competency_name,
+  activity_responses.delivered_payload ->> 'text' as prompt,
+  activity_responses.delivered_payload ->> 'type' as question_type,
+  coalesce(activity_responses.delivered_payload -> 'choices', '[]'::jsonb) as choices,
+  activity_responses.delivered_payload ->> 'difficulty' as difficulty,
+  activity_responses.delivered_payload ->> 'visual_aid_description'
+    as visual_aid_description,
+  activity_responses.delivered_position as position
+from app.activity_responses
+join app.activity_attempts
+  on activity_attempts.attempt_id = activity_responses.attempt_id
+join app.student_profiles
+  on student_profiles.student_id = activity_attempts.student_id
+where activity_attempts.activity_id = $1
+  and student_profiles.user_id = $2
+  and activity_attempts.status = 'in_progress'
+  and activity_responses.delivered_position is not null
+order by activity_responses.delivered_position
+"""
+
 _SAVED_ANSWERS_SQL = """
 select activity_responses.question_id, activity_responses.answer
 from app.activity_responses
@@ -212,6 +247,13 @@ async def activity(connection: ActorConnection, *, user_id: UUID, activity_id: U
 
 async def questions_for(connection: ActorConnection, activity_id: UUID) -> list[Any]:
     return await connection.fetch(_QUESTIONS_SQL, activity_id)
+
+
+async def attempt_questions(
+    connection: ActorConnection, *, activity_id: UUID, user_id: UUID
+) -> list[Any]:
+    """The frozen question set of the caller's own open attempt, if they have one."""
+    return await connection.fetch(_ATTEMPT_QUESTIONS_SQL, activity_id, user_id)
 
 
 async def saved_answers(connection: ActorConnection, attempt_id: UUID) -> list[Any]:

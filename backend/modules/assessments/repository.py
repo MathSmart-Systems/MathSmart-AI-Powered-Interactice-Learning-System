@@ -113,6 +113,37 @@ where assessment_questions.assessment_id = $1
 order by assessment_questions.position
 """
 
+# The questions one attempt was actually given, read from the copy frozen
+# against it at the moment it began.
+#
+# `_ATTEMPT_QUESTIONS_SQL` above reads the assessment's current membership,
+# which is right before an attempt exists and wrong afterwards: a question
+# archived mid-attempt disappears from this query under RLS, while the attempt
+# keeps its snapshot row and still grades it — so a resumed learner saw fewer
+# questions than they were scored on, and a reordered assessment delivered a
+# different order from the one recorded against them.
+#
+# `delivered_payload` is constrained against ever holding a key, a correct
+# answer, an explanation, a hint or a verdict, and `grading_answer_key` is not
+# granted to this caller at all.
+_DELIVERED_QUESTIONS_SQL = """
+select
+  assessment_responses.question_id,
+  assessment_responses.delivered_competency_id as competency_id,
+  assessment_responses.delivered_payload ->> 'competency_name' as competency_name,
+  assessment_responses.delivered_payload ->> 'text' as prompt,
+  assessment_responses.delivered_payload ->> 'type' as question_type,
+  coalesce(assessment_responses.delivered_payload -> 'choices', '[]'::jsonb) as choices,
+  assessment_responses.delivered_payload ->> 'difficulty' as difficulty,
+  assessment_responses.delivered_payload ->> 'visual_aid_description'
+    as visual_aid_description,
+  assessment_responses.delivered_position as position
+from app.assessment_responses
+where assessment_responses.attempt_id = $1
+  and assessment_responses.delivered_position is not null
+order by assessment_responses.delivered_position
+"""
+
 _SAVED_ANSWERS_SQL = """
 select assessment_responses.question_id, assessment_responses.answer
 from app.assessment_responses
@@ -287,6 +318,11 @@ async def assessment(connection: ActorConnection, *, user_id: UUID, assessment_i
 
 async def questions_for(connection: ActorConnection, assessment_id: UUID) -> list[Any]:
     return await connection.fetch(_ATTEMPT_QUESTIONS_SQL, assessment_id)
+
+
+async def delivered_questions(connection: ActorConnection, attempt_id: UUID) -> list[Any]:
+    """The frozen question set of one attempt, in its delivered order."""
+    return await connection.fetch(_DELIVERED_QUESTIONS_SQL, attempt_id)
 
 
 async def saved_answers(connection: ActorConnection, attempt_id: UUID) -> list[Any]:

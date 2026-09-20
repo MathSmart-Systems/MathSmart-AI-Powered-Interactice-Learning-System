@@ -192,7 +192,11 @@ async def start_attempt(
     assessment_row = await repository.assessment(
         connection, user_id=actor.user_id, assessment_id=assessment_id
     )
-    questions = await repository.questions_for(connection, assessment_id)
+    # The attempt's own frozen set, not the assessment's current membership.
+    # The two diverge the moment a teacher archives or reorders a question, and
+    # grading uses the frozen one — so delivering the current one showed a
+    # learner something other than what they will be scored on.
+    questions = await repository.delivered_questions(connection, attempt_row["attempt_id"])
     saved = await repository.saved_answers(connection, attempt_row["attempt_id"])
 
     response.status_code = 200 if already_open else 201

@@ -304,8 +304,8 @@ select throws_ok(
        (select attempt_id from app.activity_attempts),
        'ee000000-0000-4000-8000-000000000007') $$,
   'P0002',
-  'That question is not part of this activity',
-  'A published question outside the activity is refused rather than silently recorded'
+  'That question is not part of this attempt',
+  'A published question outside the attempt is refused rather than silently recorded'
 );
 
 select throws_ok(
@@ -313,7 +313,7 @@ select throws_ok(
        (select attempt_id from app.activity_attempts),
        '00000000-0000-4000-8000-0000000000ff') $$,
   'P0002',
-  'That question is not part of this activity',
+  'That question is not part of this attempt',
   'A question that does not exist is refused as a missing one rather than as a foreign key'
 );
 
@@ -472,11 +472,29 @@ values
    '{"id":"ee000000-0000-4000-8000-000000000003","prompt":"What is 2 + 2?","question_type":"number_input","options":[]}'::jsonb,
    '4'::jsonb);
 
+-- The activity attempt carries its frozen question set, exactly as the
+-- assessment attempt above does. An attempt without one is refused now: there
+-- would be nothing saying what the learner was asked, so nothing that could be
+-- graded honestly.
 insert into app.activity_attempts
-  (attempt_id, student_id, activity_id, attempt_number, activity_version)
+  (attempt_id, student_id, activity_id, attempt_number, activity_version,
+   question_snapshot_created_at, question_snapshot_count)
 values ('1e000000-0000-4000-8000-000000000002',
         '5e000000-0000-4000-8000-000000000001',
-        'fe000000-0000-4000-8000-000000000003', 2, 1);
+        'fe000000-0000-4000-8000-000000000003', 2, 1,
+        now(), 1);
+
+insert into app.activity_responses
+  (attempt_id, question_id, question_version, delivered_position,
+   delivered_competency_id, delivered_payload, grading_answer_key,
+   delivered_explanation, delivered_hint)
+values
+  ('1e000000-0000-4000-8000-000000000002',
+   'ee000000-0000-4000-8000-000000000005', 1, 1,
+   'ce000000-0000-4000-8000-000000000002',
+   '{"id":"ee000000-0000-4000-8000-000000000005","text":"What is 5 + 5?","type":"number_input","choices":[]}'::jsonb,
+   '10'::jsonb,
+   'Add the two numbers.', 'Count on from five.');
 
 set local request.jwt.claims = '{"sub":"be000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
 set local role authenticated;

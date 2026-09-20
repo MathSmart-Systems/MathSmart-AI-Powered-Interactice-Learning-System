@@ -115,6 +115,11 @@ ASSESSMENT_BY_ID = "where assessments.assessment_id"
 ASSESSMENT_LIST = "order by assessments.title"
 TOTAL = "count(*) as total"
 QUESTIONS = "order by assessment_questions.position"
+# What one attempt was actually given, frozen against it when it began.
+# Delivery reads this rather than the assessment's current membership, so the
+# two anchors have to stay apart.
+DELIVERED = "order by assessment_responses.delivered_position"
+SAVED = "select assessment_responses.question_id, assessment_responses.answer"
 HISTORY = "limit $2 offset $3"
 
 
@@ -125,6 +130,8 @@ def attempt_connection(**overrides):
         "app.submit_assessment_attempt": SCORED_ROW,
         "app.authorize_reassessment": None,
         QUESTIONS: [QUESTION_ROW],
+        DELIVERED: [QUESTION_ROW],
+        SAVED: [RESPONSE_ROW],
         "from app.assessment_responses": [RESPONSE_ROW],
         "from app.competency_results": [RESULT_ROW],
         "from app.learning_path_items": [PATH_ROW],

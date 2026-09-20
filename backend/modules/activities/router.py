@@ -139,12 +139,26 @@ async def list_activities(
 async def read_activity(
     actor: CurrentActor, connection: ActorDb, activity_id: UUID
 ) -> dict[str, Any]:
-    """One activity and its ordered questions, without answer keys."""
+    """One activity and its ordered questions, without answer keys.
+
+    A learner part-way through gets the questions their attempt was started
+    with, not the activity's current membership. The two can differ — a teacher
+    can archive a question, and the attempt keeps grading the one it froze — and
+    delivering the current set meant a learner could be marked on an item that
+    had disappeared from their screen.
+    """
     row = await repository.activity(connection, user_id=actor.user_id, activity_id=activity_id)
     if row is None:
         raise ApiError(404, "No activity was found")
 
-    questions = await repository.questions_for(connection, activity_id)
+    questions = []
+    if actor.role is MathSmartRole.STUDENT:
+        questions = await repository.attempt_questions(
+            connection, activity_id=activity_id, user_id=actor.user_id
+        )
+
+    if not questions:
+        questions = await repository.questions_for(connection, activity_id)
     detail = ActivityDetail(
         **_summary(row), questions=[_question(question) for question in questions]
     )

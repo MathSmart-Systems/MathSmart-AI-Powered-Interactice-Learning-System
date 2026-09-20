@@ -35,7 +35,10 @@ ACTIVITY_BY_ID = "where activities.activity_id = $2"
 TOTAL = "count(*) as total"
 QUESTIONS = "order by activity_questions.position"
 ATTEMPT_HISTORY = "limit $2 offset $3"
-SAVED = "from app.activity_responses"
+SAVED = "select activity_responses.question_id, activity_responses.answer"
+# The questions one open attempt was frozen with, which delivery prefers over
+# the activity's current membership.
+DELIVERED = "order by activity_responses.delivered_position"
 
 ACTIVITY_ROW = {
     "activity_id": ACTIVITY,
