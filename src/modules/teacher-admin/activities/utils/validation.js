@@ -110,3 +110,44 @@ export function validateActivityDraft(draft = {}) {
     errors,
   };
 }
+
+/**
+ * Whether this page already knows enough to refuse publication.
+ *
+ * Only what the row carries. The server checks more — every question
+ * published, and a published module and competency behind it — and its refusal
+ * is shown rather than predicted, because predicting it would mean guessing on
+ * the learner's behalf.
+ *
+ * @param {object|null} activity
+ * @param {number} questionCount
+ * @returns {{ canPublish: boolean, reason: string|null }}
+ */
+export function canPublishActivity(activity, questionCount) {
+  if (!activity) {
+    return { canPublish: false, reason: "No activity is selected." };
+  }
+
+  if (activity.status === "published") {
+    return { canPublish: false, reason: "This activity is already published." };
+  }
+
+  if (activity.status === "archived") {
+    return {
+      canPublish: false,
+      reason:
+        "An archived activity cannot be published. Restore it to a draft first, then publish it.",
+    };
+  }
+
+  if (!Number.isInteger(questionCount) || questionCount < 1) {
+    return {
+      canPublish: false,
+      reason:
+        "Add at least one question before publishing. An activity with none would be " +
+        "delivered empty and then scored zero.",
+    };
+  }
+
+  return { canPublish: true, reason: null };
+}

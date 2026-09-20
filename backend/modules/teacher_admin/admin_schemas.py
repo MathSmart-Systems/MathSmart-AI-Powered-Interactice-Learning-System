@@ -356,6 +356,28 @@ class AssessmentQuestions(BaseModel):
         return question_ids
 
 
+class ActivityQuestions(BaseModel):
+    """An activity's ordered membership, replaced as a whole.
+
+    The same shape as `AssessmentQuestions`, and for the same reasons: the
+    position of each question is its place in the list that was sent, a
+    question is seated once because the membership is keyed on the activity and
+    the question together, and an empty list is refused here rather than
+    leaving an activity with nothing to practise.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+    @field_validator("question_ids")
+    @classmethod
+    def each_question_is_listed_once(cls, question_ids: list[UUID]) -> list[UUID]:
+        if len(set(question_ids)) != len(question_ids):
+            raise ValueError("An activity may list each question only once")
+        return question_ids
+
+
 class GradeDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

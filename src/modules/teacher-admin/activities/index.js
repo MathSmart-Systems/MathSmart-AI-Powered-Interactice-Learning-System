@@ -4,6 +4,7 @@
 
 export { TeacherActivitiesView } from "./components/TeacherActivitiesView.jsx";
 export { ActivityStatusBadge } from "./components/ActivityStatusBadge.jsx";
+export { canPublishActivity } from "./utils/validation.js";
 export {
   formatActivityStatus,
   formatDate,

@@ -2,7 +2,7 @@ import { Archive, CheckCircle2, FileEdit } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 
-import { formatActivityStatus } from "../utils/format";
+import { formatActivityStatus } from "../utils/format.js";
 
 const ICONS = {
   published: CheckCircle2,

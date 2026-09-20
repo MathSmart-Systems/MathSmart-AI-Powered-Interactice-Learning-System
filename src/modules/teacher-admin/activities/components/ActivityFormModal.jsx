@@ -15,14 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { NATIVE_SELECT_CLASS } from "@/modules/shared/utils/native-select.js";
 
 import { fetchSettings } from "../../settings/index.js";
 import { createActivity, updateActivity } from "../services/activity-admin-service.js";
@@ -39,7 +33,6 @@ const FIELD_IDS = {
   duration: "activity-duration",
   points: "activity-points",
   threshold: "activity-threshold",
-  status: "activity-status",
   description: "activity-description",
 };
 
@@ -75,7 +68,14 @@ function FieldError({ id, message }) {
  * @param {number} [props.defaultThreshold] - Pre-filled default pass threshold for new drafts
  * @returns {JSX.Element}
  */
-function ActivityForm({ activity, modules, onClose, onSaved, defaultThreshold }) {
+function ActivityForm({
+  activity,
+  modules,
+  modulesUnavailable,
+  onClose,
+  onSaved,
+  defaultThreshold,
+}) {
   const isEditing = Boolean(activity?.activity_id);
 
   const [values, setValues] = useState(() => ({
@@ -86,7 +86,6 @@ function ActivityForm({ activity, modules, onClose, onSaved, defaultThreshold })
     mastery_threshold: String(
       activity?.mastery_threshold ?? defaultThreshold ?? DEFAULT_MASTERY_THRESHOLD
     ),
-    status: activity?.status ?? "draft",
     description: activity?.description ?? "",
   }));
   const [hasUserEditedThreshold, setHasUserEditedThreshold] = useState(false);
@@ -167,7 +166,6 @@ function ActivityForm({ activity, modules, onClose, onSaved, defaultThreshold })
       estimated_minutes: Number(values.estimated_minutes),
       points: Number(values.points),
       mastery_threshold: Number(values.mastery_threshold),
-      status: values.status,
       description: values.description.trim() || null,
     };
 
@@ -225,25 +223,44 @@ function ActivityForm({ activity, modules, onClose, onSaved, defaultThreshold })
           <Label htmlFor={FIELD_IDS.module}>
             Learning module <span className="text-destructive">*</span>
           </Label>
-          <Select
+          {/*
+            A native select: it cannot be clipped by the dialog, it cannot open
+            a second scrollbar inside it, it sizes its own list against the
+            viewport, and on a phone it is the platform's picker. A long module
+            title used to make the popover far wider than its trigger and then
+            clip the text rather than wrap it.
+          */}
+          <select
+            id={FIELD_IDS.module}
+            className={NATIVE_SELECT_CLASS}
             value={values.module_id}
-            onValueChange={(val) => change("module_id", val)}
+            disabled={modulesUnavailable}
+            aria-invalid={Boolean(errors.module_id)}
+            aria-describedby={
+              errors.module_id
+                ? `${FIELD_IDS.module}-error`
+                : modulesUnavailable
+                  ? `${FIELD_IDS.module}-unavailable`
+                  : undefined
+            }
+            onChange={(event) => change("module_id", event.target.value)}
           >
-            <SelectTrigger
-              id={FIELD_IDS.module}
-              aria-invalid={Boolean(errors.module_id)}
-              aria-describedby={errors.module_id ? `${FIELD_IDS.module}-error` : undefined}
+            <option value="">Select an ARAL learning module</option>
+            {modules.map((mod) => (
+              <option key={mod.module_id} value={mod.module_id}>
+                {mod.title}
+              </option>
+            ))}
+          </select>
+          {modulesUnavailable ? (
+            <p
+              id={`${FIELD_IDS.module}-unavailable`}
+              className="text-sm leading-relaxed text-muted-foreground"
             >
-              <SelectValue placeholder="Select an ARAL learning module" />
-            </SelectTrigger>
-            <SelectContent>
-              {modules.map((mod) => (
-                <SelectItem key={mod.module_id} value={mod.module_id}>
-                  {mod.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              Learning modules are still loading, or could not be loaded. An activity cannot be
+              filed without one, so saving stays unavailable until they arrive.
+            </p>
+          ) : null}
           <FieldError id={`${FIELD_IDS.module}-error`} message={errors.module_id} />
         </div>
 
@@ -325,18 +342,15 @@ function ActivityForm({ activity, modules, onClose, onSaved, defaultThreshold })
           </div>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={FIELD_IDS.status}>Publication status</Label>
-          <Select value={values.status} onValueChange={(val) => change("status", val)}>
-            <SelectTrigger id={FIELD_IDS.status}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="draft">Draft (Work in progress)</SelectItem>
-              <SelectItem value="published">Published (Available for practice)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/*
+          No status control. It offered draft and published only, so an
+          archived activity opened with an empty required-looking select and
+          re-sent "archived" on save — and publishing from here had nothing
+          behind it: an activity with no questions published fine, was started
+          by a learner, delivered nothing, and scored them zero. Publishing,
+          archiving and restoring are their own actions on the row now, each
+          with the server's checks behind it.
+        */}
 
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
@@ -371,13 +385,9 @@ function ActivityForm({ activity, modules, onClose, onSaved, defaultThreshold })
         >
           Cancel
         </Button>
-        <Button
-          type="submit"
-          className="h-11 px-5 bg-primary hover:bg-primary/90 text-primary-foreground"
-          disabled={isSaving}
-        >
-          {isSaving ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
-          {isEditing ? "Save changes" : "Create activity"}
+        <Button type="submit" className="h-11 px-5" disabled={isSaving || modulesUnavailable}>
+          {isSaving ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
+          {isSaving ? "Saving…" : isEditing ? "Save changes" : "Create activity"}
         </Button>
       </DialogFooter>
     </form>
@@ -402,6 +412,7 @@ export function ActivityFormModal({
   onSaved,
   activity,
   modules = [],
+  modulesUnavailable = false,
   defaultThreshold,
 }) {
   const isEditing = Boolean(activity?.activity_id);

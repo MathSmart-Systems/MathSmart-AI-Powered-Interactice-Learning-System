@@ -1,18 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Search, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ResultAnnouncer } from "@/modules/shared";
+import { NATIVE_SELECT_CLASS } from "@/modules/shared/utils/native-select.js";
 
 import {
   DEFAULT_PAGE_SIZE,
@@ -22,6 +17,9 @@ import {
 import { ActivityArchiveDialog } from "./ActivityArchiveDialog.jsx";
 import { ActivityFormModal } from "./ActivityFormModal.jsx";
 import { ActivityList } from "./ActivityList.jsx";
+import { ActivityPublishDialog } from "./ActivityPublishDialog.jsx";
+import { ActivityQuestionManagerModal } from "./ActivityQuestionManagerModal.jsx";
+import { ActivityRestoreDialog } from "./ActivityRestoreDialog.jsx";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const CONFIRMATION_MS = 6000;
@@ -36,8 +34,9 @@ const NO_DIALOG = { kind: null, activity: null };
 /**
  * Main Teacher Activities administration workspace component.
  *
- * Provides a responsive dashboard for teachers to browse, filter, create, edit,
- * and archive learner practice activities.
+ * Provides a responsive workspace for browsing, filtering, creating, editing,
+ * publishing, archiving and restoring learner practice activities, and for
+ * choosing the questions each one holds.
  *
  * @returns {JSX.Element}
  */
@@ -52,6 +51,7 @@ export function TeacherActivitiesView() {
   const [activities, setActivities] = useState([]);
   const [modules, setModules] = useState([]);
   const [moduleError, setModuleError] = useState(null);
+  const [isLoadingModules, setIsLoadingModules] = useState(true);
   const [moduleReloadIndex, setModuleReloadIndex] = useState(0);
   const [meta, setMeta] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,10 +88,16 @@ export function TeacherActivitiesView() {
 
     /**
      * Fetches all learning modules for dropdown options and lookup.
+     *
+     * A failure on any page leaves what was already loaded alone rather than
+     * replacing the dropdowns with a shorter list: a partial module list looks
+     * exactly like a complete one, and picking from it would file an activity
+     * under the wrong module.
      */
     async function load() {
+      setIsLoadingModules(true);
       setModuleError(null);
-      let allModules = [];
+      let collected = [];
       let currentPage = 1;
       let totalPages = 1;
 
@@ -101,17 +107,19 @@ export function TeacherActivitiesView() {
           return;
         }
         if (!result.ok || !Array.isArray(result.data)) {
-          setModuleError(result.error || "Failed to load learning modules.");
+          setModuleError(result.error || "Learning modules could not be loaded.");
+          setIsLoadingModules(false);
           return;
         }
-        allModules = allModules.concat(result.data);
-        totalPages = result.meta?.totalPages || 1;
+        collected = collected.concat(result.data);
+        totalPages = Math.min(result.meta?.totalPages || 1, 50);
         currentPage += 1;
       } while (currentPage <= totalPages);
 
       if (active) {
-        setModules(allModules);
+        setModules(collected);
         setModuleError(null);
+        setIsLoadingModules(false);
       }
     }
 
@@ -143,6 +151,9 @@ export function TeacherActivitiesView() {
       }
 
       if (result.ok) {
+        // A page beyond the end comes back empty. Archiving the last row on
+        // page 3 used to leave the list showing "no matching activities" under
+        // filters that matched plenty.
         const lastPage = Math.max(1, result.meta?.totalPages || 1);
         if (page > lastPage) {
           setPage(lastPage);
@@ -152,6 +163,8 @@ export function TeacherActivitiesView() {
         setMeta(result.meta);
         setError(null);
       } else {
+        // The rows that were on screen are no longer known to exist, and
+        // leaving them under an error banner invited acting on them.
         setActivities([]);
         setMeta(null);
         setError(result.error);
@@ -165,7 +178,44 @@ export function TeacherActivitiesView() {
     };
   }, [appliedSearch, status, selectedModuleId, page, reloadIndex]);
 
-  const hasSearchOrFilter = Boolean(appliedSearch || status !== "all" || selectedModuleId !== "all");
+  const moduleTitles = useMemo(() => {
+    const titles = new Map();
+    for (const item of modules) {
+      titles.set(item.module_id, item.title);
+    }
+    return titles;
+  }, [modules]);
+
+  const hasSearchOrFilter = Boolean(
+    appliedSearch || status !== "all" || selectedModuleId !== "all",
+  );
+
+  /** The sentence under the list, and the one that gets announced. */
+  const caption = (() => {
+    if (isLoading) {
+      return "Loading activities…";
+    }
+    if (error) {
+      return "Activities could not be loaded.";
+    }
+    const total = meta?.totalItems ?? activities.length;
+    if (!total) {
+      return hasSearchOrFilter
+        ? "No activities match these filters"
+        : "No activities yet";
+    }
+    const first = ((meta?.page ?? 1) - 1) * (meta?.pageSize ?? DEFAULT_PAGE_SIZE) + 1;
+    const last = Math.min(first + activities.length - 1, total);
+    return `Showing ${first}–${last} of ${total} ${total === 1 ? "activity" : "activities"}`;
+  })();
+
+  /** Keeps a dialog's copy of a row in step with the list it came from. */
+  const openDialog = useCallback(
+    (kind, activity) => setDialog({ kind, activity }),
+    [],
+  );
+
+  const totalPages = meta?.totalPages ?? 1;
 
   return (
     <div className="space-y-6">
@@ -175,19 +225,20 @@ export function TeacherActivitiesView() {
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             Practice Activities
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-            Maintain interactive practice sets, duration targets, and passing thresholds for ARAL learning modules.
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            Maintain interactive practice sets, their questions, duration targets, and passing
+            thresholds for ARAL learning modules.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="shrink-0">
           <Button
             type="button"
-            className="h-10 gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
-            onClick={() => setDialog({ kind: "form", activity: null })}
+            className="h-11 gap-2 px-5"
+            onClick={() => openDialog("form", null)}
           >
             <Plus className="size-4" aria-hidden="true" />
-            <span>Create Activity</span>
+            <span>Create activity</span>
           </Button>
         </div>
       </div>
@@ -196,19 +247,21 @@ export function TeacherActivitiesView() {
       {confirmation ? (
         <div
           role="status"
-          className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-900 animate-in fade-in slide-in-from-top-2 duration-200"
+          className="flex flex-wrap items-center justify-between gap-3 border-l-[3px] border-primary bg-card px-4 py-3 text-sm text-foreground"
         >
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-4 text-emerald-600 shrink-0" aria-hidden="true" />
-            <span>{confirmation}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <CheckCircle2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="min-w-0 break-words">{confirmation}</span>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
             onClick={() => setConfirmation(null)}
-            className="text-xs font-semibold text-emerald-800 hover:text-emerald-950 underline"
           >
             Dismiss
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -216,116 +269,113 @@ export function TeacherActivitiesView() {
       {error ? (
         <div
           role="alert"
-          className="flex items-start justify-between rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive"
+          className="flex flex-col gap-3 border-l-[3px] border-destructive bg-destructive/5 p-4 text-sm sm:flex-row sm:items-start sm:justify-between"
         >
-          <div className="flex items-start gap-3">
-            <TriangleAlert className="size-5 shrink-0 mt-0.5" aria-hidden="true" />
-            <div className="space-y-1">
-              <p className="font-semibold">Could not load activities</p>
-              <p className="text-muted-foreground">{error}</p>
+          <div className="flex min-w-0 items-start gap-3">
+            <TriangleAlert
+              className="mt-0.5 size-5 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 space-y-1">
+              <p className="font-semibold text-destructive">Could not load activities</p>
+              <p className="break-words text-muted-foreground">{error}</p>
             </div>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={reload}
-            className="shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10"
-          >
-            Try Again
+          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={reload}>
+            Try again
           </Button>
         </div>
       ) : null}
 
-      {/* Module Loading Error Alert */}
+      {/* Module loading error */}
       {moduleError ? (
         <div
           role="alert"
-          className="flex items-start justify-between rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-300"
+          className="flex flex-col gap-3 border-l-[3px] border-destructive bg-card p-4 text-sm sm:flex-row sm:items-start sm:justify-between"
         >
-          <div className="flex items-start gap-3">
-            <TriangleAlert className="size-5 shrink-0 mt-0.5" aria-hidden="true" />
-            <div className="space-y-1">
-              <p className="font-semibold">Could not load learning modules</p>
-              <p className="text-muted-foreground">{moduleError}</p>
+          <div className="flex min-w-0 items-start gap-3">
+            <TriangleAlert
+              className="mt-0.5 size-5 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 space-y-1">
+              <p className="font-semibold text-foreground">Could not load learning modules</p>
+              <p className="break-words text-muted-foreground">
+                {moduleError} An activity cannot be created or filed without one, so those
+                actions stay unavailable until this succeeds.
+              </p>
             </div>
           </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
+            className="shrink-0"
             onClick={retryModules}
-            className="shrink-0 border-amber-500/30 text-amber-800 hover:bg-amber-500/10 dark:text-amber-300"
           >
-            Retry Modules
+            Retry modules
           </Button>
         </div>
       ) : null}
 
       {/* Filter and Search Toolbar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-border/80 bg-card p-3 shadow-2xs">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col gap-3 border border-border bg-card p-3 lg:flex-row lg:items-end">
+        <div className="relative min-w-0 flex-1">
+          <Label htmlFor={SEARCH_INPUT_ID} className="mb-2 block">
+            Search activities
+          </Label>
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute bottom-2.5 left-3 size-4 text-muted-foreground"
             aria-hidden="true"
           />
           <Input
             id={SEARCH_INPUT_ID}
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by activity title..."
-            className="h-10 pl-9 border-border/70 bg-background/60 focus:bg-background"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by activity title"
+            className="pl-9"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="w-[150px]">
-            <Label htmlFor={STATUS_FILTER_ID} className="sr-only">
-              Filter by status
-            </Label>
-            <Select
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:w-[28rem]">
+          <div className="flex min-w-0 flex-col gap-2">
+            <Label htmlFor={STATUS_FILTER_ID}>Status</Label>
+            <select
+              id={STATUS_FILTER_ID}
+              className={NATIVE_SELECT_CLASS}
               value={status}
-              onValueChange={(val) => {
-                setStatus(val);
+              onChange={(event) => {
+                setStatus(event.target.value);
                 setPage(1);
               }}
             >
-              <SelectTrigger id={STATUS_FILTER_ID} className="h-10 text-xs bg-background/60">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="draft">Drafts</SelectItem>
-                <SelectItem value="published">Published</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
+              <option value="all">All statuses</option>
+              <option value="draft">Drafts</option>
+              <option value="published">Published</option>
+              <option value="archived">Archived</option>
+            </select>
           </div>
 
-          <div className="w-[200px]">
-            <Label htmlFor={MODULE_FILTER_ID} className="sr-only">
-              Filter by module
-            </Label>
-            <Select
+          <div className="flex min-w-0 flex-col gap-2">
+            <Label htmlFor={MODULE_FILTER_ID}>Learning module</Label>
+            <select
+              id={MODULE_FILTER_ID}
+              className={NATIVE_SELECT_CLASS}
               value={selectedModuleId}
-              onValueChange={(val) => {
-                setSelectedModuleId(val);
+              disabled={Boolean(moduleError)}
+              onChange={(event) => {
+                setSelectedModuleId(event.target.value);
                 setPage(1);
               }}
             >
-              <SelectTrigger id={MODULE_FILTER_ID} className="h-10 text-xs bg-background/60 truncate">
-                <SelectValue placeholder="All Modules" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Modules</SelectItem>
-                {modules.map((m) => (
-                  <SelectItem key={m.module_id} value={m.module_id}>
-                    {m.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <option value="all">All modules</option>
+              {modules.map((item) => (
+                <option key={item.module_id} value={item.module_id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -333,56 +383,56 @@ export function TeacherActivitiesView() {
       {/* Main List Grid */}
       <ActivityList
         activities={activities}
-        modules={modules}
+        moduleTitles={moduleTitles}
         isLoading={isLoading}
+        hasError={Boolean(error)}
         hasSearchOrFilter={hasSearchOrFilter}
-        onEdit={(activity) => setDialog({ kind: "form", activity })}
-        onArchive={(activity) => setDialog({ kind: "archive", activity })}
-        onCreate={() => setDialog({ kind: "form", activity: null })}
+        onEdit={(activity) => openDialog("form", activity)}
+        onQuestions={(activity) => openDialog("questions", activity)}
+        onPublish={(activity) => openDialog("publish", activity)}
+        onArchive={(activity) => openDialog("archive", activity)}
+        onRestore={(activity) => openDialog("restore", activity)}
+        onCreate={() => openDialog("form", null)}
       />
 
-      {/* Pagination Controls */}
-      {meta && meta.totalPages > 1 ? (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-border/80 pt-4 text-xs text-muted-foreground">
-          <p>
-            Showing <span className="font-semibold text-foreground">{(meta.page - 1) * meta.pageSize + 1}</span> to{" "}
-            <span className="font-semibold text-foreground">
-              {Math.min(meta.page * meta.pageSize, meta.totalItems)}
-            </span>{" "}
-            of <span className="font-semibold text-foreground">{meta.totalItems}</span> activities
-          </p>
+      {/* Result count and pagination */}
+      <div className="flex flex-col gap-4 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">{caption}</p>
+        <ResultAnnouncer message={isLoading ? "" : caption} />
 
-          <div className="flex items-center gap-1.5">
+        {totalPages > 1 ? (
+          <nav
+            aria-label="Activity pages"
+            className="flex flex-wrap items-center justify-between gap-2"
+          >
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 gap-1 px-2.5"
-              disabled={meta.page <= 1 || isLoading}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={(meta?.page ?? 1) <= 1 || isLoading}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
               <ChevronLeft className="size-4" aria-hidden="true" />
               Previous
             </Button>
 
-            <span className="px-3 py-1 font-semibold text-foreground">
-              Page {meta.page} of {meta.totalPages}
+            <span className="px-3 text-sm font-medium text-foreground">
+              Page {meta?.page ?? 1} of {totalPages}
             </span>
 
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 gap-1 px-2.5"
-              disabled={meta.page >= meta.totalPages || isLoading}
-              onClick={() => setPage((p) => Math.min(meta.totalPages, p + 1))}
+              disabled={(meta?.page ?? 1) >= totalPages || isLoading}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             >
               Next
               <ChevronRight className="size-4" aria-hidden="true" />
             </Button>
-          </div>
-        </div>
-      ) : null}
+          </nav>
+        ) : null}
+      </div>
 
       {/* Create / Edit Modal */}
       <ActivityFormModal
@@ -390,29 +440,84 @@ export function TeacherActivitiesView() {
         onOpenChange={(open) => {
           if (!open) setDialog(NO_DIALOG);
         }}
-        activity={dialog.activity}
+        activity={dialog.kind === "form" ? dialog.activity : null}
         modules={modules}
+        modulesUnavailable={Boolean(moduleError) || isLoadingModules}
         onSaved={(saved) => {
           setDialog(NO_DIALOG);
           confirm(
             dialog.activity
-              ? `Activity "${saved.title}" updated.`
-              : `Activity "${saved.title}" created successfully.`
+              ? `“${saved?.title ?? dialog.activity.title}” was updated.`
+              : `“${saved?.title ?? "The activity"}” was created as a draft.`,
           );
           reload();
         }}
       />
 
-      {/* Archive Confirmation Dialog */}
+      {/* Questions */}
+      <ActivityQuestionManagerModal
+        open={dialog.kind === "questions"}
+        onOpenChange={(open) => {
+          if (!open) setDialog(NO_DIALOG);
+        }}
+        activity={dialog.kind === "questions" ? dialog.activity : null}
+        onSaved={(saved) => {
+          const count = saved?.question_count;
+          setDialog(NO_DIALOG);
+          confirm(
+            typeof count === "number"
+              ? `“${saved?.title ?? dialog.activity?.title}” now holds ${count} ${
+                  count === 1 ? "question" : "questions"
+                }.`
+              : "The question list was saved.",
+          );
+          reload();
+        }}
+      />
+
+      {/* Publish */}
+      <ActivityPublishDialog
+        open={dialog.kind === "publish"}
+        onOpenChange={(open) => {
+          if (!open) setDialog(NO_DIALOG);
+        }}
+        activity={dialog.kind === "publish" ? dialog.activity : null}
+        moduleTitle={
+          dialog.activity ? (moduleTitles.get(dialog.activity.module_id) ?? null) : null
+        }
+        onPublished={(published) => {
+          setDialog(NO_DIALOG);
+          confirm(
+            `“${published?.title ?? dialog.activity?.title}” is published and available to learners.`,
+          );
+          reload();
+        }}
+      />
+
+      {/* Archive */}
       <ActivityArchiveDialog
         open={dialog.kind === "archive"}
         onOpenChange={(open) => {
           if (!open) setDialog(NO_DIALOG);
         }}
-        activity={dialog.activity}
+        activity={dialog.kind === "archive" ? dialog.activity : null}
         onArchived={(archived) => {
           setDialog(NO_DIALOG);
-          confirm(`Activity "${archived.title}" has been archived.`);
+          confirm(`“${archived.title}” was archived. Learners no longer see it.`);
+          reload();
+        }}
+      />
+
+      {/* Restore */}
+      <ActivityRestoreDialog
+        open={dialog.kind === "restore"}
+        onOpenChange={(open) => {
+          if (!open) setDialog(NO_DIALOG);
+        }}
+        activity={dialog.kind === "restore" ? dialog.activity : null}
+        onRestored={(restored) => {
+          setDialog(NO_DIALOG);
+          confirm(`“${restored.title}” is a draft again. Publish it when it is ready.`);
           reload();
         }}
       />

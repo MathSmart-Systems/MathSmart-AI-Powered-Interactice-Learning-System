@@ -683,6 +683,339 @@ def test_archiving_an_activity_does_not_delete_it():
     assert not [call for call in connection.calls if "delete from app.activities" in call[0]]
 
 
+#: The activity membership statements, each named by a clause only it carries.
+ACTIVITY_MEMBERSHIP_IDS = "order by activity_questions.position"
+ACTIVITY_MEMBERSHIP_COUNTS = "group by activity_questions.activity_id"
+ACTIVITY_OPEN_ATTEMPTS = "activity_attempts.status = 'in_progress'"
+ACTIVITY_READINESS = "as activity_status"
+ACTIVITY_LIST = "order by activities.title"
+ACTIVITY_BY_ID = "where activities.activity_id = $1"
+
+#: An activity that is ready to publish: it has questions, all of them are
+#: published, and its module and competency are published too.
+ACTIVITY_READINESS_ROW = {
+    "activity_status": "draft",
+    "module_status": "published",
+    "competency_status": "published",
+    "question_total": 2,
+    "unpublished_total": 0,
+}
+
+
+def activity_membership_connection(**overrides):
+    """A connection that answers every statement the membership routes run."""
+    results = {
+        # Ahead of the page count, because the open-attempt guard counts too.
+        ACTIVITY_OPEN_ATTEMPTS: 0,
+        TOTAL: 1,
+        ACTIVITY_READINESS: ACTIVITY_READINESS_ROW,
+        ACTIVITY_MEMBERSHIP_COUNTS: [],
+        ACTIVITY_MEMBERSHIP_IDS: [],
+        ACTIVITY_LIST: [ACTIVITY_ROW],
+        ACTIVITY_BY_ID: ACTIVITY_ROW,
+        "returning": ACTIVITY_ROW,
+    }
+    results.update(overrides)
+    return FakeConnection(results=results)
+
+
+def test_activity_question_membership_is_replaced_atomically():
+    """Activities had no way to author their questions at all.
+
+    The grants and the policies on `app.activity_questions` were written with
+    the table, and nothing ever used them — so an activity's question set could
+    only be established outside the application. This is the same whole-list
+    replace the assessment membership has always had.
+    """
+    connection = activity_membership_connection()
+    client = build_client(connection)
+
+    first = UUID("8c5d0000-0000-4000-8000-000000000001")
+    second = UUID("8c5d0000-0000-4000-8000-000000000002")
+
+    response = client.put(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/questions",
+        json={"question_ids": [str(first), str(second)]},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["question_count"] == 2
+    # The order sent is the order stored: position comes from the array.
+    assert response.json()["data"]["question_ids"] == [str(first), str(second)]
+
+    queries = connection.queries()
+    removal = next(i for i, q in enumerate(queries) if "delete from app.activity_questions" in q)
+    insertion = next(i for i, q in enumerate(queries) if "insert into app.activity_questions" in q)
+    assert removal < insertion
+
+
+def test_an_empty_activity_membership_is_refused():
+    """An activity with nothing to practise is not a state worth reaching."""
+    connection = activity_membership_connection()
+    client = build_client(connection)
+
+    response = client.put(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/questions",
+        json={"question_ids": []},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not [
+        call for call in connection.calls if "delete from app.activity_questions" in call[0]
+    ]
+
+
+def test_a_repeated_question_is_refused_from_an_activity_too():
+    connection = activity_membership_connection()
+    client = build_client(connection)
+    question = UUID("8c5d0000-0000-4000-8000-000000000001")
+
+    response = client.put(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/questions",
+        json={"question_ids": [str(question), str(question)]},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not [
+        call for call in connection.calls if "delete from app.activity_questions" in call[0]
+    ]
+
+
+def test_membership_cannot_change_under_a_learner_part_way_through():
+    """Their grading would survive it; what they are looking at would not.
+
+    The attempt holds its own frozen copy of the questions, so a replacement
+    cannot change their score. It would change the activity out from under them
+    mid-answer, and leave the two disagreeing about what the activity is.
+    """
+    connection = activity_membership_connection(**{ACTIVITY_OPEN_ATTEMPTS: 2})
+    client = build_client(connection)
+
+    response = client.put(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/questions",
+        json={"question_ids": [str(UUID("8c5d0000-0000-4000-8000-000000000001"))]},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "activity_in_progress"
+    assert "2 learners" in response.json()["error"]["message"]
+    assert not [
+        call for call in connection.calls if "delete from app.activity_questions" in call[0]
+    ]
+
+
+def test_replacing_the_membership_of_an_absent_activity_is_a_404():
+    connection = FakeConnection(results={})
+    client = build_client(connection)
+
+    response = client.put(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/questions",
+        json={"question_ids": [str(UUID("8c5d0000-0000-4000-8000-000000000001"))]},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 404
+
+
+def test_replacing_activity_membership_needs_a_live_session():
+    client = build_client(activity_membership_connection(), live_session=False)
+
+    response = client.put(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/questions",
+        json={"question_ids": [str(UUID("8c5d0000-0000-4000-8000-000000000001"))]},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 401
+
+
+def test_a_learner_cannot_change_an_activity_membership():
+    client = build_client(activity_membership_connection())
+
+    response = client.put(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/questions",
+        json={"question_ids": [str(UUID("8c5d0000-0000-4000-8000-000000000001"))]},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert response.status_code == 403
+
+
+def test_reading_one_activity_carries_its_membership_in_order():
+    """The editor needs the current order, and the questions themselves.
+
+    Ids alone were not enough: the editor could only name a question it had
+    happened to load a page of the bank for, so a long membership rendered as a
+    list of "this question is not on the current page" while still asking the
+    teacher to reorder it.
+    """
+    first = UUID("8c5d0000-0000-4000-8000-000000000001")
+    second = UUID("8c5d0000-0000-4000-8000-000000000002")
+    connection = activity_membership_connection(
+        **{
+            ACTIVITY_MEMBERSHIP_IDS: [
+                {**QUESTION_ROW, "question_id": first},
+                {**QUESTION_ROW, "question_id": second},
+            ]
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["question_ids"] == [str(first), str(second)]
+    assert body["question_count"] == 2
+    assert [question["question_id"] for question in body["questions"]] == [
+        str(first),
+        str(second),
+    ]
+    # Still no key, explanation or hint: the membership read uses the resource's
+    # own readable columns, which exclude all three.
+    assert "answer_key" not in response.text
+
+
+def test_an_activity_listing_carries_how_many_questions_each_holds():
+    connection = activity_membership_connection(
+        **{
+            TOTAL: 1,
+            ACTIVITY_MEMBERSHIP_COUNTS: [
+                {"activity_id": ACTIVITY, "question_total": 3}
+            ],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get("/api/v1/teacher-admin/activities", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["question_count"] == 3
+
+
+def test_publishing_an_empty_activity_is_refused():
+    """It would deliver nothing, then score the learner zero for it."""
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "question_total": 0}}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "activity_not_publishable"
+    assert not [call for call in connection.calls if "update app.activities" in call[0]]
+
+
+def test_publishing_an_activity_holding_a_draft_question_is_refused():
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "unpublished_total": 1}}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert "published first" in response.json()["error"]["message"]
+
+
+def test_publishing_an_activity_under_a_draft_module_is_refused():
+    """`activities_select` hides an activity whose module is not published."""
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "module_status": "draft"}}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert "learning module" in response.json()["error"]["message"]
+
+
+def test_publishing_an_activity_under_a_draft_competency_is_refused():
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "competency_status": "draft"}}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert "competency" in response.json()["error"]["message"]
+
+
+def test_publishing_a_non_draft_activity_is_refused():
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "activity_status": "archived"}}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+
+
+def test_publishing_an_absent_activity_reports_not_found():
+    client = build_client(FakeConnection(results={}))
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 404
+
+
+def test_publishing_a_ready_activity_succeeds():
+    published = {**ACTIVITY_ROW, "status": "published"}
+    connection = activity_membership_connection(**{"returning": published})
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["status"] == "published"
+    assert body["question_count"] == 2
+
+
+def test_publishing_an_activity_needs_a_live_session():
+    client = build_client(activity_membership_connection(), live_session=False)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 401
+
+
+def test_a_learner_cannot_publish_an_activity():
+    client = build_client(activity_membership_connection())
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # The question bank
 # ---------------------------------------------------------------------------
@@ -1156,7 +1489,10 @@ def test_reading_one_assessment_carries_its_membership_in_order():
         admin_connection(
             **{
                 "from app.assessments": ASSESSMENT_ROW,
-                MEMBERSHIP_IDS: [{"question_id": QUESTION}, {"question_id": second}],
+                MEMBERSHIP_IDS: [
+                    {**QUESTION_ROW, "question_id": QUESTION},
+                    {**QUESTION_ROW, "question_id": second},
+                ],
             }
         )
     )
@@ -1169,6 +1505,11 @@ def test_reading_one_assessment_carries_its_membership_in_order():
     body = response.json()["data"]
     assert body["question_ids"] == [str(QUESTION), str(second)]
     assert body["question_count"] == 2
+    assert [question["question_id"] for question in body["questions"]] == [
+        str(QUESTION),
+        str(second),
+    ]
+    assert "answer_key" not in response.text
 
 
 def test_an_assessment_listing_carries_how_many_questions_each_holds():

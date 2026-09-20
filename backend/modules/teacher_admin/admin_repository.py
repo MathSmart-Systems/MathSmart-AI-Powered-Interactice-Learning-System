@@ -463,6 +463,20 @@ where assessment_questions.assessment_id = $1
 order by assessment_questions.position
 """
 
+#: The question columns an authoring client may see, qualified for a join.
+#: Built from the resource so the membership reads cannot drift from the
+#: listing — and so the answer key stays out of both by construction.
+_QUESTION_COLUMNS = ", ".join(f"questions.{column}" for column in QUESTIONS.readable)
+
+#: The same read for an assessment, and for the same reason.
+_ASSESSMENT_MEMBERSHIP_QUESTIONS_SQL = f"""
+select {_QUESTION_COLUMNS}, assessment_questions.position
+from app.assessment_questions
+join app.questions on questions.question_id = assessment_questions.question_id
+where assessment_questions.assessment_id = $1
+order by assessment_questions.position
+"""  # noqa: S608
+
 #: Membership sizes for a page of assessments, in one round trip. A listing
 #: needs the count per row to show whether an assessment can be published.
 _MEMBERSHIP_COUNTS_SQL = """
@@ -497,6 +511,91 @@ select
 from app.assessments
 join app.grade_levels using (grade_id)
 where assessments.assessment_id = $1
+"""
+
+_ACTIVITY_MEMBERSHIP_DELETE_SQL = "delete from app.activity_questions where activity_id = $1"
+
+_ACTIVITY_MEMBERSHIP_INSERT_SQL = """
+insert into app.activity_questions (activity_id, question_id, position)
+select $1, member.question_id, member.position
+from unnest($2::uuid[]) with ordinality as member(question_id, position)
+"""
+
+#: The ordered membership of one activity. The authoring client needs the
+#: existing order before it can replace it, because the replace is whole-list.
+_ACTIVITY_MEMBERSHIP_IDS_SQL = """
+select activity_questions.question_id
+from app.activity_questions
+where activity_questions.activity_id = $1
+order by activity_questions.position
+"""
+
+#: The questions an activity holds, in order, as the authoring client shows
+#: them. Ids alone were not enough: the editor could only name a question it
+#: had happened to load a page of the bank for, so a long membership rendered
+#: as a list of "this question is not on the current page" while still asking
+#: the teacher to reorder it.
+#:
+#: Answer keys, explanations and hints are absent, here as everywhere: the
+#: caller holds no privilege to select them.
+_ACTIVITY_MEMBERSHIP_QUESTIONS_SQL = f"""
+select {_QUESTION_COLUMNS}, activity_questions.position
+from app.activity_questions
+join app.questions on questions.question_id = activity_questions.question_id
+where activity_questions.activity_id = $1
+order by activity_questions.position
+"""  # noqa: S608
+
+#: Membership sizes for a page of activities, in one round trip. A listing
+#: needs the count per row to show whether an activity can be published.
+_ACTIVITY_MEMBERSHIP_COUNTS_SQL = """
+select
+  activity_questions.activity_id,
+  count(*) as question_total
+from app.activity_questions
+where activity_questions.activity_id = any($1::uuid[])
+group by activity_questions.activity_id
+"""
+
+#: Whether an activity has an attempt somebody is part-way through.
+#:
+#: Replacing the membership of an activity a learner is sitting rewrites what
+#: they are being asked while they are answering it. The snapshot taken at the
+#: start keeps their grading honest, but the two would then disagree about
+#: what the activity is, so authoring waits until the attempt is finished.
+_ACTIVITY_OPEN_ATTEMPTS_SQL = """
+select count(*)
+from app.activity_attempts
+where activity_attempts.activity_id = $1
+  and activity_attempts.status = 'in_progress'
+"""
+
+#: Publication preconditions, gathered in one query so the refusal can name the
+#: one that failed. An activity reaches a learner only when its module and that
+#: module's competency are published too — `activities_select` says so — and an
+#: activity with no questions, or with a draft one in it, would be delivered
+#: empty or short.
+_ACTIVITY_PUBLICATION_READINESS_SQL = """
+select
+  activities.status as activity_status,
+  learning_modules.status as module_status,
+  competencies.status as competency_status,
+  (
+    select count(*)
+    from app.activity_questions
+    where activity_questions.activity_id = activities.activity_id
+  ) as question_total,
+  (
+    select count(*)
+    from app.activity_questions
+    join app.questions using (question_id)
+    where activity_questions.activity_id = activities.activity_id
+      and questions.status <> 'published'
+  ) as unpublished_total
+from app.activities
+join app.learning_modules using (module_id)
+join app.competencies using (competency_id)
+where activities.activity_id = $1
 """
 
 _SET_ACCOUNT_STATUS_SQL = "select * from app.set_account_status($1, $2, $3)"
@@ -872,6 +971,57 @@ async def assessment_publication_readiness(
 ) -> Any:
     """Check whether an assessment meets criteria for publication readiness."""
     return await connection.fetchrow(_PUBLICATION_READINESS_SQL, assessment_id)
+
+
+async def replace_activity_questions(
+    connection: ActorConnection, *, activity_id: UUID, question_ids: list[UUID]
+) -> None:
+    """Atomically replace the ordered set of questions belonging to an activity."""
+    await connection.execute(_ACTIVITY_MEMBERSHIP_DELETE_SQL, activity_id)
+    if question_ids:
+        await connection.execute(_ACTIVITY_MEMBERSHIP_INSERT_SQL, activity_id, question_ids)
+
+
+async def activity_question_ids(connection: ActorConnection, activity_id: UUID) -> list[UUID]:
+    """The activity's questions, in the order a learner meets them."""
+    rows = await connection.fetch(_ACTIVITY_MEMBERSHIP_IDS_SQL, activity_id)
+    return [row["question_id"] for row in rows]
+
+
+async def activity_membership_questions(
+    connection: ActorConnection, activity_id: UUID
+) -> list[Any]:
+    """The activity's questions themselves, in the order a learner meets them."""
+    return await connection.fetch(_ACTIVITY_MEMBERSHIP_QUESTIONS_SQL, activity_id)
+
+
+async def assessment_membership_questions(
+    connection: ActorConnection, assessment_id: UUID
+) -> list[Any]:
+    """The assessment's questions themselves, in delivery order."""
+    return await connection.fetch(_ASSESSMENT_MEMBERSHIP_QUESTIONS_SQL, assessment_id)
+
+
+async def activity_question_counts(
+    connection: ActorConnection, activity_ids: list[UUID]
+) -> dict[UUID, int]:
+    """Membership sizes for a page of activities. Absent means zero."""
+    if not activity_ids:
+        return {}
+    rows = await connection.fetch(_ACTIVITY_MEMBERSHIP_COUNTS_SQL, activity_ids)
+    return {row["activity_id"]: row["question_total"] for row in rows}
+
+
+async def activity_open_attempts(connection: ActorConnection, activity_id: UUID) -> int:
+    """How many learners are part-way through this activity right now."""
+    return await connection.fetchval(_ACTIVITY_OPEN_ATTEMPTS_SQL, activity_id) or 0
+
+
+async def activity_publication_readiness(
+    connection: ActorConnection, activity_id: UUID
+) -> Any:
+    """Whether an activity is safe to put in front of a learner."""
+    return await connection.fetchrow(_ACTIVITY_PUBLICATION_READINESS_SQL, activity_id)
 
 
 async def reset_diagnostic(

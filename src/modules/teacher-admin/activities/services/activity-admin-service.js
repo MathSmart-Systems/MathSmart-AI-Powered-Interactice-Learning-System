@@ -161,3 +161,94 @@ export function listModules({
     { token }
   );
 }
+
+/**
+ * Restores an archived activity to draft.
+ *
+ * Archiving was described in the interface as final — "an archived activity
+ * cannot be republished, create a new draft instead" — which was never true.
+ * The PATCH route has always accepted a status, and the only way a teacher
+ * could find that out was by opening the edit form on an archived row.
+ *
+ * @param {string} activityId - UUID of the activity to restore
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
+export function restoreActivity(activityId, { token = null } = {}) {
+  return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}`, {
+    method: "PATCH",
+    body: { status: "draft" },
+    token,
+  });
+}
+
+/**
+ * Replaces an activity's ordered question set in one transaction.
+ *
+ * Whole-list, like the assessment membership: the position of each question is
+ * its place in the array. Reading the current order first is not optional — a
+ * save without it would erase the order it was meant to preserve.
+ *
+ * @param {string} activityId - UUID of the activity
+ * @param {string[]} questionIds - Question UUIDs, in delivery order
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
+export function replaceActivityQuestions(activityId, questionIds, { token = null } = {}) {
+  return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}/questions`, {
+    method: "PUT",
+    body: { question_ids: questionIds },
+    token,
+  });
+}
+
+/**
+ * Publishes an activity once the server agrees it is safe to deliver.
+ *
+ * The server checks all of it: a draft, at least one question, every question
+ * published, and a published module and competency behind it. Publishing used
+ * to be a value in the edit form's status dropdown with nothing behind it.
+ *
+ * @param {string} activityId - UUID of the activity to publish
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
+export function publishActivity(activityId, { token = null } = {}) {
+  return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}/publish`, {
+    method: "POST",
+    token,
+  });
+}
+
+/**
+ * One page of the Question Bank, for choosing an activity's questions.
+ *
+ * No response from this route can carry an answer key: the column grant on
+ * `app.questions` withholds it from the caller entirely.
+ *
+ * @param {object} [params]
+ * @param {string} [params.search] - Prompt search
+ * @param {string|null} [params.status] - Publication status filter
+ * @param {string|null} [params.competencyId] - Competency filter
+ * @param {number} [params.page] - 1-based page index
+ * @param {number} [params.pageSize] - Number of records per page
+ * @param {string|null} [params.token] - Optional explicit auth token override
+ * @returns {Promise<object>}
+ */
+export function listQuestions({
+  search = "",
+  status = null,
+  competencyId = null,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  token = null,
+} = {}) {
+  const query = new URLSearchParams(pageQuery({ search, status, page, pageSize }));
+  if (competencyId) {
+    query.set("competency_id", competencyId);
+  }
+  return request(`/teacher-admin/questions?${query.toString()}`, { token });
+}

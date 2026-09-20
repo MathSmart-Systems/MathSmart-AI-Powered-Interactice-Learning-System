@@ -11,6 +11,7 @@ import {
   MAX_TITLE_LENGTH,
   MIN_DURATION_MINUTES,
   MIN_TITLE_LENGTH,
+  canPublishActivity,
   characterLength,
   validateActivityDraft,
 } from "../utils/validation.js";
@@ -173,5 +174,46 @@ describe("validateActivityDraft", () => {
     });
     assert.equal(isValid, false);
     assert.ok(errors.status);
+  });
+});
+
+describe("canPublishActivity", () => {
+  it("refuses an activity with no questions, naming what would happen", () => {
+    // Publishing used to be a value in the form's status dropdown. An activity
+    // with none published fine, a learner started it, was delivered nothing,
+    // and was scored zero — a zero that counts toward the intervention rule.
+    const { canPublish, reason } = canPublishActivity({ status: "draft" }, 0);
+
+    assert.equal(canPublish, false);
+    assert.match(reason, /at least one question/);
+  });
+
+  it("refuses an activity that is already published", () => {
+    assert.equal(canPublishActivity({ status: "published" }, 3).canPublish, false);
+  });
+
+  it("sends an archived activity through restore first", () => {
+    const { canPublish, reason } = canPublishActivity({ status: "archived" }, 3);
+
+    assert.equal(canPublish, false);
+    assert.match(reason, /Restore it to a draft/);
+  });
+
+  it("refuses when no activity is selected", () => {
+    assert.equal(canPublishActivity(null, 3).canPublish, false);
+  });
+
+  it("allows a draft holding questions, and leaves the rest to the server", () => {
+    // The server checks that every question is published and that the module
+    // and competency are published too. Predicting that here would mean
+    // guessing on the learner's behalf.
+    assert.deepEqual(canPublishActivity({ status: "draft" }, 1), {
+      canPublish: true,
+      reason: null,
+    });
+  });
+
+  it("treats a missing count as none rather than as permission", () => {
+    assert.equal(canPublishActivity({ status: "draft" }, undefined).canPublish, false);
   });
 });

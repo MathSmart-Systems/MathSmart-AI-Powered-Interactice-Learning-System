@@ -42,6 +42,11 @@ function ArchiveDialogContent({ activity, onClose, onArchived }) {
     setError(null);
 
     const result = await archiveActivity(activity.activity_id);
+
+    // The dialog cannot be dismissed while this is in flight — Cancel is
+    // disabled and the shell ignores an outside click — so the component is
+    // still mounted here. Dismissing mid-request used to drop the result and
+    // set state on an unmounted component.
     setIsArchiving(false);
 
     if (result.ok) {
@@ -70,7 +75,7 @@ function ArchiveDialogContent({ activity, onClose, onArchived }) {
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
           Archiving &ldquo;{activity.title}&rdquo; will withdraw it from active learner practice.
           Past student attempts and progress records are preserved for historical reporting.
-          An archived activity cannot be republished — create a new draft instead.
+          An archived activity can be restored to a draft later, and published again from there.
         </p>
       </DialogBody>
 
@@ -79,6 +84,7 @@ function ArchiveDialogContent({ activity, onClose, onArchived }) {
           type="button"
           variant="outline"
           className="h-11 px-5"
+          disabled={isArchiving}
           onClick={onClose}
         >
           Cancel
@@ -90,8 +96,8 @@ function ArchiveDialogContent({ activity, onClose, onArchived }) {
           disabled={isArchiving || !activity}
           onClick={handleArchive}
         >
-          {isArchiving ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
-          Archive Activity
+          {isArchiving ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
+          {isArchiving ? "Archiving…" : "Archive activity"}
         </Button>
       </DialogFooter>
     </>

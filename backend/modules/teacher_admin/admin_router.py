@@ -43,6 +43,7 @@ from modules.teacher_admin.admin_schemas import (
     AccountStatus,
     ActivityChanges,
     ActivityDraft,
+    ActivityQuestions,
     AssessmentChanges,
     AssessmentDraft,
     AssessmentQuestions,
@@ -511,7 +512,16 @@ async def list_activities(
         status=status_str,
         module_id=module_id,
     )
-    return _envelope(list(rows), ACTIVITIES, total, page, page_size)
+    envelope = _envelope(list(rows), ACTIVITIES, total, page, page_size)
+
+    # The count decides whether a row can be published at all, so a listing
+    # that omitted it would have to disable publication everywhere or guess.
+    counts = await repository.activity_question_counts(
+        connection, [UUID(row["activity_id"]) for row in envelope["data"]]
+    )
+    for row in envelope["data"]:
+        row["question_count"] = counts.get(UUID(row["activity_id"]), 0)
+    return envelope
 
 
 @router.post("/teacher-admin/activities", status_code=201)
@@ -526,8 +536,17 @@ async def create_activity(
 async def read_activity_draft(
     _actor: TeacherAdmin, connection: ActorDb, activity_id: UUID
 ) -> dict[str, Any]:
-    """Retrieve an activity draft or published activity record by ID."""
-    return await _read(connection, ACTIVITIES, activity_id)
+    """One activity, with its membership in the order a learner meets it.
+
+    Membership replacement is whole-list, so an editor that could not read the
+    current order would erase it on its first save.
+    """
+    payload = await _read(connection, ACTIVITIES, activity_id)
+    questions = await repository.activity_membership_questions(connection, activity_id)
+    payload["data"]["questions"] = [_row(question, QUESTIONS) for question in questions]
+    payload["data"]["question_ids"] = [str(question["question_id"]) for question in questions]
+    payload["data"]["question_count"] = len(questions)
+    return payload
 
 
 @router.patch("/teacher-admin/activities/{activity_id}")
@@ -540,6 +559,112 @@ async def update_activity(
 ) -> dict[str, Any]:
     """Partially update an activity's metadata, threshold, or publication status."""
     return await _update(connection, ACTIVITIES, activity_id, body)
+
+
+@router.put("/teacher-admin/activities/{activity_id}/questions")
+async def replace_activity_questions(
+    _actor: TeacherAdmin,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    activity_id: UUID,
+    body: ActivityQuestions,
+) -> dict[str, Any]:
+    """Replace the ordered membership.
+
+    The whole list is replaced inside the request's transaction, so a partial
+    membership is never visible: the position of each question is its place in
+    the list that was sent. The same shape the assessment membership has had
+    since it was written — activities simply had no way to author theirs at
+    all, so an activity's questions could only be set outside the application.
+
+    An activity somebody is part-way through is refused. Their attempt keeps
+    its own frozen copy of the questions, so their grading would survive this —
+    but the two would then disagree about what the activity is, and a learner
+    would watch the questions change under them.
+    """
+    row = await repository.read(connection, ACTIVITIES, activity_id)
+    if row is None:
+        raise ApiError(404, "No activity was found")
+
+    open_attempts = await repository.activity_open_attempts(connection, activity_id)
+    if open_attempts:
+        raise ApiError(
+            409,
+            f"{open_attempts} learner{'s are' if open_attempts != 1 else ' is'} part-way "
+            "through this activity. Its questions cannot change until they finish.",
+            code="activity_in_progress",
+        )
+
+    await repository.replace_activity_questions(
+        connection, activity_id=activity_id, question_ids=body.question_ids
+    )
+    return {
+        "data": {
+            **_row(row, ACTIVITIES),
+            "question_ids": [str(question_id) for question_id in body.question_ids],
+            "question_count": len(body.question_ids),
+        }
+    }
+
+
+@router.post("/teacher-admin/activities/{activity_id}/publish")
+async def publish_activity(
+    _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, activity_id: UUID
+) -> dict[str, Any]:
+    """Publish an activity, once it is safe to deliver.
+
+    Publishing used to be a `status` on the edit form with nothing behind it.
+    An activity with no questions published fine, and then
+    `app.start_activity_attempt` — which checks the activity's own status and
+    not its module's — let a learner start it, delivered nothing, scored the
+    submission zero, and fed that zero into the competency progress that opens
+    an intervention.
+
+    So all four conditions are checked, and the refusal names the one that
+    failed: the activity is a draft, it holds at least one question, every one
+    of those questions is published, and its module and that module's
+    competency are published too — which is what `activities_select` requires
+    before a learner can see it at all.
+    """
+    readiness = await repository.activity_publication_readiness(connection, activity_id)
+    if readiness is None:
+        raise ApiError(404, "No activity was found")
+
+    if readiness["activity_status"] != "draft":
+        raise ApiError(
+            422, "Only a draft activity can be published", code="activity_not_publishable"
+        )
+    if readiness["question_total"] < 1:
+        raise ApiError(
+            422,
+            "An activity needs at least one question before it can be published",
+            code="activity_not_publishable",
+        )
+    if readiness["unpublished_total"] > 0:
+        raise ApiError(
+            422,
+            "Every question in the activity must be published first",
+            code="activity_not_publishable",
+        )
+    if readiness["module_status"] != "published":
+        raise ApiError(
+            422,
+            "Publish the learning module before publishing its activity",
+            code="activity_not_publishable",
+        )
+    if readiness["competency_status"] != "published":
+        raise ApiError(
+            422,
+            "Publish the competency before publishing this activity",
+            code="activity_not_publishable",
+        )
+
+    row = await repository.update(connection, ACTIVITIES, activity_id, {"status": "published"})
+    if row is None:
+        raise ApiError(404, "No activity was found")
+    return {
+        "data": {**_row(row, ACTIVITIES), "question_count": readiness["question_total"]}
+    }
 
 
 @router.delete("/teacher-admin/activities/{activity_id}", status_code=204)
@@ -717,9 +842,10 @@ async def read_assessment_draft(
     current order would erase it on its first save.
     """
     payload = await _read(connection, ASSESSMENTS, assessment_id)
-    question_ids = await repository.assessment_question_ids(connection, assessment_id)
-    payload["data"]["question_ids"] = [str(question_id) for question_id in question_ids]
-    payload["data"]["question_count"] = len(question_ids)
+    questions = await repository.assessment_membership_questions(connection, assessment_id)
+    payload["data"]["questions"] = [_row(question, QUESTIONS) for question in questions]
+    payload["data"]["question_ids"] = [str(question["question_id"]) for question in questions]
+    payload["data"]["question_count"] = len(questions)
     return payload
 
 
