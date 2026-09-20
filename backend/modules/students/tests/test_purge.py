@@ -13,7 +13,7 @@ without the purge plan handling it.
 
 import os
 from contextlib import asynccontextmanager
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 

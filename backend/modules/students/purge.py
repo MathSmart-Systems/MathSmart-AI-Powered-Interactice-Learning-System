@@ -50,8 +50,6 @@ from uuid import UUID
 
 import asyncpg
 
-import asyncpg
-
 from middleware.auth import VerifiedToken
 from modules.shared.auth_admin import AuthAdminError, SupabaseAuthAdmin
 from modules.shared.elevated_db import ElevatedDatabase
@@ -81,23 +79,6 @@ class PurgeFailed(Exception):
     def __init__(self, message: str, code: str) -> None:
         super().__init__(message)
         self.code = code
-
-
-class PurgeNotConfigured(PurgeRefused):
-    """The ledger this operation depends on is not present on this database.
-
-    Named rather than left to escape as a driver error. A missing table is a
-    deployment fact somebody can act on, and saying so is far more use than
-    "the request could not be completed" — while still naming no statement, no
-    identifier and no exception text.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(
-            "Permanent removal is not set up on this database yet: the purge ledger "
-            "has not been created here.",
-            "purge_not_configured",
-        )
 
 
 class PurgeNotConfigured(PurgeRefused):
@@ -364,7 +345,9 @@ class StudentPurge:
         removed = resolved.removed
 
         if state == "pending":
-            removed = await self._delete_graph(actor, operation_id, student_id, auth_user_id, request_id)
+            removed = await self._delete_graph(
+                actor, operation_id, student_id, auth_user_id, request_id
+            )
             state = "database_deleted"
 
         if state == "database_deleted":

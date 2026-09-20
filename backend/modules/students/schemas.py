@@ -76,7 +76,7 @@ class DropLearnersRequest(BaseModel):
     section_id: UUID | None = None
 
     @model_validator(mode="after")
-    def exactly_one_target(self) -> "DropLearnersRequest":
+    def exactly_one_target(self) -> DropLearnersRequest:
         named = self.user_ids is not None
         sectioned = self.section_id is not None
         if named and sectioned:
@@ -117,7 +117,7 @@ class PurgeLearnerRequest(BaseModel):
     acknowledged: bool = Field(default=False)
 
     @model_validator(mode="after")
-    def must_be_acknowledged(self) -> "PurgeLearnerRequest":
+    def must_be_acknowledged(self) -> PurgeLearnerRequest:
         if not self.acknowledged:
             raise ValueError("This action must be acknowledged before it can be carried out.")
         return self

@@ -43,16 +43,12 @@ STATUS_ENROLLED = "enrolled"
 STATUS_DROPPED = "dropped"
 STATUS_ALL = "all"
 
-_STATUS_FILTER = """(
-  $5 = 'all'
-  or ($5 = 'dropped' and user_profiles.account_status = 'archived'::app.account_status)
-  or (
-    $5 = 'enrolled'
-    and user_profiles.account_status is distinct from 'archived'::app.account_status
-  )
-)"""
-
-_ROSTER_SQL = f"""
+#: Written out in each statement rather than interpolated into them. The two
+#: are the same question and have to stay the same answer, but a query built by
+#: string substitution is a query a reader has to assemble in their head before
+#: they can check it — and the roster and its total are exactly where a
+#: difference would go unnoticed.
+_ROSTER_SQL = """
 select
   student_profiles.student_id,
   student_profiles.user_id,
@@ -72,7 +68,14 @@ left join app.sections on sections.section_id = student_profiles.section_id
 left join app.grade_levels on grade_levels.grade_id = student_profiles.grade_id
 where ($1::uuid is null or student_profiles.grade_id = $1)
   and ($2::uuid is null or student_profiles.section_id = $2)
-  and {_STATUS_FILTER}
+  and (
+    $5 = 'all'
+    or ($5 = 'dropped' and user_profiles.account_status = 'archived'::app.account_status)
+    or (
+      $5 = 'enrolled'
+      and user_profiles.account_status is distinct from 'archived'::app.account_status
+    )
+  )
 order by student_profiles.learner_id
 limit $3 offset $4
 """
