@@ -217,6 +217,38 @@ def module_count_sql() -> str:
     )
 
 
+#: Every filter the question bank narrows by, as one clause both statements
+#: share. The bank is filtered before its page is selected, which is the whole
+#: point: a page of ten rows sorted out in the browser can only ever report on
+#: those ten, so the counts and the range caption under the list would describe
+#: a different set from the one the teacher is looking at.
+_QUESTION_FILTERS = (
+    " and ($2::app.publication_status is null or questions.status = $2)"
+    " and ($3::uuid is null or questions.competency_id = $3)"
+    " and ($4::app.question_type is null or questions.question_type = $4)"
+    " and ($5::app.question_difficulty is null or questions.difficulty = $5)"
+)
+
+
+def question_list_sql() -> str:
+    """One page of the question bank, filtered first."""
+    columns = ", ".join(f"questions.{column}" for column in QUESTIONS.readable)
+    return (
+        f"select {columns}\nfrom app.questions\n"
+        f"where true{_search_clause(QUESTIONS)}{_QUESTION_FILTERS}\n"
+        f"order by questions.{QUESTIONS.order_by} desc, questions.question_id\n"
+        f"limit $6 offset $7"
+    )
+
+
+def question_count_sql() -> str:
+    """The count for the same filtered result set."""
+    return (
+        f"select count(*) as total\nfrom app.questions\n"
+        f"where true{_search_clause(QUESTIONS)}{_QUESTION_FILTERS}"
+    )
+
+
 def read_sql(resource: Resource) -> str:
     columns = ", ".join(f"{resource.table}.{column}" for column in resource.readable)
     return (
@@ -265,6 +297,19 @@ from app.competencies
 where competencies.competency_id = $1
   and competencies.status = 'published'
 for share
+"""
+
+#: The stored competency and state of a question, locked, so a publish check
+#: reads the row the write is about to change rather than a stale copy. A change
+#: that publishes without naming a competency still has to be checked against
+#: the one already stored.
+_QUESTION_WRITE_STATE_SQL = """
+select
+  questions.competency_id,
+  questions.status as question_status
+from app.questions
+where questions.question_id = $1
+for update
 """
 
 
@@ -458,6 +503,51 @@ async def module_listing_total(
     connection: ActorConnection, *, search: str | None, status: str | None
 ) -> int:
     return await connection.fetchval(module_count_sql(), search, status) or 0
+
+
+async def question_listing(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    status: str | None,
+    competency_id: UUID | None,
+    question_type: str | None,
+    difficulty: str | None,
+    limit: int,
+    offset: int,
+) -> list[Any]:
+    return await connection.fetch(
+        question_list_sql(),
+        search,
+        status,
+        competency_id,
+        question_type,
+        difficulty,
+        limit,
+        offset,
+    )
+
+
+async def question_listing_total(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    status: str | None,
+    competency_id: UUID | None,
+    question_type: str | None,
+    difficulty: str | None,
+) -> int:
+    return (
+        await connection.fetchval(
+            question_count_sql(), search, status, competency_id, question_type, difficulty
+        )
+        or 0
+    )
+
+
+async def question_write_state(connection: ActorConnection, question_id: UUID) -> Any:
+    """Lock a question so its competency cannot change under a publish check."""
+    return await connection.fetchrow(_QUESTION_WRITE_STATE_SQL, question_id)
 
 
 async def read(connection: ActorConnection, resource: Resource, key: UUID) -> Any:

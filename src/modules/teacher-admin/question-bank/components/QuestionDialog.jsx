@@ -16,49 +16,26 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { FormField } from "@/modules/shared";
 
 import { QUESTION_DIALOG_MODES, QUESTION_FORM_INITIAL_STATE } from "../action-state";
-import { DIFFICULTY_OPTIONS, QUESTION_TYPES, STATUS_OPTIONS } from "../constants";
+import { DIFFICULTY_OPTIONS, QUESTION_TYPES, SELECT_CLASS, STATUS_OPTIONS } from "../constants";
 import { createQuestionAction, updateQuestionAction } from "../services/actions";
 
 import { SubmitButton } from "./SubmitButton";
 
-/**
- * The one decorative gradient token a native <select> shares with the Input
- * primitive, kept here so the author form never sprinkles raw theme values.
- */
-const SELECT_CLASS =
-  "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 md:text-sm";
-
 /** Groups a labelled authoring control with its hint and validation message. */
-function Field({ id, label, error, hint, required = false, children }) {
-  const errorId = `${id}-error`;
-
-  return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={id} className={required ? "after:ml-0.5 after:text-destructive after:content-['*']" : undefined}>
-        {label}
-      </Label>
-      {children}
-      {hint ? <p className="text-sm leading-relaxed text-muted-foreground">{hint}</p> : null}
-      {error ? (
-        <p id={errorId} className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
+const Field = FormField;
 
 /** Edits the ordered choices for a multiple-choice question. */
 function ChoiceEditor({ choices, onChange, error }) {
   const addId = useId();
 
   return (
-    <div className="flex flex-col gap-2" aria-describedby={error ? `${addId}-error` : undefined}>
-      <Label className="after:ml-0.5 after:text-destructive after:content-['*']">
+    <fieldset className="flex min-w-0 flex-col gap-2">
+      <legend className="mb-2 text-sm leading-none font-medium after:ml-0.5 after:text-destructive after:content-['*']">
         Choices
-      </Label>
+      </legend>
 
       <ul className="flex flex-col gap-2">
         {choices.map((choice, index) => (
@@ -72,6 +49,8 @@ function ChoiceEditor({ choices, onChange, error }) {
                 onChange(next);
               }}
               aria-label={`Choice ${index + 1}`}
+              aria-describedby={error ? `${addId}-error` : undefined}
+              aria-invalid={error ? true : undefined}
               className="flex-1"
             />
             {choices.length > 1 ? (
@@ -105,7 +84,7 @@ function ChoiceEditor({ choices, onChange, error }) {
           {error}
         </p>
       ) : null}
-    </div>
+    </fieldset>
   );
 }
 

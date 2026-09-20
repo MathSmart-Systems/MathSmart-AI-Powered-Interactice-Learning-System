@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { secureApiBaseUrl } from "../utils/api-url.js";
-import { readAllCompetencies } from "./competency-pagination.js";
+import { readAllCompetencies } from "@/modules/shared/services/competency-pagination.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 

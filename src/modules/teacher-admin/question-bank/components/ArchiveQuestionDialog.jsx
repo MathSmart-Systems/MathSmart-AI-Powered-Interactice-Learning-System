@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId } from "react";
+import { useActionState, useEffect } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import {
@@ -23,10 +23,14 @@ import { SubmitButton } from "./SubmitButton";
  * Two outcomes for the same form shape: a server action that puts the row in a
  * new status, and a cancel. Restoring does not need a second dialog because the
  * consequence of pressing restore is immediately understood.
+ *
+ * The footer is inside the form. It used to sit outside it and reach back with
+ * `form={id}`, which is valid HTML but leaves `useFormStatus` with no enclosing
+ * form to report on — so the button never disabled, never said "Archiving…",
+ * and a second click sent a second request.
  */
 export function ArchiveQuestionDialog({ question, onOpenChange }) {
   const [state, formAction] = useActionState(archiveQuestionAction, CONFIRM_ACTION_INITIAL_STATE);
-  const formId = useId();
 
   useEffect(() => {
     if (state.success) {
@@ -37,40 +41,44 @@ export function ArchiveQuestionDialog({ question, onOpenChange }) {
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Archive question</DialogTitle>
-          <DialogDescription>
-            An archived question disappears from activities and assessments and can no longer be
-            given to learners. Anything the learner already answered keeps its score.
-          </DialogDescription>
-        </DialogHeader>
+        <form action={formAction} className="flex min-h-0 flex-1 flex-col">
+          <input type="hidden" name="id" value={question.id} />
 
-        <DialogBody className="flex flex-col gap-5">
-          {state.formError ? (
-            <p
-              role="alert"
-              className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive"
-            >
-              <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-              <span>{state.formError}</span>
-            </p>
-          ) : null}
+          <DialogHeader>
+            <DialogTitle>Archive question</DialogTitle>
+            <DialogDescription>
+              An archived question disappears from activities and assessments and can no longer be
+              given to learners. Anything the learner already answered keeps its score.
+            </DialogDescription>
+          </DialogHeader>
 
-          <form id={formId} action={formAction}>
-            <input type="hidden" name="id" value={question.id} />
+          <DialogBody className="flex flex-col gap-5">
+            {state.formError ? (
+              <p
+                role="alert"
+                className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive"
+              >
+                <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <span>{state.formError}</span>
+              </p>
+            ) : null}
 
-            <p className="max-w-prose text-sm leading-relaxed text-foreground">
+            <p className="max-w-prose text-sm leading-relaxed break-words text-foreground">
               Archive <span className="font-semibold text-foreground">{question.prompt}</span>?
             </p>
-          </form>
-        </DialogBody>
+          </DialogBody>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Keep question
-          </Button>
-          <SubmitButton form={formId} label="Archive question" pendingLabel="Archiving…" variant="destructive" />
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Keep question
+            </Button>
+            <SubmitButton
+              label="Archive question"
+              pendingLabel="Archiving…"
+              variant="destructive"
+            />
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

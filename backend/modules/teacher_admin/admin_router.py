@@ -55,7 +55,9 @@ from modules.teacher_admin.admin_schemas import (
     ModuleDraft,
     PublicationStatus,
     QuestionChanges,
+    QuestionDifficulty,
     QuestionDraft,
+    QuestionType,
     SectionChanges,
     SectionDraft,
     SettingsChanges,
@@ -504,11 +506,58 @@ async def list_questions(
     _actor: TeacherAdmin,
     connection: ActorDb,
     search: Annotated[str | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
+    status: Annotated[PublicationStatus | None, Query()] = None,
+    competency_id: Annotated[UUID | None, Query()] = None,
+    question_type: Annotated[QuestionType | None, Query()] = None,
+    difficulty: Annotated[QuestionDifficulty | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    """The question bank. No response here carries an answer key."""
-    return await _list(connection, QUESTIONS, search, page, page_size)
+    """The question bank, narrowed before its page is selected.
+
+    Every filter is applied in the statement rather than over the returned page.
+    A bank sorted out in the browser can only report on the rows it was handed,
+    so the tab counts and the "21-40 of 118" caption would describe a different
+    set from the one on screen — and a status with no rows on this page would
+    look empty however many it holds.
+
+    No response here carries an answer key.
+    """
+    filters = {
+        "status": status.value if status else None,
+        "competency_id": competency_id,
+        "question_type": question_type.value if question_type else None,
+        "difficulty": difficulty.value if difficulty else None,
+    }
+    offset = (page - 1) * page_size
+    rows = await repository.question_listing(
+        connection, search=search, limit=page_size, offset=offset, **filters
+    )
+    total = await repository.question_listing_total(connection, search=search, **filters)
+    return _envelope(list(rows), QUESTIONS, total, page, page_size)
+
+
+async def _refuse_unpublished_competency(connection: Any, competency_id: UUID) -> None:
+    """A published question needs a published competency behind it.
+
+    `questions_select` shows a learner a published question only when its
+    competency is published too, so publishing into a draft competency produces
+    a question nobody can be given and nothing says so. Modules have refused
+    this since they were written; the bank did not, which is the whole
+    difference this raises.
+    """
+    if not await repository.lock_published_competency(connection, competency_id):
+        raise ApiError(
+            422,
+            "Publish the competency before publishing the question.",
+            code="question_not_publishable",
+            fields={
+                "competency_id": [
+                    "Learners can only be given this question once its competency "
+                    "is published."
+                ]
+            },
+        )
 
 
 @router.post("/teacher-admin/questions", status_code=201)
@@ -516,6 +565,8 @@ async def create_question(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, body: QuestionDraft
 ) -> dict[str, Any]:
     """Author a question, answer key included. The key is written, never read back."""
+    if body.status is PublicationStatus.PUBLISHED:
+        await _refuse_unpublished_competency(connection, body.competency_id)
     return await _create(connection, QUESTIONS, body)
 
 
@@ -534,7 +585,28 @@ async def update_question(
     question_id: UUID,
     body: QuestionChanges,
 ) -> dict[str, Any]:
-    return await _update(connection, QUESTIONS, question_id, body)
+    """Change a question, including its publication state.
+
+    A change that publishes is checked against the competency it will end up
+    under, which is the one it names or, when it names none, the one already
+    stored. The row is locked first so the two cannot disagree.
+    """
+    current = await repository.question_write_state(connection, question_id)
+    if current is None:
+        raise ApiError(404, "No record was found")
+
+    values = _values(body)
+    status = values.get("status", current["question_status"])
+
+    if status == PublicationStatus.PUBLISHED:
+        await _refuse_unpublished_competency(
+            connection, values.get("competency_id", current["competency_id"])
+        )
+
+    row = await repository.update(connection, QUESTIONS, question_id, values)
+    if row is None:
+        raise ApiError(404, "No record was found")
+    return {"data": _row(row, QUESTIONS)}
 
 
 @router.delete("/teacher-admin/questions/{question_id}", status_code=204)

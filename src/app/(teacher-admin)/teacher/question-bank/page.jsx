@@ -9,8 +9,20 @@ export default async function TeacherQuestionBankPage({ searchParams }) {
   const params = await searchParams;
 
   return (
-    <Suspense fallback={<QuestionBankSkeleton />}>
-      <QuestionBankView search={params?.search} page={params?.page} />
+    <Suspense
+      key={new URLSearchParams(
+        Object.entries(params ?? {}).map(([key, value]) => [key, String(value ?? "")]),
+      ).toString()}
+      fallback={<QuestionBankSkeleton />}
+    >
+      <QuestionBankView
+        search={params?.search}
+        status={params?.status}
+        competency_id={params?.competency_id}
+        type={params?.type}
+        difficulty={params?.difficulty}
+        page={params?.page}
+      />
     </Suspense>
   );
 }

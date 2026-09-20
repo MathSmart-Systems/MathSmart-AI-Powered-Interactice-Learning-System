@@ -21,12 +21,13 @@ export function QuestionRow({ question, actions }) {
         }
       >
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <StatusBadge status={question.status} label={question.statusLabel} />
             <QuestionBadges
               typeLabel={question.typeLabel}
               difficultyLabel={question.difficultyLabel}
               competency={question.competency}
+              strand={question.competencyStrand}
             />
           </div>
 
@@ -37,8 +38,8 @@ export function QuestionRow({ question, actions }) {
           <h3
             className={
               archived
-                ? "font-display text-lg leading-snug font-semibold tracking-tight text-muted-foreground"
-                : "font-display text-lg leading-snug font-semibold tracking-tight text-foreground"
+                ? "font-display text-lg leading-snug font-semibold tracking-tight break-words text-muted-foreground"
+                : "font-display text-lg leading-snug font-semibold tracking-tight break-words text-foreground"
             }
           >
             {question.prompt}

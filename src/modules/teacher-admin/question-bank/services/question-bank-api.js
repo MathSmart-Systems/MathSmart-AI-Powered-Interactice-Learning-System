@@ -12,13 +12,14 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { readAllCompetencies } from "@/modules/shared/services/competency-pagination.js";
+import { secureApiBaseUrl } from "@/modules/shared/utils/api-url.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Returns the configured API origin without trailing slashes. */
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
 /** Reads the current teacher's access token without exposing session failures. */
@@ -121,12 +122,39 @@ async function apiRequest(path, { method = "GET", body = null } = {}) {
   };
 }
 
-/** The question rows, normalised alongside the pagination envelope. */
-export async function listQuestions({ search = "", page = 1, pageSize = 10 } = {}) {
+/**
+ * One page of the bank, narrowed by the API rather than by the browser.
+ *
+ * Every filter is sent to the server. A page filtered after it arrives can
+ * only report on the rows it was handed, so the counts and the caption under
+ * the list would describe a set the teacher cannot see — and a status holding
+ * hundreds of rows would look empty whenever none of them landed on this page.
+ */
+export async function listQuestions({
+  search = "",
+  status = "",
+  competencyId = "",
+  questionType = "",
+  difficulty = "",
+  page = 1,
+  pageSize = 10,
+} = {}) {
   const query = new URLSearchParams();
 
   if (search) {
     query.set("search", search);
+  }
+  if (status) {
+    query.set("status", status);
+  }
+  if (competencyId) {
+    query.set("competency_id", competencyId);
+  }
+  if (questionType) {
+    query.set("question_type", questionType);
+  }
+  if (difficulty) {
+    query.set("difficulty", difficulty);
   }
 
   query.set("page", String(page));
@@ -143,13 +171,9 @@ export async function listQuestions({ search = "", page = 1, pageSize = 10 } = {
 
 /** Every competency the author dialog and the row labels need. */
 export async function listCompetencies() {
-  const result = await apiRequest("/teacher-admin/competencies?page_size=200");
-
-  if (!result.ok) {
-    return result;
-  }
-
-  return { ...result, items: Array.isArray(result.data) ? result.data : [] };
+  return readAllCompetencies((page, pageSize) =>
+    apiRequest(`/teacher-admin/competencies?page=${page}&page_size=${pageSize}`),
+  );
 }
 
 /** Creates a question using the validated authoring payload. */

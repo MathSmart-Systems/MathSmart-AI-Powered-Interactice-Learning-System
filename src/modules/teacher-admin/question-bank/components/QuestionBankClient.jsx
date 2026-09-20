@@ -1,25 +1,39 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, Pencil, Plus, Search } from "lucide-react";
+import { Archive, Pencil, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResultAnnouncer, StatusTabs } from "@/modules/shared";
 
 import { QuestionDialog } from "./QuestionDialog";
 import { ArchiveQuestionDialog } from "./ArchiveQuestionDialog";
+import { QuestionFilters } from "./QuestionFilters";
 import { Pagination } from "./Pagination";
 import { QuestionBankEmpty } from "./QuestionBankStates";
 import { QuestionRow } from "./QuestionRow";
-import { SubmitButton } from "./SubmitButton";
+import { RestoreQuestionForm } from "./RestoreQuestionForm";
+import { STATUS_LABELS } from "../constants";
 import { rangeLabel } from "../utils/format.js";
-import { restoreQuestionAction } from "../services/actions";
+import { questionBankUrl } from "../utils/urls.js";
+
+const TABS = [
+  { id: "published", label: "Published" },
+  { id: "draft", label: "Draft" },
+  { id: "archived", label: "Archived" },
+];
 
 /**
  * The interactive shell the list lives in. Every button, every dialog and the
  * search field happen here, so the server component that loads the bank never
  * touches a hook and the list rows stay purely presentational.
+ *
+ * Nothing in here narrows the list. The publication state and the three
+ * filters all live in the address and are applied by the API, so the count on
+ * the active tab and the caption under the list both describe the same set the
+ * rows came from.
  */
 export function QuestionBankClient({
   items,
@@ -28,24 +42,19 @@ export function QuestionBankClient({
   totalPages,
   pageSize,
   search,
+  status,
+  competencyId,
+  questionType,
+  difficulty,
   competencies,
+  competenciesAvailable,
 }) {
   const [dialog, setDialog] = useState(null);
-  const [tab, setTab] = useState("published");
-  const tabsId = useId();
 
-  const TABS = [
-    { id: "published", label: "Published" },
-    { id: "draft", label: "Draft" },
-    { id: "archived", label: "Archived" },
-  ];
-
-  const publishedQuestions = items.filter((question) => question.status === "published");
-  const draftQuestions = items.filter((question) => question.status === "draft");
-  const archivedQuestions = items.filter((question) => question.status === "archived");
-
-  const currentQuestions =
-    tab === "archived" ? archivedQuestions : tab === "draft" ? draftQuestions : publishedQuestions;
+  const filters = { search, status, competencyId, questionType, difficulty };
+  const hasFilter = Boolean(search || competencyId || questionType || difficulty);
+  const statusLabel = STATUS_LABELS[status] ?? "Draft";
+  const caption = rangeLabel({ page, pageSize, totalItems, statusLabel });
 
   /** Opens an empty authoring dialog for a new question. */
   function openCreate() {
@@ -85,6 +94,15 @@ export function QuestionBankClient({
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <form method="get" role="search" className="flex-1 sm:max-w-80">
+            {/* The filters the address already carries, so searching narrows
+                the current view instead of resetting it. */}
+            <input type="hidden" name="status" value={status} />
+            {competencyId ? (
+              <input type="hidden" name="competency_id" value={competencyId} />
+            ) : null}
+            {questionType ? <input type="hidden" name="type" value={questionType} /> : null}
+            {difficulty ? <input type="hidden" name="difficulty" value={difficulty} /> : null}
+
             <div className="flex items-center gap-2">
               <Input
                 name="search"
@@ -95,15 +113,15 @@ export function QuestionBankClient({
               />
               <Button type="submit" size="sm" variant="outline">
                 <Search aria-hidden="true" className="size-4" />
-                <span className="sr-only">Search</span>
+                Search
               </Button>
             </div>
           </form>
 
-          <div className="flex items-center gap-3">
-            {search ? (
+          <div className="flex flex-wrap items-center gap-3">
+            {hasFilter ? (
               <Button asChild variant="outline" className="h-9 px-4">
-                <Link href="/teacher/question-bank">Clear search</Link>
+                <Link href={questionBankUrl({ status })}>Clear filters</Link>
               </Button>
             ) : null}
 
@@ -113,89 +131,33 @@ export function QuestionBankClient({
             </Button>
           </div>
         </div>
+
+        <QuestionFilters
+          filters={filters}
+          competencies={competencies}
+          competenciesAvailable={competenciesAvailable}
+        />
       </header>
 
-      <div
-        role="tablist"
-        aria-label="Filter the Question Bank"
-        className="flex items-center gap-5 border-b border-border"
-      >
-        {TABS.map((item) => {
-          const count =
-            item.id === "published"
-              ? publishedQuestions.length
-              : item.id === "draft"
-                ? draftQuestions.length
-                : archivedQuestions.length;
-          const selected = tab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={`${tabsId}-${item.id}-tab`}
-              aria-selected={selected}
-              aria-controls={`${tabsId}-${item.id}-panel`}
-              onClick={() => setTab(item.id)}
-              className={
-                selected
-                  ? "-mb-px inline-flex items-center gap-1.5 rounded-t-sm border-b-2 border-primary px-1 pb-2.5 text-sm font-semibold text-primary outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  : "-mb-px inline-flex items-center gap-1.5 rounded-t-sm border-b-2 border-transparent px-1 pb-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              }
-            >
-              {item.label}
-              <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <StatusTabs
+        label="Filter questions by publication state"
+        tabs={TABS}
+        current={status}
+        count={totalItems}
+        hrefFor={(id) => questionBankUrl({ ...filters, status: id })}
+      />
 
-      <div
-        role="tabpanel"
-        id={`${tabsId}-${tab}-panel`}
-        aria-labelledby={`${tabsId}-${tab}-tab`}
-        tabIndex={0}
-        className="flex flex-col gap-4 outline-none"
-      >
+      <div className="flex flex-col gap-4">
         {items.length === 0 ? (
-          <QuestionBankEmpty hasSearch={Boolean(search)} onClearSearch={close} />
-        ) : currentQuestions.length === 0 ? (
-          <p className="border-l-[3px] border-border bg-card px-5 py-4 text-sm leading-relaxed text-muted-foreground">
-            {tab === "archived"
-              ? "No archived questions yet. Archive a question and it appears here, kept with its history and ready to restore."
-              : tab === "draft"
-                ? search
-                  ? "No drafts match your search. Try clearing the search, or write a new draft."
-                  : "No drafts yet. Use “+ New question” to start writing one."
-                : search
-                  ? "No published questions match your search. Clearing the search shows your drafts too."
-                  : "No published questions yet. Publish a draft and it appears here for learners."}
-          </p>
+          <QuestionBankEmpty status={status} hasFilter={hasFilter} />
         ) : (
           <ul className="flex flex-col gap-3">
-            {currentQuestions.map((question) =>
-              tab === "archived" ? (
+            {items.map((question) =>
+              question.status === "archived" ? (
                 <QuestionRow
                   key={question.id}
                   question={question}
-                  actions={
-                    <form action={restoreQuestionAction}>
-                      <input type="hidden" name="id" value={question.id} />
-                      <SubmitButton
-                        variant="ghost"
-                        size="icon-sm"
-                        label={
-                          <>
-                            <ArchiveRestore aria-hidden="true" className="size-4" />
-                            <span className="sr-only">Restore question</span>
-                          </>
-                        }
-                        pendingLabel="Restoring…"
-                      />
-                    </form>
-                  }
+                  actions={<RestoreQuestionForm question={question} />}
                 />
               ) : (
                 <QuestionRow
@@ -204,20 +166,24 @@ export function QuestionBankClient({
                   actions={
                     <>
                       <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Edit question"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => openEdit(question)}
                       >
                         <Pencil aria-hidden="true" className="size-4" />
+                        Edit
+                        <span className="sr-only"> question</span>
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon-sm"
-                        aria-label="Archive question"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => openArchive(question)}
                       >
                         <Archive aria-hidden="true" className="size-4" />
+                        Archive
+                        <span className="sr-only"> question</span>
                       </Button>
                     </>
                   }
@@ -229,13 +195,10 @@ export function QuestionBankClient({
       </div>
 
       <footer className="flex flex-col gap-4">
-        {items.length > 0 ? (
-          <p aria-live="polite" className="text-sm text-muted-foreground">
-            {rangeLabel({ page, pageSize, totalItems })}
-          </p>
-        ) : null}
+        <p className="text-sm text-muted-foreground">{caption}</p>
+        <ResultAnnouncer message={caption} />
 
-        <Pagination search={search} page={page} totalPages={totalPages} />
+        <Pagination filters={filters} page={page} totalPages={totalPages} />
       </footer>
 
       {dialog?.mode === "archive" ? (

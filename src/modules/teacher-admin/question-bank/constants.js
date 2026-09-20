@@ -7,6 +7,11 @@
  * a type that can never leave draft state would just create dead-end records.
  */
 
+// A relative path, not the `@/` alias: `node --test` resolves neither
+// `jsconfig.json` paths nor the bundler, and this module is reached from the
+// pure-function tests.
+export { NATIVE_SELECT_CLASS as SELECT_CLASS } from "../../shared/utils/native-select.js";
+
 export const QUESTION_TYPES = [
   { value: "multiple_choice", label: "Multiple choice" },
   { value: "number_input", label: "Number input" },

@@ -76,6 +76,35 @@ class AssessmentType(StrEnum):
     UNIT_QUIZ = "unit_quiz"
 
 
+class QuestionType(StrEnum):
+    """The app.question_type enum, for the same reason `AssessmentType` exists.
+
+    A free-text type reached Postgres as an invalid enum input, which asyncpg
+    raises as a `DataError` rather than an integrity violation — so it escaped
+    every handler in `middleware.errors` and came back as a 500 that told the
+    author nothing. Naming the vocabulary here makes it a 422 that lists the
+    choices.
+
+    All six values are accepted for authoring because the column accepts them;
+    only the three in `PUBLISHABLE_QUESTION_TYPES` may be published.
+    """
+
+    MULTIPLE_CHOICE = "multiple_choice"
+    NUMBER_INPUT = "number_input"
+    FILL_BLANK = "fill_blank"
+    TRUE_FALSE = "true_false"
+    MATCHING = "matching"
+    ORDERING = "ordering"
+
+
+class QuestionDifficulty(StrEnum):
+    """The app.question_difficulty enum. Same reasoning as `QuestionType`."""
+
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+
+
 #: The shape a competency code has to take, stated here as well as in the
 #: database. The CHECK constraint is the boundary; this is what lets the API
 #: say "a code looks like MATH6-NS-01" instead of letting Postgres answer with
@@ -230,8 +259,8 @@ class QuestionDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     competency_id: UUID
-    question_type: str = Field(min_length=2, max_length=40)
-    difficulty: str = Field(default="medium", min_length=2, max_length=20)
+    question_type: QuestionType
+    difficulty: QuestionDifficulty = QuestionDifficulty.MEDIUM
     prompt: str = Field(min_length=2, max_length=MAX_TEXT)
     choices: list[Any] = Field(default_factory=list)
     answer_key: Any
@@ -256,8 +285,8 @@ class QuestionChanges(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     competency_id: UUID | None = None
-    question_type: str | None = Field(default=None, min_length=2, max_length=40)
-    difficulty: str | None = Field(default=None, min_length=2, max_length=20)
+    question_type: QuestionType | None = None
+    difficulty: QuestionDifficulty | None = None
     prompt: str | None = Field(default=None, min_length=2, max_length=MAX_TEXT)
     choices: list[Any] | None = None
     answer_key: Any = None

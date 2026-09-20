@@ -556,6 +556,243 @@ def test_changing_a_question_to_an_unsupported_published_type_is_refused():
     assert not connection.calls
 
 
+def test_a_question_type_outside_the_enum_is_refused_before_the_database():
+    """A free-text type used to reach Postgres and come back as a 500.
+
+    asyncpg raises an invalid enum input as a `DataError`, which is not an
+    integrity violation, so it escaped every handler in `middleware.errors` and
+    was answered with the generic server sentence. Naming the vocabulary in the
+    schema makes it a 422 that lists the choices instead.
+    """
+    connection = admin_connection(**{"returning": QUESTION_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/questions",
+        json={
+            "competency_id": str(COMPETENCY),
+            "question_type": "essay",
+            "difficulty": "medium",
+            "prompt": "Explain your reasoning.",
+            "answer_key": "anything",
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert not [call for call in connection.calls if "insert into app.questions" in call[0]]
+
+
+def test_a_question_difficulty_outside_the_enum_is_refused_before_the_database():
+    connection = admin_connection(**{"returning": QUESTION_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/questions",
+        json={
+            "competency_id": str(COMPETENCY),
+            "question_type": "number_input",
+            "difficulty": "spicy",
+            "prompt": "What is 2 + 2?",
+            "answer_key": "4",
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert not [call for call in connection.calls if "insert into app.questions" in call[0]]
+
+
+def test_every_reserved_question_type_can_still_be_authored_as_a_draft():
+    """The three reserved types are storable; only publishing them is refused."""
+    for question_type in ("true_false", "matching", "ordering"):
+        connection = admin_connection(**{"returning": QUESTION_ROW})
+        client = build_client(connection)
+
+        response = client.post(
+            "/api/v1/teacher-admin/questions",
+            json={
+                "competency_id": str(COMPETENCY),
+                "question_type": question_type,
+                "difficulty": "easy",
+                "prompt": "Reserved for later.",
+                "answer_key": "a",
+            },
+            headers=ADVISER_HEADERS,
+        )
+
+        assert response.status_code == 201, question_type
+
+
+def test_a_published_question_requires_a_published_competency_on_create():
+    """`questions_select` hides a published question under a draft competency.
+
+    So publishing into one produces an item no learner can be given, and until
+    now nothing said so. Modules have refused this since they were written.
+    """
+    connection = FakeConnection(results={"for share": None})
+    client = build_client(connection)
+
+    response = client.post(
+        "/api/v1/teacher-admin/questions",
+        json={
+            "competency_id": str(COMPETENCY),
+            "question_type": "number_input",
+            "difficulty": "medium",
+            "prompt": "What is 2 + 2?",
+            "answer_key": "4",
+            "status": "published",
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "question_not_publishable"
+    assert not [call for call in connection.calls if "insert into app.questions" in call[0]]
+
+
+def test_a_published_question_requires_a_published_competency_on_update():
+    connection = FakeConnection(
+        results={
+            "as question_status": {"competency_id": COMPETENCY, "question_status": "draft"},
+            "for share": None,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/questions/{QUESTION}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "question_not_publishable"
+    assert not [call for call in connection.calls if "update app.questions" in call[0]]
+
+
+def test_an_already_published_question_is_rechecked_when_it_changes_competency():
+    """The stored state decides, not the absence of a `status` in the request."""
+    connection = FakeConnection(
+        results={
+            "as question_status": {"competency_id": COMPETENCY, "question_status": "published"},
+            "for share": None,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/questions/{QUESTION}",
+        json={"competency_id": str(MODULE)},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "question_not_publishable"
+
+
+def test_publishing_a_question_under_a_published_competency_succeeds():
+    published = {**QUESTION_ROW, "status": "published"}
+    connection = FakeConnection(
+        results={
+            "as question_status": {"competency_id": COMPETENCY, "question_status": "draft"},
+            "for share": COMPETENCY_ROW,
+            "returning": published,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/questions/{QUESTION}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "published"
+    assert "answer_key" not in response.text
+
+
+def test_updating_a_question_that_is_not_there_is_a_404():
+    connection = FakeConnection(results={})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/questions/{QUESTION}",
+        json={"prompt": "Reworded."},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 404
+
+
+def test_the_question_bank_filters_before_it_takes_a_page():
+    """Every filter travels to the statement, so the count describes the page.
+
+    Sorting a returned page out in the browser is what made the tab counts and
+    the range caption describe a different set from the one on screen.
+    """
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get(
+        "/api/v1/teacher-admin/questions",
+        params={
+            "search": "integers",
+            "status": "archived",
+            "competency_id": str(COMPETENCY),
+            "question_type": "multiple_choice",
+            "difficulty": "hard",
+            "page": 2,
+            "page_size": 10,
+        },
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    listing = next(
+        call for call in connection.calls if "select questions.question_id" in call[0]
+    )
+    assert listing[1] == (
+        "integers",
+        "archived",
+        COMPETENCY,
+        "multiple_choice",
+        "hard",
+        10,
+        10,
+    )
+
+    counting = next(call for call in connection.calls if "count(*) as total" in call[0])
+    assert counting[1] == ("integers", "archived", COMPETENCY, "multiple_choice", "hard")
+
+
+def test_a_question_status_filter_outside_the_enum_is_refused():
+    client = build_client(admin_connection())
+
+    response = client.get(
+        "/api/v1/teacher-admin/questions",
+        params={"status": "retired"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
+def test_the_question_bank_needs_no_filters_at_all():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.get("/api/v1/teacher-admin/questions", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    listing = next(
+        call for call in connection.calls if "select questions.question_id" in call[0]
+    )
+    assert listing[1] == (None, None, None, None, None, 50, 0)
+
+
 # ---------------------------------------------------------------------------
 # Assessments
 # ---------------------------------------------------------------------------
