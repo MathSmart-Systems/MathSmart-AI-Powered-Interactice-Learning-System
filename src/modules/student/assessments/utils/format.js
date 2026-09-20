@@ -128,6 +128,15 @@ export function parseAttemptQuery(value) {
   return { attemptId: value, invalid: false };
 }
 
+export function parseAssessmentQuery(value) {
+  if (value === undefined) return { assessmentId: null, invalid: false };
+  if (typeof value !== "string" || !CANONICAL_UUID_PATTERN.test(value)) {
+    return { assessmentId: null, invalid: true };
+  }
+
+  return { assessmentId: value, invalid: false };
+}
+
 export function initialDiagnosticScreen(preview, requestedAttemptId = null) {
   if (requestedAttemptId) return { screen: "report", attemptId: requestedAttemptId };
   if (preview?.diagnostic_status === "in_progress") {

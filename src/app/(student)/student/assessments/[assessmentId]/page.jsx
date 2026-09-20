@@ -3,12 +3,12 @@ import { redirect } from "next/navigation";
 export const metadata = { title: "Assessment | MathSmart" };
 
 export default async function StudentAssessmentDynamicPage({ params, searchParams }) {
-  const resolvedParams = await params;
-  const resolvedSearchParams = await searchParams;
+  const [{ assessmentId }, resolvedSearchParams] = await Promise.all([params, searchParams]);
+  const query = new URLSearchParams({ assessment: assessmentId });
 
-  const query = resolvedSearchParams?.attempt
-    ? `?attempt=${encodeURIComponent(resolvedSearchParams.attempt)}`
-    : "";
+  if (resolvedSearchParams?.attempt) {
+    query.set("attempt", resolvedSearchParams.attempt);
+  }
 
-  redirect(`/student/assessments/diagnostic${query}`);
+  redirect(`/student/assessments/diagnostic?${query.toString()}`);
 }

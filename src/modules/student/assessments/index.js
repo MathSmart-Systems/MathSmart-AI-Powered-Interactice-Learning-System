@@ -1,5 +1,5 @@
 export { DiagnosticView } from "./DiagnosticView";
-export { parseAttemptQuery } from "./utils/format.js";
+export { parseAssessmentQuery, parseAttemptQuery } from "./utils/format.js";
 export {
   AssessmentHistorySkeleton,
   StudentAssessments,

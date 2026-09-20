@@ -232,6 +232,10 @@ where student_profiles.student_id = $1
 _START_ATTEMPT_SQL = "select * from app.start_assessment_attempt($1)"
 _SAVE_ANSWERS_SQL = "select app.save_assessment_answers($1, $2::jsonb)"
 _SUBMIT_SQL = "select * from app.submit_assessment_attempt($1, $2::jsonb)"
+_CLAIM_SUBMISSION_SQL = "select * from app.claim_assessment_submission_idempotency($1, $2)"
+_COMPLETE_SUBMISSION_SQL = (
+    "select app.complete_assessment_submission_idempotency($1, $2, $3, $4::jsonb)"
+)
 _AUTHORISE_SQL = "select * from app.authorize_reassessment($1, $2, $3, $4, $5)"
 
 _OWN_STUDENT_SQL = """
@@ -331,6 +335,31 @@ async def start_attempt(connection: ActorConnection, assessment_id: UUID) -> Any
 
 async def save_answers(connection: ActorConnection, *, attempt_id: UUID, answers: str) -> int:
     return await connection.fetchval(_SAVE_ANSWERS_SQL, attempt_id, answers) or 0
+
+
+async def claim_submission(
+    connection: ActorConnection, *, idempotency_key: str, request_fingerprint: str
+) -> Any:
+    return await connection.fetchrow(
+        _CLAIM_SUBMISSION_SQL, idempotency_key, request_fingerprint
+    )
+
+
+async def complete_submission(
+    connection: ActorConnection,
+    *,
+    idempotency_key: str,
+    request_fingerprint: str,
+    response_status: int,
+    response_body: str,
+) -> bool:
+    return await connection.fetchval(
+        _COMPLETE_SUBMISSION_SQL,
+        idempotency_key,
+        request_fingerprint,
+        response_status,
+        response_body,
+    )
 
 
 async def submit_attempt(

@@ -379,8 +379,8 @@ function selectDiagnostic(matching) {
   return matching[0];
 }
 
-/** Load the learner's one published diagnostic without starting its clock. */
-export async function loadDiagnostic() {
+/** Load a learner-visible published diagnostic without starting its clock. */
+export async function loadDiagnostic(requestedAssessmentId = null) {
   if (USE_MOCK) {
     await delay(300);
     return mockDiagnosticPreview();
@@ -396,18 +396,25 @@ export async function loadDiagnostic() {
     );
   }
 
-  const query = new URLSearchParams({
-    type: "diagnostic",
-    grade_id: gradeId,
-    status: "published",
-    page_size: "100",
-  });
-  const assessments = await request(`/assessments?${query.toString()}`);
+  const query = new URLSearchParams(
+    requestedAssessmentId
+      ? { status: "published" }
+      : {
+          type: "diagnostic",
+          grade_id: gradeId,
+          status: "published",
+          page_size: "100",
+        },
+  );
+  const assessments = requestedAssessmentId
+    ? [await request(`/assessments/${encodeURIComponent(requestedAssessmentId)}`)]
+    : await request(`/assessments?${query.toString()}`);
   const matching = (Array.isArray(assessments) ? assessments : []).filter(
     (entry) =>
       entry?.type === "diagnostic" &&
       String(entry?.grade_id) === String(gradeId) &&
-      entry?.status === "published",
+      entry?.status === "published" &&
+      (!requestedAssessmentId || String(entry?.id) === String(requestedAssessmentId)),
   );
 
   const diagnostic = selectDiagnostic(matching);

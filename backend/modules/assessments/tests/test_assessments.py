@@ -12,6 +12,7 @@ the response envelope; the arithmetic is proved against PostgreSQL in
 `supabase/tests/530_assessment_attempt_functions_test.sql`.
 """
 
+import json
 import re
 from uuid import UUID
 
@@ -33,6 +34,7 @@ MODULE = UUID("4a39d286-e93e-4e75-9644-b873fcac185c")
 GRADE = UUID("3f0f0000-0000-4000-8000-000000000006")
 STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
 PATH_ITEM = UUID("821a14d6-c49a-4f42-bc04-96388ec76a31")
+SUBMIT_HEADERS = {**LEARNER_HEADERS, "Idempotency-Key": "submit-key-0001"}
 
 ASSESSMENT_ROW = {
     "assessment_id": ASSESSMENT,
@@ -122,7 +124,13 @@ def attempt_connection(**overrides):
     results = {
         "app.start_assessment_attempt": ATTEMPT_ROW,
         "app.save_assessment_answers": 1,
+        "app.claim_assessment_submission_idempotency": {
+            "claim_status": "claimed",
+            "response_status": None,
+            "response_body": None,
+        },
         "app.submit_assessment_attempt": SCORED_ROW,
+        "app.complete_assessment_submission_idempotency": True,
         "app.authorize_reassessment": None,
         QUESTIONS: [QUESTION_ROW],
         "from app.assessment_responses": [RESPONSE_ROW],
@@ -312,12 +320,13 @@ def test_an_autosave_request_cannot_name_a_learner():
 
 
 def test_submitting_returns_the_deterministic_report():
-    client = build_client(attempt_connection())
+    connection = attempt_connection()
+    client = build_client(connection)
 
     response = client.post(
         f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
         json={"answers": [{"question_id": str(QUESTION), "answer": "72"}]},
-        headers=LEARNER_HEADERS,
+        headers=SUBMIT_HEADERS,
     )
 
     assert response.status_code == 200
@@ -328,6 +337,89 @@ def test_submitting_returns_the_deterministic_report():
     assert data["recommended_learning_path"][0]["priority"] == 1
     assert data["next_action"]["type"]
 
+    claim_call = next(
+        call
+        for call in connection.calls
+        if "app.claim_assessment_submission_idempotency" in call[0]
+    )
+    completion_call = next(
+        call
+        for call in connection.calls
+        if "app.complete_assessment_submission_idempotency" in call[0]
+    )
+    assert claim_call[1][0] == "submit-key-0001"
+    assert len(claim_call[1][1]) == 64
+    assert completion_call[1] == (
+        "submit-key-0001",
+        claim_call[1][1],
+        200,
+        json.dumps(response.json()),
+    )
+
+
+@pytest.mark.parametrize("key", [None, "short"])
+def test_submission_requires_a_valid_idempotency_key(key):
+    connection = attempt_connection()
+    client = build_client(connection)
+    headers = LEARNER_HEADERS if key is None else {**LEARNER_HEADERS, "Idempotency-Key": key}
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "idempotency_key_required"
+    assert not [call for call in connection.calls if "app.submit_assessment_attempt" in call[0]]
+
+
+def test_submission_replay_returns_stored_response_without_grading_again():
+    stored = {"data": {"attempt_id": str(ATTEMPT), "status": "scored"}}
+    connection = attempt_connection(
+        **{
+            "app.claim_assessment_submission_idempotency": {
+                "claim_status": "replay",
+                "response_status": 200,
+                "response_body": stored,
+            }
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMIT_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == stored
+    assert not [call for call in connection.calls if "app.submit_assessment_attempt" in call[0]]
+
+
+def test_submission_rejects_a_key_reused_for_a_different_request():
+    connection = attempt_connection(
+        **{
+            "app.claim_assessment_submission_idempotency": {
+                "claim_status": "conflict",
+                "response_status": None,
+                "response_body": None,
+            }
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
+        json={"answers": []},
+        headers=SUBMIT_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_key_reused"
+    assert not [call for call in connection.calls if "app.submit_assessment_attempt" in call[0]]
+
 
 def test_a_submission_never_discloses_an_answer_key():
     client = build_client(attempt_connection())
@@ -335,7 +427,7 @@ def test_a_submission_never_discloses_an_answer_key():
     response = client.post(
         f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
         json={"answers": []},
-        headers=LEARNER_HEADERS,
+        headers=SUBMIT_HEADERS,
     )
 
     for forbidden in ("answer_key", "correct_answer"):
@@ -349,7 +441,7 @@ def test_a_teacher_admin_does_not_submit_a_learners_attempt():
     response = client.post(
         f"/api/v1/assessment-attempts/{ATTEMPT}/submit",
         json={"answers": []},
-        headers=ADVISER_HEADERS,
+        headers={**ADVISER_HEADERS, "Idempotency-Key": "submit-key-0001"},
     )
 
     assert response.status_code == 403

@@ -10,12 +10,13 @@ should not be able to do that.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Annotated, Any
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Header, Query, Response
 
 from app.dependencies import ActorDb, CurrentActor, SensitiveActor, TeacherAdmin
 from middleware.auth import MathSmartRole
@@ -42,6 +43,13 @@ router = APIRouter(tags=["assessments"])
 
 MAX_PAGE_SIZE = 100
 DEFAULT_PAGE_SIZE = 20
+MIN_IDEMPOTENCY_KEY_LENGTH = 8
+
+
+def _submission_fingerprint(attempt_id: UUID, body: SaveAnswersRequest) -> str:
+    payload = {"attempt_id": str(attempt_id), **body.model_dump(mode="json")}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _json_value(value: Any) -> Any:
@@ -411,6 +419,8 @@ async def submit_attempt(
     connection: ActorDb,
     attempt_id: UUID,
     body: SaveAnswersRequest,
+    response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> dict[str, Any]:
     """Finalise and grade an attempt.
 
@@ -418,6 +428,34 @@ async def submit_attempt(
     score, the bands, the path and the next action. Nothing here consults Groq.
     """
     _only_a_learner(actor)
+    if not idempotency_key or len(idempotency_key) < MIN_IDEMPOTENCY_KEY_LENGTH:
+        raise ApiError(
+            422,
+            "An Idempotency-Key header of at least 8 characters is required",
+            code="idempotency_key_required",
+        )
+
+    request_fingerprint = _submission_fingerprint(attempt_id, body)
+    claim = await repository.claim_submission(
+        connection,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+    )
+    claim_status = claim["claim_status"] if claim else None
+    if claim_status == "conflict":
+        raise ApiError(
+            409,
+            "That idempotency key was already used with a different request",
+            code="idempotency_key_reused",
+        )
+    if claim_status == "replay":
+        response.status_code = claim["response_status"]
+        stored_body = claim["response_body"]
+        if isinstance(stored_body, str):
+            stored_body = json.loads(stored_body)
+        return stored_body
+    if claim_status != "claimed":
+        raise ApiError(500, "The request could not be completed")
 
     attempt_row = await repository.submit_attempt(
         connection,
@@ -435,8 +473,17 @@ async def submit_attempt(
         results = await repository.results_for(connection, attempt_id)
         path_rows = await repository.path_for(connection, attempt_row["student_id"])
 
-    report = _report_from_attempt(attempt_row, results, path_rows, valid_payload=valid_payload)
-    return {"data": report.model_dump(mode="json")}
+    response_body = {"data": _report_from_attempt(
+        attempt_row, results, path_rows, valid_payload=valid_payload
+    ).model_dump(mode="json")}
+    await repository.complete_submission(
+        connection,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+        response_status=200,
+        response_body=json.dumps(response_body),
+    )
+    return response_body
 
 
 @router.get("/assessment-attempts/{attempt_id}")

@@ -11,6 +11,7 @@ import {
   mockAssessmentHistory,
   normalizeAttemptHistory,
   numericShortcutIndex,
+  parseAssessmentQuery,
   parseAttemptQuery,
   remainingSeconds,
   styleForBand,
@@ -172,6 +173,20 @@ describe("diagnostic local drafts", () => {
       ),
       { one: "newer", three: "pending" },
     );
+  });
+});
+
+describe("diagnostic assessment query", () => {
+  it("accepts canonical assessment UUIDs", () => {
+    const assessmentId = "123e4567-e89b-42d3-a456-426614174000";
+    assert.deepEqual(parseAssessmentQuery(assessmentId), { assessmentId, invalid: false });
+  });
+
+  it("rejects malformed assessment identifiers", () => {
+    assert.deepEqual(parseAssessmentQuery("diagnostic"), {
+      assessmentId: null,
+      invalid: true,
+    });
   });
 });
 

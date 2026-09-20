@@ -64,6 +64,7 @@ function CenteredNotice({ icon: Icon, title, children, tone = "muted" }) {
  */
 export function DiagnosticView({
   requestedAttemptId = null,
+  requestedAssessmentId = null,
   invalidAttemptLink = false,
 }) {
   const [screen, setScreen] = useState("intro");
@@ -143,7 +144,7 @@ export function DiagnosticView({
           setResult(requested);
           setScreen("report");
         })
-      : loadDiagnostic().then(async (preview) => {
+      : loadDiagnostic(requestedAssessmentId).then(async (preview) => {
         if (cancelled) return;
         setAssessment(preview);
         setTotal(preview.total_questions);
@@ -206,7 +207,7 @@ export function DiagnosticView({
     return () => {
       cancelled = true;
     };
-  }, [hydrateAttempt, invalidAttemptLink, requestedAttemptId]);
+  }, [hydrateAttempt, invalidAttemptLink, requestedAssessmentId, requestedAttemptId]);
 
   const current = questions[index] ?? null;
   const answeredCount = questions.filter((question) => hasAnswer(answers[question.id])).length;
