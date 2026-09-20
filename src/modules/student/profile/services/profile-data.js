@@ -16,6 +16,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
+import { AVATAR_BUCKET, SIGNED_URL_TTL_SECONDS, avatarPath } from "../utils/avatar.js";
 import { buildProfileModel } from "../utils/profile-model.js";
 import { apiBaseUrl } from "./api-base.js";
 
@@ -38,6 +39,38 @@ async function accessToken() {
     const { data, error } = await supabase.auth.getSession();
     return error ? null : (data?.session?.access_token ?? null);
   } catch {
+    return null;
+  }
+}
+
+/**
+ * A short-lived link to the learner's own profile picture, or null.
+ *
+ * Minted under the learner's own session, so Storage's row-level policy is
+ * what decides whether a link can exist at all: the object is named after its
+ * owner, and the policy admits nobody else. A learner who has never uploaded
+ * one simply has no object, which is not an error — it is the ordinary case,
+ * and the caller falls back to their initials.
+ *
+ * The link expires quickly on purpose. A photograph of a child should not stay
+ * reachable through a URL that outlives the page it was minted for.
+ */
+async function avatarSignedUrl(userId) {
+  const path = avatarPath(userId);
+  if (!path) {
+    return null;
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.storage
+      .from(AVATAR_BUCKET)
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+
+    return error ? null : (data?.signedUrl ?? null);
+  } catch {
+    // A picture is decoration on a page that is mostly a school record. If
+    // Storage is unreachable the profile still renders, with initials.
     return null;
   }
 }
@@ -112,8 +145,11 @@ export async function readProfile() {
     return { state: PROFILE_STATE.ERROR, reason: "unavailable" };
   }
 
+  const identity = account.ok ? account.data : null;
+  const avatarUrl = identity?.user_id ? await avatarSignedUrl(identity.user_id) : null;
+
   return {
     state: PROFILE_STATE.READY,
-    model: buildProfileModel({ learner: learner.data, account: account.ok ? account.data : null }),
+    model: buildProfileModel({ learner: learner.data, account: identity, avatarUrl }),
   };
 }

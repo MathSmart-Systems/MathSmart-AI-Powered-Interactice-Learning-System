@@ -49,6 +49,7 @@ def create_app(
     session_gateway: Any | None = None,
     elevated_database: Any | None = None,
     auth_admin: Any | None = None,
+    storage_admin: Any | None = None,
     groq: Any | None = None,
 ) -> FastAPI:
     """Build the application.
@@ -98,6 +99,9 @@ def create_app(
         elevated_database
         if elevated_database is not None
         else _default_elevated_database(resolved)
+    )
+    application.state.storage_admin = (
+        storage_admin if storage_admin is not None else _default_storage_admin(resolved)
     )
     application.state.auth_admin = (
         auth_admin if auth_admin is not None else _default_auth_admin(resolved)
@@ -161,6 +165,12 @@ def _default_auth_admin(settings: Settings) -> Any:
     from modules.shared.auth_admin import SupabaseAuthAdmin
 
     return SupabaseAuthAdmin(settings)
+
+
+def _default_storage_admin(settings: Settings) -> Any:
+    from modules.shared.storage_admin import SupabaseStorageAdmin
+
+    return SupabaseStorageAdmin(settings)
 
 
 def _default_groq(settings: Settings) -> Any:

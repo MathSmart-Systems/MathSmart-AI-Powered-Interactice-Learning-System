@@ -19,6 +19,7 @@ import pytest
 
 from middleware.auth import MathSmartRole, VerifiedToken
 from modules.shared.auth_admin import AuthAdminError
+from modules.shared.storage_admin import StorageAdminError
 from modules.students.purge import (
     PURGE_PLAN,
     PurgeFailed,
@@ -154,8 +155,30 @@ class FakeAuthAdmin:
             raise self._on_delete
 
 
-def a_service(elevated=None, auth_admin=None):
-    return StudentPurge(elevated or FakeElevated(), auth_admin or FakeAuthAdmin())
+class FakeStorageAdmin:
+    def __init__(self, *, on_delete=None, had_one=True):
+        self.deleted = []
+        self._on_delete = on_delete
+        self._had_one = had_one
+
+    async def delete_avatar(self, user_id, *, missing_ok=True):
+        self.deleted.append((str(user_id), missing_ok))
+        if self._on_delete is not None:
+            raise self._on_delete
+        return self._had_one
+
+
+#: Lets a test pass a real `None` for storage, which is a different case from
+#: "the test did not say" and has to be reachable.
+DEFAULT = object()
+
+
+def a_service(elevated=None, auth_admin=None, storage_admin=DEFAULT):
+    return StudentPurge(
+        elevated or FakeElevated(),
+        auth_admin or FakeAuthAdmin(),
+        FakeStorageAdmin() if storage_admin is DEFAULT else storage_admin,
+    )
 
 
 async def purge(service, typed=LEARNER_ID):
@@ -591,3 +614,72 @@ async def test_the_ledger_is_closed_to_anon_and_authenticated():
     assert "authenticated" not in reachable
     assert "service_role" in reachable
     assert rls is True
+
+
+# ---------------------------------------------------------------------------
+# The learner's picture goes with them
+# ---------------------------------------------------------------------------
+#
+# A profile picture lives in a private bucket, named after its owner, and the
+# owner manages it themselves under Storage's own policies. A purged learner
+# has no session left to do that with, so this is the one place the
+# administrative Storage client is used — and the one place a photograph of a
+# child could be left behind if it were not.
+
+
+async def test_the_learners_picture_is_deleted():
+    storage = FakeStorageAdmin()
+
+    await purge(a_service(storage_admin=storage))
+
+    assert storage.deleted == [(str(USER_ID), True)]
+
+
+async def test_a_learner_who_never_uploaded_one_is_not_a_failure():
+    """Most purges remove nothing here, and that is the ordinary case."""
+    storage = FakeStorageAdmin(had_one=False)
+
+    outcome = await purge(a_service(storage_admin=storage))
+
+    assert outcome.purged is True
+
+
+async def test_the_picture_goes_before_the_auth_account():
+    """Storage is its own resumable state, ahead of the identity."""
+    storage = FakeStorageAdmin()
+    auth = FakeAuthAdmin()
+    elevated = FakeElevated()
+
+    await purge(a_service(elevated=elevated, auth_admin=auth, storage_admin=storage))
+
+    states = [
+        operation["details"].get("state")
+        for operation in elevated.operations
+        if operation["action"] == "student.purge_advanced"
+    ]
+    assert "storage_deleted" in states
+    assert storage.deleted and auth.deleted
+
+
+async def test_a_failed_picture_deletion_is_reported_as_retryable():
+    storage = FakeStorageAdmin(on_delete=StorageAdminError("Storage returned 500"))
+    auth = FakeAuthAdmin()
+
+    with pytest.raises(PurgeFailed) as failure:
+        await purge(a_service(auth_admin=auth, storage_admin=storage))
+
+    assert failure.value.code == "storage_delete_failed"
+    # The account is still there, so a retry still has something to finish.
+    assert auth.deleted == []
+
+
+async def test_a_purge_with_no_storage_configured_refuses_rather_than_skips():
+    """Silently skipping would leave a child's photograph behind a purge that
+    reported success."""
+    auth = FakeAuthAdmin()
+
+    with pytest.raises(PurgeFailed) as failure:
+        await purge(a_service(auth_admin=auth, storage_admin=None))
+
+    assert failure.value.code == "storage_delete_failed"
+    assert auth.deleted == []

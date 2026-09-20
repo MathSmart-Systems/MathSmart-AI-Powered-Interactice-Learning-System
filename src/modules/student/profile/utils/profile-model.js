@@ -49,14 +49,20 @@ export function firstGivenName(fullName) {
  * The serialisable model for the profile page.
  *
  * `monitoring` and `diagnostic` are the resolved vocabulary objects, so the
- * view reads words, not enum values.
+ * view reads words, not enum values. `avatarUrl` is a signed link minted for
+ * this render and is deliberately not cached anywhere: it expires.
  */
-export function buildProfileModel({ learner, account }) {
+export function buildProfileModel({ learner, account, avatarUrl }) {
   const fullName = nullableString(learner?.full_name);
   const email = nullableString(account?.email);
 
   return {
     fullName,
+    // The learner's own account id, which is also where their picture lives.
+    // Null when the identity read failed, and the page then shows initials.
+    userId: nullableString(account?.user_id),
+    // A short-lived signed link, or null when there is no picture to show.
+    avatarUrl: nullableString(avatarUrl),
     firstName: firstGivenName(fullName),
     initials: initials(fullName),
     email,

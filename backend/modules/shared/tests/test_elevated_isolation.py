@@ -10,7 +10,11 @@ from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[3]
 
-ELEVATED_MODULES = ("modules.shared.elevated_db", "modules.shared.auth_admin")
+ELEVATED_MODULES = (
+    "modules.shared.elevated_db",
+    "modules.shared.auth_admin",
+    "modules.shared.storage_admin",
+)
 
 SESSION_GATEWAY = "modules.shared.session_gateway"
 
@@ -43,6 +47,10 @@ ALLOWED = {
     # The modules themselves, and their own tests.
     "modules/shared/elevated_db.py",
     "modules/shared/auth_admin.py",
+    # Deletes one purged learner's stored picture. It can delete and nothing
+    # else — no read, no listing, no URL — because by the time a purge runs
+    # there is no session left to act as and the object would outlive them.
+    "modules/shared/storage_admin.py",
 }
 
 
@@ -140,11 +148,11 @@ def test_the_shared_dependencies_offer_no_elevated_accessor():
 
 
 def test_the_allowlist_is_short_on_purpose():
-    # Six: the two modules that own elevated access, the two operations that
-    # are allowed to use it, the local bootstrap command, and main.py which
+    # Seven: the three modules that own elevated access, the two operations
+    # allowed to use it, the local bootstrap command, and main.py which
     # constructs them. Growing this number is a decision, not a detail — which
     # is why it is written down here and has to be changed deliberately.
-    assert len(ALLOWED) == 6
+    assert len(ALLOWED) == 7
 
 
 def test_only_the_sensitive_dependency_reaches_the_session_gateway():

@@ -267,9 +267,15 @@ class PurgeOutcome:
 class StudentPurge:
     """Permanently removes one dropped learner, resumably."""
 
-    def __init__(self, elevated: ElevatedDatabase, auth_admin: SupabaseAuthAdmin) -> None:
+    def __init__(
+        self,
+        elevated: ElevatedDatabase,
+        auth_admin: SupabaseAuthAdmin,
+        storage_admin: Any | None = None,
+    ) -> None:
         self._elevated = elevated
         self._auth_admin = auth_admin
+        self._storage_admin = storage_admin
 
     # -- reading -----------------------------------------------------------
 
@@ -522,8 +528,26 @@ class StudentPurge:
             ) from None
 
     async def _remove_owned_objects(self, auth_user_id: UUID) -> None:
-        """Overridden where a bucket exists. A no-op is the honest answer here."""
-        return None
+        """Delete the learner's profile picture.
+
+        One object, named after the learner, in the private `avatars` bucket.
+        It goes through the administrative Storage client rather than a policy,
+        because by the time this runs there is no session left to act as: a
+        learner cannot delete their own picture once their account is gone, so
+        it would simply outlive them.
+
+        A learner who never uploaded one is the ordinary case and is not a
+        failure — most purges will remove nothing here.
+        """
+        if self._storage_admin is None:
+            # Nothing is configured to reach Storage. Said out loud rather than
+            # passed over, because silently skipping this would leave a child's
+            # photograph behind a purge that reported success.
+            raise PurgeFailed(
+                "The learner's stored files could not be removed.", "storage_delete_failed"
+            )
+
+        await self._storage_admin.delete_avatar(auth_user_id, missing_ok=True)
 
     async def _delete_auth_user(self, operation_id: UUID, auth_user_id: UUID) -> None:
         """Remove the Auth identity and account.

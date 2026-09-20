@@ -361,9 +361,10 @@ def get_purge(request: Request) -> StudentPurge:
     """
     elevated = request.app.state.elevated_database
     auth_admin = request.app.state.auth_admin
+    storage_admin = getattr(request.app.state, "storage_admin", None)
     if elevated is None or auth_admin is None:
         raise ApiError(503, "Permanent removal is not configured on this service")
-    return StudentPurge(elevated, auth_admin)
+    return StudentPurge(elevated, auth_admin, storage_admin)
 
 
 Purging = Annotated[StudentPurge, Depends(get_purge)]
