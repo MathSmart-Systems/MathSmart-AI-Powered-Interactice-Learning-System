@@ -199,3 +199,29 @@ export function restoreAssessment(assessmentId, { token = null } = {}) {
     token,
   });
 }
+
+/**
+ * What still points at an assessment, and whether it could be removed.
+ *
+ * Read from the server rather than assembled here: the counts are taken inside
+ * the same transaction the deletion runs in, with the row locked, so the
+ * preview a teacher confirms against cannot go stale in between.
+ */
+export function readAssessmentReferences(assessmentId, { token = null } = {}) {
+  return request(`/teacher-admin/assessments/${encodeURIComponent(assessmentId)}/references`, {
+    token,
+  });
+}
+
+/**
+ * Permanently removes an archived assessment nobody ever attempted.
+ *
+ * Not the DELETE verb, which archives. Its membership rows go with it; the
+ * questions they name do not, because that foreign key restricts.
+ */
+export function deleteAssessmentPermanently(assessmentId, { token = null } = {}) {
+  return request(`/teacher-admin/assessments/${encodeURIComponent(assessmentId)}/delete`, {
+    method: "POST",
+    token,
+  });
+}

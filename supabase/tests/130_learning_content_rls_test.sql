@@ -384,16 +384,29 @@ select is(
   'A teacher_admin can replace an assessment''s ordered question membership'
 );
 
--- Still denied, even school-wide.
-select throws_ok(
+-- Removal is open now, but only for a record that has already been archived.
+-- A published or draft one is not in scope at all, so the statement is allowed
+-- to run and finds no row to act on. 630_content_delete_test.sql covers the
+-- whole rule, including what the foreign keys refuse.
+select lives_ok(
   $$ delete from app.questions where questions.prompt = 'Authored question' $$,
-  '42501', null::text,
-  'A teacher_admin cannot delete a question; archiving is the supported path');
+  'A teacher_admin''s delete of a published question runs');
 
-select throws_ok(
+select is(
+  (select count(*)::integer from app.questions
+   where questions.prompt = 'Authored question'),
+  1,
+  'But removes nothing: archiving first is what puts a question in scope');
+
+select lives_ok(
   $$ delete from app.activities where activities.title = 'Draft activity' $$,
-  '42501', null::text,
-  'A teacher_admin cannot delete an activity');
+  'A teacher_admin''s delete of a draft activity runs');
+
+select is(
+  (select count(*)::integer from app.activities
+   where activities.title = 'Draft activity'),
+  1,
+  'And removes nothing either, for the same reason');
 
 -- ===========================================================================
 -- Untrusted and unrecognised claims

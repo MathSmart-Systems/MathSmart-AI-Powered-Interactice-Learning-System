@@ -197,3 +197,25 @@ export async function archiveModule(moduleId) {
 export async function restoreModule(moduleId) {
   return apiRequest(`/teacher-admin/modules/${moduleId}/restore`, { method: "POST" });
 }
+
+/**
+ * What still points at a module, and whether it could be removed.
+ *
+ * Read from the server rather than assembled here: the counts are taken inside
+ * the same transaction the deletion runs in, with the row locked, so the
+ * preview a teacher confirms against cannot go stale in between.
+ */
+export async function readModuleReferences(moduleId) {
+  return apiRequest(`/teacher-admin/modules/${moduleId}/references`);
+}
+
+/**
+ * Permanently removes an archived module that was never used.
+ *
+ * Not the DELETE verb, which archives. PostgreSQL refuses a module carrying an
+ * activity, a learning-path item or a learner's progress, whatever the server
+ * believes.
+ */
+export async function deleteModule(moduleId) {
+  return apiRequest(`/teacher-admin/modules/${moduleId}/delete`, { method: "POST" });
+}

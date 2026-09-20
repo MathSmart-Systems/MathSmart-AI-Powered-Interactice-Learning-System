@@ -838,6 +838,201 @@ returning competencies.competency_id
 """
 
 
+#: Everything that would be orphaned by removing one authored record.
+#:
+#: One statement per kind, counted per table, so a refusal can say what is
+#: actually in the way instead of "this is in use". Read before the delete is
+#: attempted — not because the count is the protection, but because it is the
+#: explanation. The protection is the ON DELETE RESTRICT foreign keys, which
+#: refuse the statement whatever these return.
+#:
+#: Membership is counted too, even though it cascades. A teacher about to
+#: remove a question needs to know it is seated in three activities; a teacher
+#: about to remove an activity needs to know the membership rows go with it and
+#: the questions do not.
+_QUESTION_REFERENCES_SQL = """
+select
+  (select count(*) from app.assessment_questions
+     where assessment_questions.question_id = $1) as assessment_questions,
+  (select count(*) from app.activity_questions
+     where activity_questions.question_id = $1) as activity_questions,
+  (select count(*) from app.assessment_responses
+     where assessment_responses.question_id = $1) as assessment_responses,
+  (select count(*) from app.activity_responses
+     where activity_responses.question_id = $1) as activity_responses
+"""
+
+_MODULE_REFERENCES_SQL = """
+select
+  (select count(*) from app.activities
+     where activities.module_id = $1) as activities,
+  (select count(*) from app.learning_path_items
+     where learning_path_items.module_id = $1) as learning_path_items,
+  (select count(*) from app.student_module_progress
+     where student_module_progress.module_id = $1) as student_module_progress
+"""
+
+_ACTIVITY_REFERENCES_SQL = """
+select
+  (select count(*) from app.activity_attempts
+     where activity_attempts.activity_id = $1) as activity_attempts,
+  (select count(*) from app.activity_questions
+     where activity_questions.activity_id = $1) as activity_questions
+"""
+
+_ASSESSMENT_REFERENCES_SQL = """
+select
+  (select count(*) from app.assessment_attempts
+     where assessment_attempts.assessment_id = $1) as assessment_attempts,
+  (select count(*) from app.reassessment_authorizations
+     where reassessment_authorizations.assessment_id = $1) as reassessment_authorizations,
+  (select count(*) from app.assessment_questions
+     where assessment_questions.assessment_id = $1) as assessment_questions
+"""
+
+#: The record a delete or a preview is about, locked, with the one column that
+#: decides whether removal is even in scope and the one a teacher reads.
+#:
+#: The lock is what closes the gap between the count and the delete. Both run
+#: inside the request's own transaction, so a reference added in between would
+#: be refused by the foreign key anyway — but it would arrive as a constraint
+#: violation rather than as the sentence naming what is holding it.
+_QUESTION_DELETE_STATE_SQL = """
+select questions.question_id, questions.prompt as label, questions.status
+from app.questions
+where questions.question_id = $1
+for update
+"""
+
+_MODULE_DELETE_STATE_SQL = """
+select learning_modules.module_id, learning_modules.title as label, learning_modules.status
+from app.learning_modules
+where learning_modules.module_id = $1
+for update
+"""
+
+_ACTIVITY_DELETE_STATE_SQL = """
+select activities.activity_id, activities.title as label, activities.status
+from app.activities
+where activities.activity_id = $1
+for update
+"""
+
+_ASSESSMENT_DELETE_STATE_SQL = """
+select assessments.assessment_id, assessments.title as label, assessments.status
+from app.assessments
+where assessments.assessment_id = $1
+for update
+"""
+
+_DELETE_QUESTION_SQL = """
+delete from app.questions
+where questions.question_id = $1
+returning questions.question_id
+"""
+
+_DELETE_MODULE_SQL = """
+delete from app.learning_modules
+where learning_modules.module_id = $1
+returning learning_modules.module_id
+"""
+
+_DELETE_ACTIVITY_SQL = """
+delete from app.activities
+where activities.activity_id = $1
+returning activities.activity_id
+"""
+
+_DELETE_ASSESSMENT_SQL = """
+delete from app.assessments
+where assessments.assessment_id = $1
+returning assessments.assessment_id
+"""
+
+
+@dataclass(frozen=True)
+class Deletable:
+    """One kind of authored content, and how removal is decided for it.
+
+    Held together rather than written four times, because the four differ only
+    in which statements they run and which of their references are disposable
+    membership rather than something worth refusing over.
+    """
+
+    #: What the record is called in a sentence a teacher reads.
+    noun: str
+    #: The audit action recorded when one is removed.
+    action: str
+    #: The audit target type.
+    target_type: str
+    state_sql: str
+    references_sql: str
+    delete_sql: str
+    #: Reference counts that cascade with the record and must not refuse it.
+    disposable: frozenset[str]
+
+
+QUESTION_DELETION = Deletable(
+    noun="question",
+    action="question.deleted",
+    target_type="question",
+    state_sql=_QUESTION_DELETE_STATE_SQL,
+    references_sql=_QUESTION_REFERENCES_SQL,
+    delete_sql=_DELETE_QUESTION_SQL,
+    disposable=frozenset(),
+)
+
+MODULE_DELETION = Deletable(
+    noun="learning module",
+    action="learning_module.deleted",
+    target_type="learning_module",
+    state_sql=_MODULE_DELETE_STATE_SQL,
+    references_sql=_MODULE_REFERENCES_SQL,
+    delete_sql=_DELETE_MODULE_SQL,
+    disposable=frozenset(),
+)
+
+ACTIVITY_DELETION = Deletable(
+    noun="activity",
+    action="activity.deleted",
+    target_type="activity",
+    state_sql=_ACTIVITY_DELETE_STATE_SQL,
+    references_sql=_ACTIVITY_REFERENCES_SQL,
+    delete_sql=_DELETE_ACTIVITY_SQL,
+    # Membership says "this activity contains this question". It has no meaning
+    # once the activity is gone, and the question it names is held by its own
+    # RESTRICT, so removing an unused activity can never reach a reusable
+    # question.
+    disposable=frozenset({"activity_questions"}),
+)
+
+ASSESSMENT_DELETION = Deletable(
+    noun="assessment",
+    action="assessment.deleted",
+    target_type="assessment",
+    state_sql=_ASSESSMENT_DELETE_STATE_SQL,
+    references_sql=_ASSESSMENT_REFERENCES_SQL,
+    delete_sql=_DELETE_ASSESSMENT_SQL,
+    disposable=frozenset({"assessment_questions"}),
+)
+
+
+async def deletion_state(connection: ActorConnection, kind: Deletable, key: UUID) -> Any:
+    """Lock the record, and read the status that decides whether it may go."""
+    return await connection.fetchrow(kind.state_sql, key)
+
+
+async def deletion_references(connection: ActorConnection, kind: Deletable, key: UUID) -> Any:
+    """How many rows in each table still point at this record."""
+    return await connection.fetchrow(kind.references_sql, key)
+
+
+async def delete_record(connection: ActorConnection, kind: Deletable, key: UUID) -> Any:
+    """Remove the row outright. Refused by the policy unless archived, and by
+    the foreign keys unless unused."""
+    return await connection.fetchrow(kind.delete_sql, key)
+
+
 _DELETE_SECTION_SQL = """
 delete from app.sections
 where sections.section_id = $1

@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import {
   archiveModule,
   createModule,
+  deleteModule,
   listCompetencies,
+  readModuleReferences,
   restoreModule,
   updateModule,
 } from "./learning-modules-api";
@@ -179,4 +181,50 @@ export async function restoreModuleAction(_previousState, formData) {
       ? `Another module had taken this one's place, so it was restored as a draft at position ${orderIndex} instead. Edit it to move it.`
       : null,
   };
+}
+
+/**
+ * The authoritative reference preview, for the delete confirmation.
+ *
+ * A server action rather than a browser fetch, because the library is read on
+ * the server with the caller's own token and there is no client to give one to.
+ * The shape matches what the shared dialog expects from either world.
+ */
+export async function readModuleReferencesAction(moduleId) {
+  const id = String(moduleId ?? "").trim();
+
+  if (!id) {
+    return { ok: false, error: "This module could not be found." };
+  }
+
+  const result = await readModuleReferences(id);
+
+  if (!result.ok) {
+    return { ok: false, error: result.message ?? "The references could not be read." };
+  }
+  return { ok: true, data: result.data };
+}
+
+/**
+ * Permanently removes an archived module that was never used.
+ *
+ * Archiving stays the normal way to retire one, and the row's Archive action is
+ * untouched. A module any learner studied, or that still carries an activity or
+ * a learning-path item, is refused by the database itself.
+ */
+export async function deleteModuleAction(moduleId) {
+  const id = String(moduleId ?? "").trim();
+
+  if (!id) {
+    return { ok: false, error: "This module could not be found." };
+  }
+
+  const result = await deleteModule(id);
+
+  if (!result.ok) {
+    return { ok: false, error: result.message ?? "That module could not be removed." };
+  }
+
+  revalidatePath(LEARNING_MODULES_PATH);
+  return { ok: true };
 }

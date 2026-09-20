@@ -252,3 +252,40 @@ export function listQuestions({
   }
   return request(`/teacher-admin/questions?${query.toString()}`, { token });
 }
+
+/**
+ * What still points at an activity, and whether it could be removed.
+ *
+ * Read from the server rather than assembled here: the counts are taken inside
+ * the same transaction the deletion runs in, with the row locked, so the
+ * preview a teacher confirms against cannot go stale in between.
+ *
+ * @param {string} activityId
+ * @param {object} [options]
+ * @param {string|null} [options.token]
+ * @returns {Promise<object>}
+ */
+export function readActivityReferences(activityId, { token = null } = {}) {
+  return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}/references`, {
+    token,
+  });
+}
+
+/**
+ * Permanently removes an archived activity nobody ever attempted.
+ *
+ * Not the DELETE verb, which archives. The server refuses anything that is not
+ * already archived, and PostgreSQL refuses anything a learner has attempted
+ * whatever the server believes.
+ *
+ * @param {string} activityId
+ * @param {object} [options]
+ * @param {string|null} [options.token]
+ * @returns {Promise<object>}
+ */
+export function deleteActivityPermanently(activityId, { token = null } = {}) {
+  return request(`/teacher-admin/activities/${encodeURIComponent(activityId)}/delete`, {
+    method: "POST",
+    token,
+  });
+}

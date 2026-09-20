@@ -201,3 +201,25 @@ export async function restoreQuestion(questionId) {
     body: { status: "draft" },
   });
 }
+
+/**
+ * What still points at a question, and whether it could be removed.
+ *
+ * Read from the server rather than assembled here: the counts are taken inside
+ * the same transaction the deletion runs in, with the row locked, so the
+ * preview a teacher confirms against cannot go stale in between.
+ */
+export async function readQuestionReferences(questionId) {
+  return apiRequest(`/teacher-admin/questions/${questionId}/references`);
+}
+
+/**
+ * Permanently removes an archived question that was never used.
+ *
+ * Not the DELETE verb, which archives. The server refuses anything that is not
+ * already archived, and PostgreSQL refuses a question seated in an activity or
+ * an assessment, or delivered to any attempt, whatever the server believes.
+ */
+export async function deleteQuestion(questionId) {
+  return apiRequest(`/teacher-admin/questions/${questionId}/delete`, { method: "POST" });
+}

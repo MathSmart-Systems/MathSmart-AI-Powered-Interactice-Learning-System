@@ -1,7 +1,14 @@
 "use client";
 
 import { useRef } from "react";
-import { Archive, ArchiveRestore, ListOrdered, PencilLine, Send } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ListOrdered,
+  PencilLine,
+  Send,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -132,6 +139,7 @@ export function AssessmentList({
   onPublish,
   onArchive,
   onRestore,
+  onDelete,
   onCreateDraft,
   onClearFilter,
 }) {
@@ -254,17 +262,35 @@ export function AssessmentList({
                 ) : null}
 
                 {status === "archived" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="min-h-11 sm:min-h-9"
-                    onClick={() => onRestore?.(assessment)}
-                  >
-                    <ArchiveRestore aria-hidden="true" />
-                    Restore
-                    <span className="sr-only"> {assessment.title}</span>
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="min-h-11 sm:min-h-9"
+                      onClick={() => onRestore?.(assessment)}
+                    >
+                      <ArchiveRestore aria-hidden="true" />
+                      Restore
+                      <span className="sr-only"> {assessment.title}</span>
+                    </Button>
+                    {/*
+                      Only on an archived row, because only an archived record
+                      is in scope for removal at all. Archive stays the
+                      separate, safer action; this one is reached through it.
+                    */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="min-h-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:min-h-9"
+                      onClick={() => onDelete?.(assessment)}
+                    >
+                      <Trash2 aria-hidden="true" />
+                      Delete permanently
+                      <span className="sr-only"> {assessment.title}</span>
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     type="button"

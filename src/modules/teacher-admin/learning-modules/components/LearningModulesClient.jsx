@@ -1,17 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
-import { Archive, Pencil, Plus, Search } from "lucide-react";
+import { Archive, Pencil, Plus, Search, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ResultAnnouncer, StatusTabs } from "@/modules/shared";
+import { PermanentDeleteDialog, ResultAnnouncer, StatusTabs } from "@/modules/shared";
 
 import { MODULE_DIALOG_MODES } from "../action-state";
 import { STATUS_LABELS } from "../constants";
 import { rangeLabel } from "../utils/format.js";
 import { learningModulesUrl } from "../utils/urls.js";
+import { deleteModuleAction, readModuleReferencesAction } from "../services/actions";
 
 import { ArchiveModuleDialog } from "./ArchiveModuleDialog";
 import { ModuleDialog } from "./ModuleDialog";
@@ -58,9 +59,25 @@ export function LearningModulesClient({
     setDialog({ key: `archive-${module.id}`, mode: "archive", module });
   }
 
+  function openDelete(module) {
+    setDialog({ key: `delete-${module.id}`, mode: "delete", module });
+  }
+
   function close() {
     setDialog(null);
   }
+
+  const deletingId = dialog?.mode === "delete" ? dialog.module.id : null;
+
+  const loadModuleReferences = useCallback(
+    () => readModuleReferencesAction(deletingId),
+    [deletingId],
+  );
+
+  const confirmModuleDeletion = useCallback(
+    () => deleteModuleAction(deletingId),
+    [deletingId],
+  );
 
   return (
     <div className="flex flex-col gap-10">
@@ -148,6 +165,22 @@ export function LearningModulesClient({
                         <span className="sr-only"> module</span>
                       </Button>
                       <RestoreModuleForm module={module} />
+                      {/*
+                        Only on an archived row, because only an archived
+                        module is in scope for removal at all. Archive stays
+                        the separate, safer action; this one is reached through
+                        it.
+                      */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => openDelete(module)}
+                      >
+                        <Trash2 aria-hidden="true" className="size-4" />
+                        Delete permanently
+                        <span className="sr-only"> module</span>
+                      </Button>
                     </>
                   }
                 />
@@ -192,6 +225,18 @@ export function LearningModulesClient({
 
         <Pagination search={search} status={status} page={page} totalPages={totalPages} />
       </footer>
+
+      <PermanentDeleteDialog
+        open={dialog?.mode === "delete"}
+        onOpenChange={close}
+        record={dialog?.mode === "delete" ? { id: dialog.module.id } : null}
+        noun="learning module"
+        label={dialog?.module?.title ?? ""}
+        status={dialog?.module?.statusLabel ?? ""}
+        loadReferences={loadModuleReferences}
+        onConfirm={confirmModuleDeletion}
+        onDeleted={close}
+      />
 
       {dialog?.mode === "archive" ? (
         <ArchiveModuleDialog

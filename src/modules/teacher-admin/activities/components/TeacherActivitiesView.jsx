@@ -6,13 +6,15 @@ import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Search, TriangleAlert } 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ResultAnnouncer } from "@/modules/shared";
+import { PermanentDeleteDialog, ResultAnnouncer } from "@/modules/shared";
 import { NATIVE_SELECT_CLASS } from "@/modules/shared/utils/native-select.js";
 
 import {
   DEFAULT_PAGE_SIZE,
+  deleteActivityPermanently,
   listActivities,
   listModules,
+  readActivityReferences,
 } from "../services/activity-admin-service.js";
 import { ActivityArchiveDialog } from "./ActivityArchiveDialog.jsx";
 import { ActivityFormModal } from "./ActivityFormModal.jsx";
@@ -215,6 +217,18 @@ export function TeacherActivitiesView() {
     [],
   );
 
+  const deletingId = dialog.kind === "delete" ? dialog.activity?.activity_id : null;
+
+  const loadActivityReferences = useCallback(
+    () => readActivityReferences(deletingId),
+    [deletingId],
+  );
+
+  const confirmActivityDeletion = useCallback(
+    () => deleteActivityPermanently(deletingId),
+    [deletingId],
+  );
+
   const totalPages = meta?.totalPages ?? 1;
 
   return (
@@ -392,6 +406,7 @@ export function TeacherActivitiesView() {
         onPublish={(activity) => openDialog("publish", activity)}
         onArchive={(activity) => openDialog("archive", activity)}
         onRestore={(activity) => openDialog("restore", activity)}
+        onDelete={(activity) => openDialog("delete", activity)}
         onCreate={() => openDialog("form", null)}
       />
 
@@ -504,6 +519,31 @@ export function TeacherActivitiesView() {
         onArchived={(archived) => {
           setDialog(NO_DIALOG);
           confirm(`“${archived.title}” was archived. Learners no longer see it.`);
+          reload();
+        }}
+      />
+
+      {/* Delete permanently */}
+      <PermanentDeleteDialog
+        open={dialog.kind === "delete"}
+        onOpenChange={(open) => {
+          if (!open) setDialog(NO_DIALOG);
+        }}
+        record={
+          dialog.kind === "delete" && dialog.activity
+            ? { id: dialog.activity.activity_id }
+            : null
+        }
+        noun="activity"
+        label={dialog.activity?.title ?? ""}
+        status={dialog.activity?.status ?? ""}
+        loadReferences={loadActivityReferences}
+        onConfirm={confirmActivityDeletion}
+        disposableNote="Its question list goes with it. The questions themselves stay in the Question Bank: they belong to it, not to this activity."
+        onDeleted={() => {
+          const title = dialog.activity?.title;
+          setDialog(NO_DIALOG);
+          confirm(`“${title}” was deleted permanently.`);
           reload();
         }}
       />

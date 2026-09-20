@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import {
   archiveQuestion,
   createQuestion,
+  deleteQuestion,
+  readQuestionReferences,
   restoreQuestion,
   updateQuestion,
 } from "./question-bank-api";
@@ -117,4 +119,50 @@ export async function restoreQuestionAction(_previousState, formData) {
 
   revalidatePath(QUESTION_BANK_PATH);
   return { success: true, formError: null, fieldErrors: {} };
+}
+
+/**
+ * The authoritative reference preview, for the delete confirmation.
+ *
+ * A server action rather than a browser fetch, because the bank is read on the
+ * server with the caller's own token and there is no client to give one to.
+ * The shape matches what the shared dialog expects from either world.
+ */
+export async function readQuestionReferencesAction(questionId) {
+  const id = String(questionId ?? "").trim();
+
+  if (!id) {
+    return { ok: false, error: "This question could not be found." };
+  }
+
+  const result = await readQuestionReferences(id);
+
+  if (!result.ok) {
+    return { ok: false, error: result.message ?? "The references could not be read." };
+  }
+  return { ok: true, data: result.data };
+}
+
+/**
+ * Permanently removes an archived question that was never used.
+ *
+ * Archiving stays the normal way to retire one, and the row's Archive action is
+ * untouched. This is the other case: a prompt typed wrong, a draft abandoned, a
+ * duplicate — where archiving only leaves an entry nobody can clear.
+ */
+export async function deleteQuestionAction(questionId) {
+  const id = String(questionId ?? "").trim();
+
+  if (!id) {
+    return { ok: false, error: "This question could not be found." };
+  }
+
+  const result = await deleteQuestion(id);
+
+  if (!result.ok) {
+    return { ok: false, error: result.message ?? "That question could not be removed." };
+  }
+
+  revalidatePath(QUESTION_BANK_PATH);
+  return { ok: true };
 }

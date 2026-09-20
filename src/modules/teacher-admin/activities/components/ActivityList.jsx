@@ -11,6 +11,7 @@ import {
   Plus,
   Shapes,
   Target,
+  Trash2,
   Trophy,
 } from "lucide-react";
 
@@ -133,6 +134,7 @@ export function ActivityList({
   onPublish,
   onArchive,
   onRestore,
+  onDelete,
   onCreate,
 }) {
   if (isLoading) {
@@ -298,6 +300,25 @@ export function ActivityList({
                   >
                     <ArchiveRestore className="size-3.5" aria-hidden="true" />
                     Restore
+                    <span className="sr-only"> {activity.title}</span>
+                  </Button>
+                ) : null}
+
+                {/*
+                  Only on an archived row, because only an archived record is
+                  in scope for removal at all. Archive stays the separate,
+                  safer action; this one is reached through it.
+                */}
+                {isArchived && onDelete ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => onDelete(activity)}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden="true" />
+                    Delete permanently
                     <span className="sr-only"> {activity.title}</span>
                   </Button>
                 ) : null}

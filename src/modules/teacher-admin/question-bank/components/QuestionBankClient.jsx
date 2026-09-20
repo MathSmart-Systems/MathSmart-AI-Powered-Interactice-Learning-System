@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
-import { Archive, Pencil, Plus, Search } from "lucide-react";
+import { Archive, Pencil, Plus, Search, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ResultAnnouncer, StatusTabs } from "@/modules/shared";
+import { PermanentDeleteDialog, ResultAnnouncer, StatusTabs } from "@/modules/shared";
 
 import { QuestionDialog } from "./QuestionDialog";
 import { ArchiveQuestionDialog } from "./ArchiveQuestionDialog";
@@ -18,6 +18,10 @@ import { RestoreQuestionForm } from "./RestoreQuestionForm";
 import { STATUS_LABELS } from "../constants";
 import { rangeLabel } from "../utils/format.js";
 import { questionBankUrl } from "../utils/urls.js";
+import {
+  deleteQuestionAction,
+  readQuestionReferencesAction,
+} from "../services/actions";
 
 const TABS = [
   { id: "published", label: "Published" },
@@ -71,10 +75,27 @@ export function QuestionBankClient({
     setDialog({ key: `archive-${question.id}`, mode: "archive", question });
   }
 
+  /** Opens the permanent-delete confirmation for the selected question. */
+  function openDelete(question) {
+    setDialog({ key: `delete-${question.id}`, mode: "delete", question });
+  }
+
   /** Closes whichever Question Bank dialog is active. */
   function close() {
     setDialog(null);
   }
+
+  const deletingId = dialog?.mode === "delete" ? dialog.question.id : null;
+
+  const loadQuestionReferences = useCallback(
+    () => readQuestionReferencesAction(deletingId),
+    [deletingId],
+  );
+
+  const confirmQuestionDeletion = useCallback(
+    () => deleteQuestionAction(deletingId),
+    [deletingId],
+  );
 
   return (
     <div className="flex flex-col gap-10">
@@ -157,7 +178,27 @@ export function QuestionBankClient({
                 <QuestionRow
                   key={question.id}
                   question={question}
-                  actions={<RestoreQuestionForm question={question} />}
+                  actions={
+                    <>
+                      <RestoreQuestionForm question={question} />
+                      {/*
+                        Only on an archived row, because only an archived
+                        question is in scope for removal at all. Archive stays
+                        the separate, safer action; this one is reached through
+                        it.
+                      */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => openDelete(question)}
+                      >
+                        <Trash2 aria-hidden="true" className="size-4" />
+                        Delete permanently
+                        <span className="sr-only"> question</span>
+                      </Button>
+                    </>
+                  }
                 />
               ) : (
                 <QuestionRow
@@ -200,6 +241,18 @@ export function QuestionBankClient({
 
         <Pagination filters={filters} page={page} totalPages={totalPages} />
       </footer>
+
+      <PermanentDeleteDialog
+        open={dialog?.mode === "delete"}
+        onOpenChange={close}
+        record={dialog?.mode === "delete" ? { id: dialog.question.id } : null}
+        noun="question"
+        label={dialog?.question?.prompt ?? ""}
+        status={dialog?.question?.statusLabel ?? ""}
+        loadReferences={loadQuestionReferences}
+        onConfirm={confirmQuestionDeletion}
+        onDeleted={close}
+      />
 
       {dialog?.mode === "archive" ? (
         <ArchiveQuestionDialog

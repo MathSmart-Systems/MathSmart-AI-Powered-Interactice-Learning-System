@@ -3026,3 +3026,319 @@ def test_archiving_still_deletes_nothing():
     )
 
     assert not any(COMPETENCY_DELETE in query for query in connection.queries())
+
+
+# ---------------------------------------------------------------------------
+# Removing authored content that was never used
+# ---------------------------------------------------------------------------
+#
+# Archiving is the right answer for anything that has been taught. This is the
+# other case — a prompt typed wrong, a draft abandoned, a duplicate — where
+# archiving only leaves an entry nobody can clear.
+#
+# Two guards, tested apart because they fail for different reasons and protect
+# against different mistakes. The route decides who may try and from what
+# state. The foreign keys decide whether the row is free to go at all, and they
+# are what stands between a teacher and a child's recorded work; those are
+# proved against a real PostgreSQL in the pgTAP suite.
+
+#: The locked read each deletion route makes first, named by the alias only it
+#: carries.
+DELETE_STATE = "as label"
+DELETE_REFERENCES = "select\n  (select count(*) from app."
+
+#: One case per kind: the path segment, the code prefix, and the counts it
+#: reads, with the membership that is disposable for it.
+DELETION_KINDS = (
+    (
+        "questions",
+        QUESTION,
+        "question",
+        {
+            "assessment_questions": 0,
+            "activity_questions": 0,
+            "assessment_responses": 0,
+            "activity_responses": 0,
+        },
+        "assessment_questions",
+    ),
+    (
+        "modules",
+        MODULE,
+        "learning_module",
+        {"activities": 0, "learning_path_items": 0, "student_module_progress": 0},
+        "activities",
+    ),
+    (
+        "activities",
+        ACTIVITY,
+        "activity",
+        {"activity_attempts": 0, "activity_questions": 0},
+        "activity_attempts",
+    ),
+    (
+        "assessments",
+        ASSESSMENT,
+        "assessment",
+        {
+            "assessment_attempts": 0,
+            "reassessment_authorizations": 0,
+            "assessment_questions": 0,
+        },
+        "assessment_attempts",
+    ),
+)
+
+
+def deletion_connection(*, status="archived", references, deleted=True, key):
+    """A connection that answers the locked read, the counts and the delete."""
+    results = {
+        DELETE_STATE: {0: key, "label": "A record", "status": status},
+        "select\n  (select count(*)": references,
+        "delete from app.": {0: key} if deleted else None,
+        "app.record_audit_event": None,
+    }
+    return FakeConnection(results=results)
+
+
+def test_an_unused_archived_record_of_each_kind_can_be_deleted():
+    for path, key, _code, references, _blocking in DELETION_KINDS:
+        connection = deletion_connection(references=references, key=key)
+        client = build_client(connection)
+
+        response = client.post(
+            f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 204, path
+        assert [call for call in connection.calls if "delete from app." in call[0]], path
+
+
+def test_deleting_any_of_them_records_a_sanitized_audit_event():
+    for path, key, code, references, _blocking in DELETION_KINDS:
+        connection = deletion_connection(references=references, key=key)
+        client = build_client(connection)
+
+        client.post(f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS)
+
+        audit = next(
+            call for call in connection.calls if "app.record_audit_event" in call[0]
+        )
+        assert audit[1][0] == f"{code}.deleted", path
+        # The details carry a status and counts. Never a prompt, a title, an
+        # answer key, or anything a learner wrote.
+        assert "label" not in audit[1][4]
+        assert "A record" not in audit[1][4]
+
+
+def test_a_record_that_is_not_archived_cannot_be_deleted():
+    for path, key, code, references, _blocking in DELETION_KINDS:
+        connection = deletion_connection(status="published", references=references, key=key)
+        client = build_client(connection)
+
+        response = client.post(
+            f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 422, path
+        assert response.json()["error"]["code"] == f"{code}_not_archived"
+        assert not [call for call in connection.calls if "delete from app." in call[0]]
+
+
+def test_a_content_draft_cannot_be_deleted_either():
+    """Archiving first is what makes removal a second, separate decision."""
+    for path, key, _code, references, _blocking in DELETION_KINDS:
+        connection = deletion_connection(status="draft", references=references, key=key)
+        client = build_client(connection)
+
+        response = client.post(
+            f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 422, path
+        assert not [call for call in connection.calls if "delete from app." in call[0]]
+
+
+def test_a_referenced_record_is_refused_and_told_what_is_holding_it():
+    for path, key, code, references, blocking in DELETION_KINDS:
+        connection = deletion_connection(
+            references={**references, blocking: 3}, key=key
+        )
+        client = build_client(connection)
+
+        response = client.post(
+            f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 422, path
+        assert response.json()["error"]["code"] == f"{code}_in_use"
+        assert "3" in response.json()["error"]["message"]
+        assert not [call for call in connection.calls if "delete from app." in call[0]]
+
+
+def test_membership_alone_never_refuses_an_activity_or_an_assessment():
+    """A row saying "this holds that question" has no meaning once it is gone.
+
+    It cascades. The question it names does not: that foreign key restricts, so
+    a reusable question cannot be reached by removing an unused activity or an
+    unused assessment.
+    """
+    cases = (
+        ("activities", ACTIVITY, {"activity_attempts": 0, "activity_questions": 4}),
+        (
+            "assessments",
+            ASSESSMENT,
+            {
+                "assessment_attempts": 0,
+                "reassessment_authorizations": 0,
+                "assessment_questions": 4,
+            },
+        ),
+    )
+
+    for path, key, references in cases:
+        connection = deletion_connection(references=references, key=key)
+        client = build_client(connection)
+
+        response = client.post(
+            f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 204, path
+
+
+def test_a_question_seated_in_an_activity_is_refused():
+    """Membership is disposable for the activity, never for the question."""
+    connection = deletion_connection(
+        references={
+            "assessment_questions": 0,
+            "activity_questions": 2,
+            "assessment_responses": 0,
+            "activity_responses": 0,
+        },
+        key=QUESTION,
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/questions/{QUESTION}/delete", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "question_in_use"
+    assert "2 activities" in response.json()["error"]["message"]
+
+
+def test_the_reference_read_says_whether_a_record_could_be_removed():
+    connection = deletion_connection(
+        references={"activity_attempts": 0, "activity_questions": 3}, key=ACTIVITY
+    )
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/references", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["references"]["activity_questions"] == 3
+    assert body["total"] == 3
+    # Membership goes with the activity, so it is reported and not counted
+    # against removal.
+    assert body["blocking"] == {}
+    assert body["removable"] is True
+
+
+def test_the_reference_read_refuses_to_call_a_live_record_removable():
+    connection = deletion_connection(
+        status="published",
+        references={"activity_attempts": 0, "activity_questions": 0},
+        key=ACTIVITY,
+    )
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/references", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["removable"] is False
+
+
+def test_the_locked_read_happens_before_the_counts():
+    """The preview a teacher confirms against cannot go stale before the delete.
+
+    Both run inside the request's own transaction with the row locked. A
+    reference added in between would be refused by the foreign key anyway, but
+    it would arrive as a constraint violation rather than as the sentence
+    naming what is holding it.
+    """
+    connection = deletion_connection(
+        references={"activity_attempts": 0, "activity_questions": 0}, key=ACTIVITY
+    )
+    client = build_client(connection)
+
+    client.post(f"/api/v1/teacher-admin/activities/{ACTIVITY}/delete", headers=ADVISER_HEADERS)
+
+    queries = connection.queries()
+    lock = next(index for index, query in enumerate(queries) if "for update" in query)
+    counts = next(index for index, query in enumerate(queries) if "select count(*)" in query)
+    removal = next(index for index, query in enumerate(queries) if "delete from app." in query)
+    assert lock < counts < removal
+
+
+def test_deleting_a_record_that_is_not_there_is_not_found():
+    for path, key, _code, _references, _blocking in DELETION_KINDS:
+        client = build_client(FakeConnection(results={}))
+
+        response = client.post(
+            f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 404, path
+
+
+def test_deleting_any_of_them_needs_a_live_session():
+    for path, key, _code, references, _blocking in DELETION_KINDS:
+        client = build_client(
+            deletion_connection(references=references, key=key), live_session=False
+        )
+
+        response = client.post(
+            f"/api/v1/teacher-admin/{path}/{key}/delete", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 401, path
+
+
+def test_a_learner_can_neither_preview_nor_delete():
+    for path, key, _code, references, _blocking in DELETION_KINDS:
+        client = build_client(deletion_connection(references=references, key=key))
+
+        assert (
+            client.post(
+                f"/api/v1/teacher-admin/{path}/{key}/delete", headers=LEARNER_HEADERS
+            ).status_code
+            == 403
+        ), path
+        assert (
+            client.get(
+                f"/api/v1/teacher-admin/{path}/{key}/references", headers=LEARNER_HEADERS
+            ).status_code
+            == 403
+        ), path
+
+
+def test_the_archiving_routes_still_only_archive():
+    """The DELETE verb has meant archive since these modules were written."""
+    for path, key, _code, _references, _blocking in DELETION_KINDS:
+        connection = admin_connection()
+        client = build_client(connection)
+
+        response = client.delete(
+            f"/api/v1/teacher-admin/{path}/{key}", headers=ADVISER_HEADERS
+        )
+
+        assert response.status_code == 204, path
+        assert [call for call in connection.calls if "set status = 'archived'" in call[0]]
+        assert not [call for call in connection.calls if "delete from app." in call[0]]

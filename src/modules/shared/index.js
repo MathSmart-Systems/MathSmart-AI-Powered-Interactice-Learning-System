@@ -3,6 +3,10 @@ export {
   MAX_QUESTIONS_PER_SET,
   QuestionMembershipManager,
 } from "./components/QuestionMembershipManager";
+export {
+  DELETE_CONFIRMATION,
+  PermanentDeleteDialog,
+} from "./components/PermanentDeleteDialog";
 export { ReorderControls } from "./components/ReorderControls";
 export { ResultAnnouncer } from "./components/ResultAnnouncer";
 export { SidebarFrame } from "./components/SidebarFrame";

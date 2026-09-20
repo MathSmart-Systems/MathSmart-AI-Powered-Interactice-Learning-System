@@ -31,12 +31,17 @@ from modules.shared.rules import DEFAULT_ACTIVITY_PASS_PERCENTAGE, DEFAULT_INTER
 from modules.teacher_admin import admin_repository as repository
 from modules.teacher_admin.admin_repository import (
     ACTIVITIES,
+    ACTIVITY_DELETION,
+    ASSESSMENT_DELETION,
     ASSESSMENTS,
     COMPETENCIES,
     GRADES,
     LEARNING_MODULES,
+    MODULE_DELETION,
+    QUESTION_DELETION,
     QUESTIONS,
     SECTIONS,
+    Deletable,
     Resource,
 )
 from modules.teacher_admin.admin_schemas import (
@@ -184,6 +189,137 @@ async def _archive(connection: Any, resource: Resource, key: UUID) -> Response:
     archived = await repository.archive(connection, resource, key)
     if archived is None:
         raise ApiError(404, "No record was found")
+    return Response(status_code=204)
+
+
+#: What each referencing table is called when a refusal has to name it, in
+#: both numbers. Written out rather than suffixed, because "2 activitys" is
+#: what a teacher would have read otherwise.
+_CONTENT_REFERENCE_NAMES = {
+    "assessment_questions": ("assessment", "assessments"),
+    "activity_questions": ("activity", "activities"),
+    "assessment_responses": ("delivered assessment question", "delivered assessment questions"),
+    "activity_responses": ("delivered activity question", "delivered activity questions"),
+    "activities": ("activity", "activities"),
+    "learning_path_items": ("learning path item", "learning path items"),
+    "student_module_progress": ("learner progress record", "learner progress records"),
+    "activity_attempts": ("learner attempt", "learner attempts"),
+    "assessment_attempts": ("learner attempt", "learner attempts"),
+    "reassessment_authorizations": ("reassessment authorization", "reassessment authorizations"),
+}
+
+
+def _describe_content_references(holding: dict[str, int]) -> str:
+    """"3 assessments and 1 learner attempt", in the order they were counted."""
+    parts = []
+    for key, count in holding.items():
+        if not count:
+            continue
+        fallback = key.replace("_", " ")
+        singular, plural = _CONTENT_REFERENCE_NAMES.get(key, (fallback, fallback))
+        parts.append(f"{count} {singular if count == 1 else plural}")
+    if len(parts) > 1:
+        return f"{', '.join(parts[:-1])} and {parts[-1]}"
+    return parts[0] if parts else "Other records"
+
+
+async def _reference_preview(
+    connection: Any, kind: Deletable, key: UUID
+) -> tuple[Any, dict[str, int], dict[str, int]]:
+    """The record, every count against it, and the subset that would refuse it.
+
+    Authoritative in the only sense that matters: it is read inside the same
+    transaction the deletion runs in, with the record locked, so the preview a
+    teacher confirms against cannot go stale between the two.
+    """
+    state = await repository.deletion_state(connection, kind, key)
+    if state is None:
+        raise ApiError(404, f"No {kind.noun} was found")
+
+    counts = await repository.deletion_references(connection, kind, key)
+    references = {name: int(value or 0) for name, value in dict(counts).items()}
+    holding = {
+        name: value
+        for name, value in references.items()
+        if value and name not in kind.disposable
+    }
+    return state, references, holding
+
+
+async def _read_references(connection: Any, kind: Deletable, key: UUID) -> dict[str, Any]:
+    """What still points at this record, and whether it could be removed."""
+    state, references, holding = await _reference_preview(connection, kind, key)
+
+    return {
+        "data": {
+            "id": str(state[0]),
+            "label": state["label"],
+            "status": str(state["status"]),
+            "references": references,
+            "total": sum(references.values()),
+            "blocking": holding,
+            "blocking_total": sum(holding.values()),
+            # Disposable membership goes with the record. It is reported so the
+            # confirmation can say so, never counted against removal.
+            "removable": not holding and str(state["status"]) == "archived",
+        }
+    }
+
+
+async def _delete_record(
+    connection: Any, kind: Deletable, key: UUID, actor: Any
+) -> Response:
+    """Permanently remove one authored record that was never used.
+
+    Not the `DELETE` verb: that one archives, and has meant that since these
+    modules were written. This is the other thing — a prompt typed wrong, a
+    draft abandoned, a duplicate — where archiving only leaves an entry nobody
+    can clear.
+
+    Three conditions, and only the first is decided here. The row policy admits
+    only an archived record, so removal is always a second decision after a
+    reversible one. Every foreign key a learner record holds is ON DELETE
+    RESTRICT, so anything still in use is refused by PostgreSQL whatever this
+    route believes. The count below exists to explain a refusal, not to be
+    trusted instead of it — and it is read with the row locked, inside the same
+    transaction as the delete, so the preview cannot go stale in between.
+    """
+    state, references, holding = await _reference_preview(connection, kind, key)
+
+    if str(state["status"]) != "archived":
+        raise ApiError(
+            422,
+            f"Archive this {kind.noun} before deleting it, so removing one is always a "
+            "second, separate decision.",
+            code=f"{kind.target_type}_not_archived",
+        )
+
+    if holding:
+        raise ApiError(
+            422,
+            f"This {kind.noun} is still in use, so it cannot be removed. "
+            f"{_describe_content_references(holding)} still point at it.",
+            code=f"{kind.target_type}_in_use",
+            fields={"references": [f"{name}: {count}" for name, count in holding.items()]},
+        )
+
+    deleted = await repository.delete_record(connection, kind, key)
+    if deleted is None:
+        raise ApiError(404, f"No {kind.noun} was found")
+
+    # Sanitized: counts and a status, never a prompt, a title, an answer key or
+    # anything a learner wrote. The audit trail is not a place for content.
+    await repository.record_audit_event(
+        connection,
+        action=kind.action,
+        target_type=kind.target_type,
+        target_id=key,
+        request_id=current_request_id(),
+        details={
+            "status": str(state["status"]),
+            "references": {name: count for name, count in references.items() if count},
+        },
+    )
     return Response(status_code=204)
 
 
@@ -419,6 +555,26 @@ async def update_module(
     return {"data": _row(row, LEARNING_MODULES)}
 
 
+@router.get("/teacher-admin/modules/{module_id}/references")
+async def read_module_references(
+    _actor: TeacherAdmin, connection: ActorDb, module_id: UUID
+) -> dict[str, Any]:
+    """What still points at this module, read before archiving or deleting."""
+    return await _read_references(connection, MODULE_DELETION, module_id)
+
+
+@router.post("/teacher-admin/modules/{module_id}/delete", status_code=204)
+async def delete_module(
+    _actor: TeacherAdmin,
+    actor: CurrentActor,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    module_id: UUID,
+) -> Response:
+    """Permanently remove a module that was never used."""
+    return await _delete_record(connection, MODULE_DELETION, module_id, actor)
+
+
 @router.post("/teacher-admin/modules/{module_id}/restore")
 async def restore_module(
     _actor: TeacherAdmin,
@@ -559,6 +715,32 @@ async def update_activity(
 ) -> dict[str, Any]:
     """Partially update an activity's metadata, threshold, or publication status."""
     return await _update(connection, ACTIVITIES, activity_id, body)
+
+
+@router.get("/teacher-admin/activities/{activity_id}/references")
+async def read_activity_references(
+    _actor: TeacherAdmin, connection: ActorDb, activity_id: UUID
+) -> dict[str, Any]:
+    """What still points at this activity, read before archiving or deleting."""
+    return await _read_references(connection, ACTIVITY_DELETION, activity_id)
+
+
+@router.post("/teacher-admin/activities/{activity_id}/delete", status_code=204)
+async def delete_activity(
+    _actor: TeacherAdmin,
+    actor: CurrentActor,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    activity_id: UUID,
+) -> Response:
+    """Permanently remove an activity nobody ever attempted.
+
+    Its membership rows go with it, because a row saying "this activity
+    contains this question" has no meaning once the activity is gone. The
+    questions they name do not: `app.activity_questions.question_id` is ON
+    DELETE RESTRICT, so a reusable question cannot be reached this way.
+    """
+    return await _delete_record(connection, ACTIVITY_DELETION, activity_id, actor)
 
 
 @router.put("/teacher-admin/activities/{activity_id}/questions")
@@ -788,6 +970,26 @@ async def update_question(
     return {"data": _row(row, QUESTIONS)}
 
 
+@router.get("/teacher-admin/questions/{question_id}/references")
+async def read_question_references(
+    _actor: TeacherAdmin, connection: ActorDb, question_id: UUID
+) -> dict[str, Any]:
+    """What still points at this question, read before archiving or deleting."""
+    return await _read_references(connection, QUESTION_DELETION, question_id)
+
+
+@router.post("/teacher-admin/questions/{question_id}/delete", status_code=204)
+async def delete_question(
+    _actor: TeacherAdmin,
+    actor: CurrentActor,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    question_id: UUID,
+) -> Response:
+    """Permanently remove a question that was never used."""
+    return await _delete_record(connection, QUESTION_DELETION, question_id, actor)
+
+
 @router.delete("/teacher-admin/questions/{question_id}", status_code=204)
 async def archive_question(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, question_id: UUID
@@ -876,6 +1078,29 @@ async def archive_assessment(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, assessment_id: UUID
 ) -> Response:
     return await _archive(connection, ASSESSMENTS, assessment_id)
+
+
+@router.get("/teacher-admin/assessments/{assessment_id}/references")
+async def read_assessment_references(
+    _actor: TeacherAdmin, connection: ActorDb, assessment_id: UUID
+) -> dict[str, Any]:
+    """What still points at this assessment, read before archiving or deleting."""
+    return await _read_references(connection, ASSESSMENT_DELETION, assessment_id)
+
+
+@router.post("/teacher-admin/assessments/{assessment_id}/delete", status_code=204)
+async def delete_assessment(
+    _actor: TeacherAdmin,
+    actor: CurrentActor,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    assessment_id: UUID,
+) -> Response:
+    """Permanently remove an assessment nobody ever attempted.
+
+    Its membership rows go with it; the questions they name do not.
+    """
+    return await _delete_record(connection, ASSESSMENT_DELETION, assessment_id, actor)
 
 
 @router.put("/teacher-admin/assessments/{assessment_id}/questions")

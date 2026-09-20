@@ -6,11 +6,13 @@ import { Plus, RotateCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ResultAnnouncer } from "@/modules/shared";
+import { PermanentDeleteDialog, ResultAnnouncer } from "@/modules/shared";
 
 import {
   DEFAULT_PAGE_SIZE,
+  deleteAssessmentPermanently,
   listAssessments,
+  readAssessmentReferences,
 } from "../services/assessment-admin-service.js";
 
 import { AssessmentArchiveDialog } from "./AssessmentArchiveDialog.jsx";
@@ -150,6 +152,18 @@ export function TeacherAssessmentsView() {
   }
 
   const totalItems = meta?.totalItems ?? assessments.length;
+  const deletingId = dialog.kind === "delete" ? dialog.assessment?.assessment_id : null;
+
+  const loadAssessmentReferences = useCallback(
+    () => readAssessmentReferences(deletingId),
+    [deletingId],
+  );
+
+  const confirmAssessmentDeletion = useCallback(
+    () => deleteAssessmentPermanently(deletingId),
+    [deletingId],
+  );
+
   const totalPages = meta?.totalPages ?? 1;
 
   /** The sentence under the tabs, and the one that gets announced. */
@@ -255,6 +269,7 @@ export function TeacherAssessmentsView() {
           onPublish={(assessment) => openDialog("publish", assessment)}
           onArchive={(assessment) => openDialog("archive", assessment)}
           onRestore={(assessment) => openDialog("restore", assessment)}
+          onDelete={(assessment) => openDialog("delete", assessment)}
           onClearFilter={() => {
             setSearch("");
             setStatus("all");
@@ -315,6 +330,28 @@ export function TeacherAssessmentsView() {
               saved.question_count === 1 ? "question" : "questions"
             }.`
           );
+          reload();
+        }}
+      />
+
+      <PermanentDeleteDialog
+        open={dialog.kind === "delete"}
+        onOpenChange={closeDialog}
+        record={
+          dialog.kind === "delete" && dialog.assessment
+            ? { id: dialog.assessment.assessment_id }
+            : null
+        }
+        noun="assessment"
+        label={dialog.assessment?.title ?? ""}
+        status={dialog.assessment?.status ?? ""}
+        loadReferences={loadAssessmentReferences}
+        onConfirm={confirmAssessmentDeletion}
+        disposableNote="Its question list goes with it. The questions themselves stay in the Question Bank: they belong to it, not to this assessment."
+        onDeleted={() => {
+          const title = dialog.assessment?.title;
+          setDialog(NO_DIALOG);
+          confirm(`${title} was deleted permanently.`);
           reload();
         }}
       />

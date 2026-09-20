@@ -211,21 +211,30 @@ select ok(not has_any_column_privilege('anon', 'app.activities'::regclass, 'sele
 select ok(not has_any_column_privilege('anon', 'app.activity_questions'::regclass, 'select'),   'anon cannot select app.activity_questions');
 
 -- ---------------------------------------------------------------------------
--- Authored content is archived, never deleted — with one reviewed exception
+-- Authored content is archived, and only an unused archived record is removed
 -- ---------------------------------------------------------------------------
--- A competency that was never used can be removed: a code typed wrong or a
--- duplicate is not history worth keeping, and archiving only leaves an entry
--- nobody can clear. The grant is narrowed twice over — `competencies_delete`
--- admits an archived row only, and every foreign key pointing at a competency
--- is ON DELETE RESTRICT, so anything actually in use is refused by PostgreSQL.
--- Modules and questions keep the original rule: they are archived, never
--- deleted.
+-- Archiving is still the normal way to retire content, and the DELETE verb on
+-- every one of these routes still means archive. What the grant opens is the
+-- other case: a code typed wrong, a prompt abandoned, a duplicate — which is
+-- not history worth keeping, and which archiving only leaves as an entry
+-- nobody can clear.
+--
+-- The grant is narrowed twice over. Each `*_delete` policy admits an archived
+-- row only, so removal is always a second decision taken after a reversible
+-- one; and every foreign key a learner record holds is ON DELETE RESTRICT, so
+-- anything actually in use is refused by PostgreSQL whatever the policy says.
+-- 630_content_delete_test.sql proves both, and enumerates the foreign keys so
+-- a new one cannot quietly open a path through a learner's evidence.
 select ok(has_table_privilege('authenticated', 'app.competencies'::regclass, 'delete'),
           'an unused competency can be removed, under the delete policy');
-select ok(not has_table_privilege('authenticated', 'app.learning_modules'::regclass, 'delete'), 'authenticated cannot delete learning modules');
-select ok(not has_table_privilege('authenticated', 'app.questions'::regclass, 'delete'),        'authenticated cannot delete questions');
-select ok(not has_table_privilege('authenticated', 'app.assessments'::regclass, 'delete'),      'authenticated cannot delete assessments');
-select ok(not has_table_privilege('authenticated', 'app.activities'::regclass, 'delete'),       'authenticated cannot delete activities');
+select ok(has_table_privilege('authenticated', 'app.learning_modules'::regclass, 'delete'),
+          'an unused module can be removed, under the delete policy');
+select ok(has_table_privilege('authenticated', 'app.questions'::regclass, 'delete'),
+          'an unused question can be removed, under the delete policy');
+select ok(has_table_privilege('authenticated', 'app.assessments'::regclass, 'delete'),
+          'an unused assessment can be removed, under the delete policy');
+select ok(has_table_privilege('authenticated', 'app.activities'::regclass, 'delete'),
+          'an unused activity can be removed, under the delete policy');
 
 -- Membership rows are replaced atomically, so they are the one exception.
 select ok(has_table_privilege('authenticated', 'app.assessment_questions'::regclass, 'delete'),
