@@ -57,7 +57,7 @@ async function accessToken() {
   return data.session.access_token;
 }
 
-async function request(path, { method = "GET", body } = {}) {
+async function request(path, { method = "GET", body, idempotencyKey } = {}) {
   let apiUrl;
 
   try {
@@ -73,6 +73,7 @@ async function request(path, { method = "GET", body } = {}) {
     "Content-Type": "application/json",
     Authorization: `Bearer ${await accessToken()}`,
   };
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
 
   let response;
 
@@ -149,7 +150,7 @@ export async function requestHint({ attemptId, questionId }) {
  * Finalise the activity. Scoring, the pass decision and any competency or
  * intervention updates all happen server-side; nothing here grades anything.
  */
-export async function submitActivity({ attemptId, answers, timeSpentSeconds }) {
+export async function submitActivity({ attemptId, body, idempotencyKey }) {
   if (!attemptId) {
     throw new ActivityError(
       "This activity is no longer active. Reload the page and start again.",
@@ -158,13 +159,8 @@ export async function submitActivity({ attemptId, answers, timeSpentSeconds }) {
 
   const outcome = await request(`/activity-attempts/${attemptId}/submit`, {
     method: "POST",
-    body: {
-      answers: answers.map(({ questionId, answer }) => ({
-        question_id: questionId,
-        answer,
-      })),
-      time_spent_seconds: timeSpentSeconds,
-    },
+    body,
+    idempotencyKey,
   });
 
   return toOutcomeView(outcome);

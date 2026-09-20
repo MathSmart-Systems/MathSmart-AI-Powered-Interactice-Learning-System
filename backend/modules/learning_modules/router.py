@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Query
 
 from app.dependencies import ActorDb, CurrentActor
@@ -164,12 +165,17 @@ async def save_module_progress(
     """
     _only_a_learner(actor)
 
-    row = await repository.save_progress(
-        connection,
-        module_id=module_id,
-        completed_section_ids=body.completed_section_ids,
-        last_section_id=body.last_section_id,
-    )
+    try:
+        row = await repository.save_progress(
+            connection,
+            module_id=module_id,
+            completed_section_ids=body.completed_section_ids,
+            last_section_id=body.last_section_id,
+        )
+    except asyncpg.PostgresError as exc:
+        if exc.sqlstate != "MS001":
+            raise
+        raise ApiError(412, "This module is still locked", code="module_locked") from exc
     if row is None:
         raise ApiError(404, "No learning module was found")
     return {"data": _progress(row).model_dump(mode="json")}
@@ -182,7 +188,12 @@ async def complete_module(
     """Mark a module complete, once every section is finished."""
     _only_a_learner(actor)
 
-    row = await repository.complete(connection, module_id=module_id)
+    try:
+        row = await repository.complete(connection, module_id=module_id)
+    except asyncpg.PostgresError as exc:
+        if exc.sqlstate != "MS001":
+            raise
+        raise ApiError(412, "This module is still locked", code="module_locked") from exc
     if row is None:
         raise ApiError(
             412,

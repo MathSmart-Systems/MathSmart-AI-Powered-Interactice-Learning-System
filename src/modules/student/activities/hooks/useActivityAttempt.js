@@ -11,6 +11,10 @@ import {
   ActivityError,
 } from "../services/activities-api.js";
 import { completionPercent } from "../utils/format.js";
+import {
+  activitySubmissionForAttempt,
+  clearActivitySubmission,
+} from "../utils/submission.js";
 
 export const PLAYER_STATUS = Object.freeze({
   LOADING: "loading",
@@ -224,11 +228,19 @@ export function useActivityAttempt(activityId) {
         MAX_TIME_SPENT_SECONDS,
         Math.max(0, Math.floor((Date.now() - startedAtRef.current) / 1000)),
       );
+      const body = {
+        answers: answersForSubmission().map(({ questionId, answer }) => ({
+          question_id: questionId,
+          answer,
+        })),
+        time_spent_seconds: spent,
+      };
+      const submission = activitySubmissionForAttempt(attempt.attemptId, body);
       const result = await submitActivity({
         attemptId: attempt.attemptId,
-        answers: answersForSubmission(),
-        timeSpentSeconds: spent,
+        ...submission,
       });
+      clearActivitySubmission(attempt.attemptId);
       setOutcome(result);
       setStatus(PLAYER_STATUS.SUBMITTED);
     } catch (cause) {

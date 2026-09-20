@@ -95,6 +95,31 @@ values (
   'published', 1
 );
 
+insert into app.competencies (competency_id, code, grade_id, domain, name, status) values
+  ('c9000000-0000-4000-8000-000000000002', 'WRITE-COMP-2',
+   (select grade_id from app.grade_levels where level = 6),
+   'Number Sense', 'Next learner write competency', 'published');
+
+insert into app.learning_modules
+  (module_id, competency_id, title, estimated_minutes, learning_objective,
+   short_explanation, status, order_index)
+values (
+  'd9000000-0000-4000-8000-000000000002',
+  'c9000000-0000-4000-8000-000000000002',
+  'Next learner write module', 15, 'Apply another rule.', 'Another explanation.',
+  'published', 1
+);
+
+insert into app.learning_path_items
+  (student_id, competency_id, module_id, priority, status)
+values
+  ('59000000-0000-4000-8000-000000000001',
+   'c9000000-0000-4000-8000-000000000001',
+   'd9000000-0000-4000-8000-000000000001', 1, 'available'),
+  ('59000000-0000-4000-8000-000000000001',
+   'c9000000-0000-4000-8000-000000000002',
+   'd9000000-0000-4000-8000-000000000002', 2, 'locked');
+
 -- ---------------------------------------------------------------------------
 -- The sections come from the module's own content
 -- ---------------------------------------------------------------------------
@@ -111,6 +136,14 @@ reset role;
 set local request.jwt.claims = '{"sub":"b9000000-0000-4000-8000-0000000000b1","role":"authenticated","app_metadata":{"role":"student"}}';
 set local role authenticated;
 
+select throws_ok(
+  $$ select app.save_module_progress(
+    'd9000000-0000-4000-8000-000000000002', array['objective']
+  ) $$,
+  'MS001', null::text,
+  'A learner cannot advance a locked path module by direct progress write'
+);
+
 select is(
   (select save.completion_percentage
    from app.save_module_progress(
@@ -118,6 +151,13 @@ select is(
    ) as save),
   50.00::numeric(5,2),
   'Two sections of four is fifty percent'
+);
+
+select is(
+  (select status::text from app.learning_path_items
+   where student_id = '59000000-0000-4000-8000-000000000001' and priority = 1),
+  'in_progress',
+  'Partial module progress updates its authoritative path item'
 );
 
 select is(
@@ -162,6 +202,28 @@ select is(
    ) as save),
   true,
   'Every section finished completes the module'
+);
+
+select is(
+  (select status::text from app.learning_path_items
+   where student_id = '59000000-0000-4000-8000-000000000001' and priority = 1),
+  'completed',
+  'Completing the module completes its authoritative path item'
+);
+
+select is(
+  (select status::text from app.learning_path_items
+   where student_id = '59000000-0000-4000-8000-000000000001' and priority = 2),
+  'available',
+  'Completing the current module unlocks the next path item'
+);
+
+select is(
+  (select save.is_complete from app.save_module_progress(
+    'd9000000-0000-4000-8000-000000000001', array['objective']
+  ) as save),
+  true,
+  'A repeated stale save cannot undo completed progress'
 );
 
 select ok(

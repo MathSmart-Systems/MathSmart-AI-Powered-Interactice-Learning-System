@@ -170,6 +170,10 @@ _START_SQL = "select * from app.start_activity_attempt($1)"
 _CHECK_SQL = "select * from app.check_activity_answer($1, $2, $3::jsonb)"
 _HINT_SQL = "select app.activity_hint($1, $2)"
 _SUBMIT_SQL = "select * from app.submit_activity_attempt($1, $2::jsonb, $3)"
+_CLAIM_SUBMISSION_SQL = "select * from app.claim_activity_submission_idempotency($1, $2)"
+_COMPLETE_SUBMISSION_SQL = (
+    "select app.complete_activity_submission_idempotency($1, $2, $3, $4::jsonb)"
+)
 
 
 async def listing(
@@ -261,6 +265,31 @@ async def check_answer(
 
 async def hint(connection: ActorConnection, *, attempt_id: UUID, question_id: UUID) -> Any:
     return await connection.fetchval(_HINT_SQL, attempt_id, question_id)
+
+
+async def claim_submission(
+    connection: ActorConnection, *, idempotency_key: str, request_fingerprint: str
+) -> Any:
+    return await connection.fetchrow(
+        _CLAIM_SUBMISSION_SQL, idempotency_key, request_fingerprint
+    )
+
+
+async def complete_submission(
+    connection: ActorConnection,
+    *,
+    idempotency_key: str,
+    request_fingerprint: str,
+    response_status: int,
+    response_body: str,
+) -> bool:
+    return await connection.fetchval(
+        _COMPLETE_SUBMISSION_SQL,
+        idempotency_key,
+        request_fingerprint,
+        response_status,
+        response_body,
+    )
 
 
 async def submit_attempt(

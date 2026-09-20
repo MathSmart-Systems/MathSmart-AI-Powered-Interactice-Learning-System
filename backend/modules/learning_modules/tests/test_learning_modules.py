@@ -14,6 +14,7 @@ proved against PostgreSQL in `supabase/tests/520_learner_write_functions_test.sq
 
 from uuid import UUID
 
+import asyncpg
 import pytest
 
 from modules.learning_modules import service
@@ -219,6 +220,25 @@ def test_saving_progress_sends_only_the_module_and_the_sections():
         call for call in connection.calls if "app.save_module_progress" in call[0]
     )
     assert args == (MODULE, ["objective"], "objective")
+
+
+def test_saving_a_locked_path_module_returns_precondition_failure():
+    class LockedConnection(FakeConnection):
+        async def fetchrow(self, query, *args):
+            if "app.save_module_progress" in query:
+                error = asyncpg.PostgresError("Module is locked")
+                error.sqlstate = "MS001"
+                raise error
+            return await super().fetchrow(query, *args)
+
+    response = build_client(LockedConnection()).patch(
+        f"/api/v1/modules/{MODULE}/progress",
+        json={"completed_section_ids": ["objective"]},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert response.status_code == 412
+    assert response.json()["error"]["code"] == "module_locked"
 
 
 def test_a_teacher_admin_does_not_save_learner_progress():

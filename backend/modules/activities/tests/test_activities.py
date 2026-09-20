@@ -10,9 +10,11 @@ against PostgreSQL in
 `supabase/tests/540_activity_attempt_functions_test.sql`.
 """
 
+import json
 import re
 from uuid import UUID
 
+import asyncpg
 import pytest
 
 from modules.shared.testing import (
@@ -28,6 +30,7 @@ QUESTION = UUID("a89d7d3f-8e80-4564-9681-11531088fab9")
 MODULE = UUID("4a39d286-e93e-4e75-9644-b873fcac185c")
 COMPETENCY = UUID("13ec5f06-746e-45fb-a58a-92f4ce42621c")
 STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
+SUBMIT_HEADERS = {**LEARNER_HEADERS, "Idempotency-Key": "activity-submit-0001"}
 
 # Anchors that appear in exactly one statement each.
 ACTIVITY_LIST = "order by activities.title"
@@ -121,7 +124,13 @@ def activity_connection(**overrides):
     results = {
         "app.start_activity_attempt": ATTEMPT_ROW,
         "app.check_activity_answer": CHECK_ROW,
+        "app.claim_activity_submission_idempotency": {
+            "claim_status": "claimed",
+            "response_status": None,
+            "response_body": None,
+        },
         "app.submit_activity_attempt": SUBMIT_ROW,
+        "app.complete_activity_submission_idempotency": True,
         "app.activity_hint": "Check the signs before multiplying the magnitudes.",
         ACTIVITY_BY_ID: ACTIVITY_ROW,
         QUESTIONS: [QUESTION_ROW],
@@ -220,6 +229,24 @@ def test_a_repeated_start_resumes_with_the_saved_answers():
     assert response.json()["data"]["saved_answers"] == {str(QUESTION): "72"}
 
 
+def test_unfinished_module_returns_precondition_failure_without_starting_an_attempt():
+    class PrerequisiteConnection(FakeConnection):
+        async def fetchrow(self, query, *args):
+            if "app.start_activity_attempt" in query:
+                error = asyncpg.PostgresError("Module is incomplete")
+                error.sqlstate = "MS001"
+                raise error
+            return await super().fetchrow(query, *args)
+
+    connection = PrerequisiteConnection()
+    response = build_client(connection).post(
+        f"/api/v1/activities/{ACTIVITY}/attempts", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 412
+    assert response.json()["error"]["code"] == "module_incomplete"
+
+
 def test_a_teacher_admin_does_not_sit_an_activity():
     connection = activity_connection()
     client = build_client(connection)
@@ -313,13 +340,16 @@ def test_a_teacher_admin_does_not_check_answers():
 
 
 def test_submitting_an_activity_returns_the_deterministic_outcome():
-    client = build_client(activity_connection())
+    connection = activity_connection()
+    client = build_client(connection)
 
     response = client.post(
         f"/api/v1/activity-attempts/{ATTEMPT}/submit",
-        json={"answers": [{"question_id": str(QUESTION), "answer": "72"}],
-              "time_spent_seconds": 420},
-        headers=LEARNER_HEADERS,
+        json={
+            "answers": [{"question_id": str(QUESTION), "answer": "72"}],
+            "time_spent_seconds": 420,
+        },
+        headers=SUBMIT_HEADERS,
     )
 
     assert response.status_code == 200
@@ -333,6 +363,86 @@ def test_submitting_an_activity_returns_the_deterministic_outcome():
     assert data["intervention_created"] is False
     assert data["next_action"]["type"]
 
+    claim_call = next(
+        call
+        for call in connection.calls
+        if "app.claim_activity_submission_idempotency" in call[0]
+    )
+    completion_call = next(
+        call
+        for call in connection.calls
+        if "app.complete_activity_submission_idempotency" in call[0]
+    )
+    assert claim_call[1][0] == "activity-submit-0001"
+    assert len(claim_call[1][1]) == 64
+    assert completion_call[1] == (
+        "activity-submit-0001",
+        claim_call[1][1],
+        200,
+        json.dumps(response.json()),
+    )
+
+
+@pytest.mark.parametrize("key", [None, "short"])
+def test_activity_submission_requires_a_valid_idempotency_key(key):
+    connection = activity_connection()
+    headers = LEARNER_HEADERS if key is None else {**LEARNER_HEADERS, "Idempotency-Key": key}
+
+    response = build_client(connection).post(
+        f"/api/v1/activity-attempts/{ATTEMPT}/submit",
+        json={"answers": [], "time_spent_seconds": 420},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "idempotency_key_required"
+    assert not [call for call in connection.calls if "app.submit_activity_attempt" in call[0]]
+
+
+def test_activity_submission_replays_stored_response_without_scoring_again():
+    stored = {"data": {"attempt_id": str(ATTEMPT), "passed": True}}
+    connection = activity_connection(
+        **{
+            "app.claim_activity_submission_idempotency": {
+                "claim_status": "replay",
+                "response_status": 200,
+                "response_body": stored,
+            }
+        }
+    )
+
+    response = build_client(connection).post(
+        f"/api/v1/activity-attempts/{ATTEMPT}/submit",
+        json={"answers": [], "time_spent_seconds": 420},
+        headers=SUBMIT_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == stored
+    assert not [call for call in connection.calls if "app.submit_activity_attempt" in call[0]]
+
+
+def test_activity_submission_rejects_a_key_reused_for_a_changed_body():
+    connection = activity_connection(
+        **{
+            "app.claim_activity_submission_idempotency": {
+                "claim_status": "conflict",
+                "response_status": None,
+                "response_body": None,
+            }
+        }
+    )
+
+    response = build_client(connection).post(
+        f"/api/v1/activity-attempts/{ATTEMPT}/submit",
+        json={"answers": [], "time_spent_seconds": 421},
+        headers=SUBMIT_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_key_reused"
+    assert not [call for call in connection.calls if "app.submit_activity_attempt" in call[0]]
+
 
 def test_a_submission_sends_the_time_spent_it_was_given():
     connection = activity_connection()
@@ -341,7 +451,7 @@ def test_a_submission_sends_the_time_spent_it_was_given():
     client.post(
         f"/api/v1/activity-attempts/{ATTEMPT}/submit",
         json={"answers": [], "time_spent_seconds": 420},
-        headers=LEARNER_HEADERS,
+        headers=SUBMIT_HEADERS,
     )
 
     _query, args = next(
@@ -357,7 +467,7 @@ def test_negative_time_spent_is_refused():
     response = client.post(
         f"/api/v1/activity-attempts/{ATTEMPT}/submit",
         json={"answers": [], "time_spent_seconds": -1},
-        headers=LEARNER_HEADERS,
+        headers=SUBMIT_HEADERS,
     )
 
     assert response.status_code == 422
@@ -369,7 +479,7 @@ def test_a_submission_cannot_name_a_learner():
     response = client.post(
         f"/api/v1/activity-attempts/{ATTEMPT}/submit",
         json={"answers": [], "student_id": str(STUDENT_ID)},
-        headers=LEARNER_HEADERS,
+        headers=SUBMIT_HEADERS,
     )
 
     assert response.status_code == 422

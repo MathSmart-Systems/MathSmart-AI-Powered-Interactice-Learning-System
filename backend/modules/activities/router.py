@@ -11,11 +11,13 @@ depends on them.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response
+import asyncpg
+from fastapi import APIRouter, Header, Query, Response
 
 from app.dependencies import ActorDb, CurrentActor, TeacherAdmin
 from middleware.auth import MathSmartRole
@@ -41,6 +43,14 @@ router = APIRouter(tags=["activities"])
 MAX_PAGE_SIZE = 100
 DEFAULT_PAGE_SIZE = 20
 MAX_SEARCH_LENGTH = 120
+MIN_IDEMPOTENCY_KEY_LENGTH = 8
+MAX_IDEMPOTENCY_KEY_LENGTH = 255
+
+
+def _submission_fingerprint(attempt_id: UUID, body: SubmitActivityRequest) -> str:
+    payload = {"attempt_id": str(attempt_id), **body.model_dump(mode="json")}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _json_value(value: Any) -> Any:
@@ -162,7 +172,16 @@ async def start_attempt(
     """
     _only_a_learner(actor)
 
-    attempt_row = await repository.start_attempt(connection, activity_id)
+    try:
+        attempt_row = await repository.start_attempt(connection, activity_id)
+    except asyncpg.PostgresError as exc:
+        if exc.sqlstate != "MS001":
+            raise
+        raise ApiError(
+            412,
+            "Finish the linked learning module before starting this activity",
+            code="module_incomplete",
+        ) from exc
     if attempt_row is None:
         raise ApiError(404, "No activity was found")
 
@@ -234,7 +253,12 @@ async def read_hint(
 
 @router.post("/activity-attempts/{attempt_id}/submit")
 async def submit_attempt(
-    actor: CurrentActor, connection: ActorDb, attempt_id: UUID, body: SubmitActivityRequest
+    actor: CurrentActor,
+    connection: ActorDb,
+    attempt_id: UUID,
+    body: SubmitActivityRequest,
+    response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> dict[str, Any]:
     """Finalise the activity and apply the deterministic rules.
 
@@ -242,6 +266,38 @@ async def submit_attempt(
     intervention are all the database's answer.
     """
     _only_a_learner(actor)
+    if (
+        not idempotency_key
+        or len(idempotency_key) < MIN_IDEMPOTENCY_KEY_LENGTH
+        or len(idempotency_key) > MAX_IDEMPOTENCY_KEY_LENGTH
+    ):
+        raise ApiError(
+            422,
+            "An Idempotency-Key header of 8 to 255 characters is required",
+            code="idempotency_key_required",
+        )
+
+    request_fingerprint = _submission_fingerprint(attempt_id, body)
+    claim = await repository.claim_submission(
+        connection,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+    )
+    claim_status = claim["claim_status"] if claim else None
+    if claim_status == "conflict":
+        raise ApiError(
+            409,
+            "That idempotency key was already used with a different request",
+            code="idempotency_key_reused",
+        )
+    if claim_status == "replay":
+        response.status_code = claim["response_status"]
+        stored_body = claim["response_body"]
+        if isinstance(stored_body, str):
+            stored_body = json.loads(stored_body)
+        return stored_body
+    if claim_status != "claimed":
+        raise ApiError(500, "The request could not be completed")
 
     row = await repository.submit_attempt(
         connection,
@@ -268,7 +324,15 @@ async def submit_attempt(
         intervention_created=bool(row["intervention_created"]),
         next_action=_next_action(passed),
     )
-    return {"data": outcome.model_dump(mode="json")}
+    response_body = {"data": outcome.model_dump(mode="json")}
+    await repository.complete_submission(
+        connection,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+        response_status=200,
+        response_body=json.dumps(response_body),
+    )
+    return response_body
 
 
 @router.get("/students/{student_id}/activity-attempts")

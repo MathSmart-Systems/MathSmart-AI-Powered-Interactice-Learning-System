@@ -103,6 +103,25 @@ select throws_ok(
 -- ---------------------------------------------------------------------------
 -- Starting is resuming, and attempts are numbered
 -- ---------------------------------------------------------------------------
+select throws_ok(
+  $$ select app.start_activity_attempt('fb000000-0000-4000-8000-000000000001') $$,
+  'MS001', null::text,
+  'A published activity cannot start before its linked module is complete'
+);
+
+select is(
+  (select count(*) from app.activity_attempts), 0::bigint,
+  'A refused activity start does not create an attempt'
+);
+
+select is(
+  (select saved.is_complete from app.save_module_progress(
+    'db000000-0000-4000-8000-000000000001', array['objective', 'concept']
+  ) as saved),
+  true,
+  'Completing the linked module satisfies the activity prerequisite'
+);
+
 select is(
   (select started.attempt_number
    from app.start_activity_attempt('fb000000-0000-4000-8000-000000000001') as started),
@@ -168,6 +187,50 @@ select isnt(
   ),
   '72',
   'The hint is not the answer'
+);
+
+-- ---------------------------------------------------------------------------
+-- Submission idempotency claims are learner-scoped and replay exact responses
+-- ---------------------------------------------------------------------------
+select is(
+  (select claim_status from app.claim_activity_submission_idempotency(
+    'activity-key-0001', 'fingerprint-1'
+  )),
+  'claimed',
+  'A fresh activity submission key is claimed'
+);
+
+select is(
+  app.complete_activity_submission_idempotency(
+    'activity-key-0001', 'fingerprint-1', 200,
+    '{"data":{"passed":false}}'::jsonb
+  ),
+  true,
+  'A claimed activity submission stores its exact response'
+);
+
+select is(
+  (select claim_status from app.claim_activity_submission_idempotency(
+    'activity-key-0001', 'fingerprint-1'
+  )),
+  'replay',
+  'The same activity submission key and body replay'
+);
+
+select is(
+  (select response_body from app.claim_activity_submission_idempotency(
+    'activity-key-0001', 'fingerprint-1'
+  )),
+  '{"data":{"passed":false}}'::jsonb,
+  'Activity submission replay returns the stored response'
+);
+
+select is(
+  (select claim_status from app.claim_activity_submission_idempotency(
+    'activity-key-0001', 'fingerprint-2'
+  )),
+  'conflict',
+  'The same key with a changed activity submission conflicts'
 );
 
 -- ---------------------------------------------------------------------------
