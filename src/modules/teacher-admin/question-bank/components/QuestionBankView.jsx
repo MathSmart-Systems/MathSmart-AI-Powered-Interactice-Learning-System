@@ -18,6 +18,16 @@ import { questionBankUrl } from "../utils/urls.js";
 
 const MAX_SEARCH_LENGTH = 100;
 
+/** The per-state totals, with every state present and zero left as zero. */
+function toStatusCounts(raw) {
+  const counts = raw && typeof raw === "object" ? raw : {};
+  return {
+    draft: typeof counts.draft === "number" ? counts.draft : 0,
+    published: typeof counts.published === "number" ? counts.published : 0,
+    archived: typeof counts.archived === "number" ? counts.archived : 0,
+  };
+}
+
 /** Normalises an untrusted page query to a positive integer. */
 function parsePage(value) {
   const page = Number.parseInt(value ?? "1", 10);
@@ -125,6 +135,9 @@ export async function QuestionBankView({
     typeof questionsResult.meta?.total_items === "number" ? questionsResult.meta.total_items : 0;
   const totalPages =
     typeof questionsResult.meta?.total_pages === "number" ? questionsResult.meta.total_pages : 1;
+  // Every state's total, read from the API rather than counted off the cards
+  // on screen — this page holds ten of them at most.
+  const statusCounts = toStatusCounts(questionsResult.meta?.status_counts);
   const page = Math.min(requestedPage, Math.max(totalPages, 1));
 
   // A page beyond the end was answered with the empty page the API returned,
@@ -176,6 +189,7 @@ export async function QuestionBankView({
       difficulty={difficulty}
       competencies={competencyOptions}
       competenciesAvailable={competenciesResult.ok}
+      statusCounts={statusCounts}
     />
   );
 }

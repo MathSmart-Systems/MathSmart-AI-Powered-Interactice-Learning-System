@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useTransition } from "react";
 import Link from "next/link";
-import { Archive, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Archive, LoaderCircle, Pencil, Plus, Search, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import { PermanentDeleteDialog, ResultAnnouncer, StatusTabs } from "@/modules/sh
 import { MODULE_DIALOG_MODES } from "../action-state";
 import { STATUS_LABELS } from "../constants";
 import { rangeLabel } from "../utils/format.js";
-import { learningModulesUrl } from "../utils/urls.js";
+import { MODULE_RESULTS_ID, learningModulesUrl } from "../utils/urls.js";
 import { deleteModuleAction, readModuleReferencesAction } from "../services/actions";
 
 import { ArchiveModuleDialog } from "./ArchiveModuleDialog";
@@ -41,8 +42,21 @@ export function LearningModulesClient({
   search,
   status,
   competencies,
+  statusCounts,
 }) {
   const [dialog, setDialog] = useState(null);
+  const router = useRouter();
+  const [isSearching, startSearch] = useTransition();
+
+  // Follows the address when the address changes on its own — Clear search,
+  // the back button — and is adjusted during render rather than in an effect,
+  // which would show the stale term for one frame.
+  const [term, setTerm] = useState(search);
+  const [lastSearch, setLastSearch] = useState(search);
+  if (lastSearch !== search) {
+    setLastSearch(search);
+    setTerm(search);
+  }
 
   const statusLabel = STATUS_LABELS[status] ?? "Draft";
   const caption = rangeLabel({ page, pageSize, totalItems, statusLabel });
@@ -90,27 +104,56 @@ export function LearningModulesClient({
           <span aria-hidden="true" className="mt-1 h-0.5 w-16 bg-primary" />
         </div>
 
+        {/*
+          What the screen is for, in a sentence. The publishing conditions used
+          to live here, four lines above the form and nowhere near the control
+          they govern; they are stated on the status field and in the refusal
+          instead, where a teacher meets them.
+        */}
         <p className="max-w-2xl border-l-[3px] border-primary bg-card px-5 py-4 text-sm leading-relaxed text-muted-foreground">
-          A module is a step on the learning path: an objective, a short explanation, the core
-          rules it teaches, and worked examples. Publishing puts it in front of learners, so a
-          published module needs at least one complete rule and one worked example — and its
-          competency must be published too, or learners have no way to open it.
+          Create focused lessons with an objective, key rules, and worked examples. Publish when
+          the module and its competency are ready for learners.
         </p>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-          <form method="get" role="search" className="flex-1 sm:max-w-80">
-            <input type="hidden" name="status" value={status} />
+          {/*
+            A client navigation, not a native GET submit. A GET form replaces
+            the document: the list a teacher was reading is thrown away, the
+            page returns to the top, and there is nowhere to show that anything
+            is happening. This keeps the rows, the scroll position and the
+            publication state, and puts the spinner on the button pressed.
+          */}
+          <form
+            role="search"
+            className="flex-1 sm:max-w-80"
+            onSubmit={(event) => {
+              event.preventDefault();
+              startSearch(() => {
+                router.push(learningModulesUrl({ search: term, status, page: 1 }), {
+                  scroll: false,
+                });
+              });
+            }}
+          >
             <div className="flex items-center gap-2">
               <Input
                 name="search"
                 type="search"
-                defaultValue={search}
+                value={term}
+                onChange={(event) => setTerm(event.target.value)}
                 placeholder="Search modules"
                 aria-label="Search modules"
               />
-              <Button type="submit" size="sm" variant="outline">
-                <Search aria-hidden="true" className="size-4" />
-                Search
+              <Button type="submit" size="sm" variant="outline" disabled={isSearching}>
+                {isSearching ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-4 animate-spin motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Search aria-hidden="true" className="size-4" />
+                )}
+                {isSearching ? "Searching…" : "Search"}
               </Button>
             </div>
           </form>
@@ -118,7 +161,9 @@ export function LearningModulesClient({
           <div className="flex items-center gap-3">
             {search ? (
               <Button asChild variant="outline" className="h-9 px-4">
-                <Link href={learningModulesUrl({ status })}>Clear search</Link>
+                <Link href={learningModulesUrl({ status })} scroll={false}>
+                  Clear search
+                </Link>
               </Button>
             ) : null}
 
@@ -134,11 +179,19 @@ export function LearningModulesClient({
         label="Filter modules by publication state"
         tabs={TABS}
         current={status}
-        count={totalItems}
+        counts={statusCounts}
         hrefFor={(id) => learningModulesUrl({ search, status: id })}
       />
 
-      <div className="flex flex-col gap-4">
+      <div
+        id={MODULE_RESULTS_ID}
+        aria-busy={isSearching}
+        className={
+          isSearching
+            ? "flex scroll-mt-4 flex-col gap-4 opacity-60 transition-opacity motion-reduce:transition-none"
+            : "flex scroll-mt-4 flex-col gap-4 transition-opacity motion-reduce:transition-none"
+        }
+      >
         {items.length === 0 ? (
           <LearningModulesEmpty hasSearch={Boolean(search)} status={status} />
         ) : (

@@ -146,7 +146,22 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
               </select>
             </Field>
 
-            <Field id={`${formId}-status`} label="Status" required>
+            {/*
+              The publishing conditions, stated on the control that applies
+              them. They used to sit in the page's intro paragraph, four lines
+              above the form and nowhere near the moment a teacher chooses
+              Published — so the first time anybody met them was as a refusal.
+            */}
+            <Field
+              id={`${formId}-status`}
+              label="Status"
+              required
+              hint={
+                status === "published"
+                  ? "A published module needs at least one complete rule and one complete worked example, and its competency must be published too."
+                  : "A draft is yours alone. Publishing puts the module on the learning path."
+              }
+            >
               <select
                 id={`${formId}-status`}
                 name="status"

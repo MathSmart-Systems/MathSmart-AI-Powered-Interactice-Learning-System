@@ -230,6 +230,15 @@ _QUESTION_FILTERS = (
 )
 
 
+#: The question filters again, without the state and renumbered to match. The
+#: state cannot narrow a statement whose whole purpose is to count every state.
+_QUESTION_STATE_COUNT_FILTERS = (
+    " and ($2::uuid is null or questions.competency_id = $2)"
+    " and ($3::app.question_type is null or questions.question_type = $3)"
+    " and ($4::app.question_difficulty is null or questions.difficulty = $4)"
+)
+
+
 def question_list_sql() -> str:
     """One page of the question bank, filtered first."""
     columns = ", ".join(f"questions.{column}" for column in QUESTIONS.readable)
@@ -246,6 +255,27 @@ def question_count_sql() -> str:
     return (
         f"select count(*) as total\nfrom app.questions\n"
         f"where true{_search_clause(QUESTIONS)}{_QUESTION_FILTERS}"
+    )
+
+
+#: How many rows each publication state holds, under the filters that are not
+#: the state itself.
+#:
+#: The tabs used to badge only the state being looked at, with the count of the
+#: page's own result set. A teacher could not see that there were three drafts
+#: waiting without opening Drafts, and a state holding nothing looked exactly
+#: like a state holding something — the badge simply was not there. All three
+#: counts are read here, in one pass, so every tab can say what it holds
+#: including when what it holds is nothing.
+def status_counts_sql(resource: Resource, filters: str = "") -> str:
+    """Draft, published and archived totals for one filtered result set."""
+    return (
+        "select\n"
+        f"  count(*) filter (where {resource.table}.status = 'draft') as draft,\n"
+        f"  count(*) filter (where {resource.table}.status = 'published') as published,\n"
+        f"  count(*) filter (where {resource.table}.status = 'archived') as archived\n"
+        f"from app.{resource.table}\n"
+        f"where true{_search_clause(resource)}{filters}"
     )
 
 
@@ -681,6 +711,32 @@ async def question_listing_total(
         )
         or 0
     )
+
+
+async def question_status_counts(
+    connection: ActorConnection,
+    *,
+    search: str | None,
+    competency_id: UUID | None,
+    question_type: str | None,
+    difficulty: str | None,
+) -> Any:
+    """What each publication state holds, under everything except the state."""
+    return await connection.fetchrow(
+        status_counts_sql(QUESTIONS, _QUESTION_STATE_COUNT_FILTERS),
+        search,
+        competency_id,
+        question_type,
+        difficulty,
+    )
+
+
+async def module_status_counts(connection: ActorConnection, *, search: str | None) -> Any:
+    return await connection.fetchrow(status_counts_sql(LEARNING_MODULES), search)
+
+
+async def assessment_status_counts(connection: ActorConnection, *, search: str | None) -> Any:
+    return await connection.fetchrow(status_counts_sql(ASSESSMENTS), search)
 
 
 async def question_write_state(connection: ActorConnection, question_id: UUID) -> Any:

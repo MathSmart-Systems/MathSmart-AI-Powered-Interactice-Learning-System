@@ -87,7 +87,24 @@ export function readMeta(body, fallbackPageSize = DEFAULT_PAGE_SIZE) {
     pageSize: Number(meta.page_size) || fallbackPageSize,
     totalItems: Number(meta.total_items) || 0,
     totalPages: Number(meta.total_pages) || 0,
+    statusCounts: readStatusCounts(meta.status_counts),
   };
+}
+
+/**
+ * What each publication state holds, under the search but not under the state.
+ *
+ * Read from the API rather than counted off the rows on screen: a page carries
+ * ten of them, and the tabs describe the whole collection. Zero is a count, so
+ * a missing number becomes `0` rather than nothing — a tab that holds nothing
+ * has to say so.
+ */
+function readStatusCounts(raw) {
+  const counts = raw && typeof raw === "object" ? raw : {};
+  const draft = Number(counts.draft) || 0;
+  const published = Number(counts.published) || 0;
+  const archived = Number(counts.archived) || 0;
+  return { all: draft + published + archived, draft, published, archived };
 }
 
 /**

@@ -120,6 +120,18 @@ def _envelope(rows: list[Any], resource: Resource, total: int, page: int, size: 
     }
 
 
+def _status_counts(row: Any) -> dict[str, int]:
+    """Draft, published and archived totals, always all three and never absent.
+
+    Zero is a count, not a missing value. A tab with nothing in it has to say
+    so; leaving the number out is what made an empty state indistinguishable
+    from one nobody had counted.
+    """
+    if row is None:
+        return {"draft": 0, "published": 0, "archived": 0}
+    return {state: int(row[state] or 0) for state in ("draft", "published", "archived")}
+
+
 async def _list(
     connection: Any,
     resource: Resource,
@@ -497,7 +509,10 @@ async def list_modules(
     total = await repository.module_listing_total(
         connection, search=search, status=status_value
     )
-    return _envelope(list(rows), LEARNING_MODULES, total, page, page_size)
+    envelope = _envelope(list(rows), LEARNING_MODULES, total, page, page_size)
+    counts = await repository.module_status_counts(connection, search=search)
+    envelope["meta"]["status_counts"] = _status_counts(counts)
+    return envelope
 
 
 @router.post("/teacher-admin/modules", status_code=201)
@@ -895,7 +910,20 @@ async def list_questions(
         connection, search=search, limit=page_size, offset=offset, **filters
     )
     total = await repository.question_listing_total(connection, search=search, **filters)
-    return _envelope(list(rows), QUESTIONS, total, page, page_size)
+    envelope = _envelope(list(rows), QUESTIONS, total, page, page_size)
+
+    # Every state's total, so each tab can say what it holds — including when
+    # what it holds is nothing. Counted under the other filters but not under
+    # the state, which is the only reading that lets the three add up.
+    counts = await repository.question_status_counts(
+        connection,
+        search=search,
+        competency_id=competency_id,
+        question_type=filters["question_type"],
+        difficulty=filters["difficulty"],
+    )
+    envelope["meta"]["status_counts"] = _status_counts(counts)
+    return envelope
 
 
 async def _refuse_unpublished_competency(connection: Any, competency_id: UUID) -> None:
@@ -1024,6 +1052,9 @@ async def list_assessment_drafts(
     )
     for row in envelope["data"]:
         row["question_count"] = counts.get(UUID(row["assessment_id"]), 0)
+
+    states = await repository.assessment_status_counts(connection, search=search)
+    envelope["meta"]["status_counts"] = _status_counts(states)
     return envelope
 
 

@@ -138,7 +138,15 @@ function useFocusReturn(open, onCloseAutoFocus) {
  * `vw` length counts the scrollbar, so on a scrolled page it let a dialog sit
  * wider than the space actually on screen and pushed the page sideways. The
  * bed is `dvh` tall, so a phone's collapsing browser chrome cannot leave the
- * footer under it.
+ * footer under it, and `max-h-full` against that bed is what caps the surface
+ * at `100dvh` minus the `p-4` gutter on each side.
+ *
+ * The surface itself does not scroll. It used to carry `overflow-y-auto` as
+ * well as `DialogBody`, and a flex column whose only growing child is already
+ * a scroller does not need a second one: what it produced was two nested
+ * vertical scrollbars on the taller forms, one of which moved nothing. The
+ * body is the single scrolling region, which is also what keeps the header and
+ * the footer — where Cancel and Save live — pinned in view.
  */
 function DialogContent({
   className,
@@ -163,7 +171,7 @@ function DialogContent({
         <DialogPrimitive.Content
           data-slot="dialog-content"
           className={cn(
-            "pointer-events-auto relative flex max-h-full w-full max-w-lg flex-col overflow-y-auto overscroll-contain rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none",
+            "pointer-events-auto relative flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none",
             className
           )}
           onCloseAutoFocus={handleCloseAutoFocus}
@@ -214,7 +222,7 @@ function DialogBody({ className, ...props }) {
   return (
     <div
       data-slot="dialog-body"
-      className={cn("min-h-0 flex-1 overflow-y-auto px-6 py-5", className)}
+      className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5", className)}
       {...props}
     />
   )

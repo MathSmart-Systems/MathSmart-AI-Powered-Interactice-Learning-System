@@ -12,6 +12,16 @@ import { learningModulesUrl } from "../utils/urls.js";
 
 const MAX_SEARCH_LENGTH = 120;
 
+/** The per-state totals, with every state present and zero left as zero. */
+function toStatusCounts(raw) {
+  const counts = raw && typeof raw === "object" ? raw : {};
+  return {
+    draft: typeof counts.draft === "number" ? counts.draft : 0,
+    published: typeof counts.published === "number" ? counts.published : 0,
+    archived: typeof counts.archived === "number" ? counts.archived : 0,
+  };
+}
+
 function parsePage(value) {
   const page = Number.parseInt(value ?? "1", 10);
   return Number.isNaN(page) ? 1 : Math.max(page, 1);
@@ -79,6 +89,7 @@ export async function LearningModulesView({
 
   const totalItems = typeof modulesResult.meta?.total_items === "number" ? modulesResult.meta.total_items : 0;
   const totalPages = typeof modulesResult.meta?.total_pages === "number" ? modulesResult.meta.total_pages : 1;
+  const statusCounts = toStatusCounts(modulesResult.meta?.status_counts);
   const page = Math.min(requestedPage, Math.max(totalPages, 1));
 
   if (page !== requestedPage) {
@@ -121,6 +132,7 @@ export async function LearningModulesView({
       search={search}
       status={status}
       competencies={competencyOptions}
+      statusCounts={statusCounts}
     />
   );
 }

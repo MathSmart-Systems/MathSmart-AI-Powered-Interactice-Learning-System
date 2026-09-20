@@ -31,6 +31,11 @@ ACTIVITY = UUID("7b2b0000-0000-4000-8000-000000000008")
 
 TOTAL = "count(*) as total"
 
+#: The per-state totals every tabbed listing now carries, named by a clause
+#: only that statement holds. A tab has to be able to say it holds nothing.
+STATE_COUNTS = "as draft"
+STATE_COUNT_ROW = {"draft": 2, "published": 3, "archived": 1}
+
 #: Distinctive fragments of the assessment membership statements, so a test can
 #: answer one of them without answering the others.
 READINESS = "as grade_is_active"
@@ -167,6 +172,9 @@ def admin_connection(**overrides):
     """Build a mock database connection pre-populated with admin fixtures."""
     results = {
         TOTAL: 1,
+        # Ahead of the table fragments, because the per-state counts select
+        # from the same tables and would otherwise be answered with rows.
+        STATE_COUNTS: STATE_COUNT_ROW,
         "from app.competencies": [COMPETENCY_ROW],
         "from app.learning_modules": [MODULE_ROW],
         "from app.activities": [ACTIVITY_ROW],
@@ -215,10 +223,24 @@ def test_module_status_filters_the_page_and_its_count():
 
     assert response.status_code == 200
     module_calls = [call for call in connection.calls if "from app.learning_modules" in call[0]]
-    assert len(module_calls) == 2
+    # The page, its count, and the per-state totals the tabs carry.
+    assert len(module_calls) == 3
     assert module_calls[0][1] == ("integers", "draft", 10, 10)
     assert module_calls[1][1] == ("integers", "draft")
-    assert all("learning_modules.status = $2" in query for query, _args in module_calls)
+    assert all(
+        "learning_modules.status = $2" in query for query, _args in module_calls[:2]
+    )
+
+    # The state counts are narrowed by the search and by nothing else: a
+    # statement counting every state cannot also be filtered to one.
+    states, arguments = module_calls[2]
+    assert arguments == ("integers",)
+    assert "learning_modules.status = $2" not in states
+    assert response.json()["meta"]["status_counts"] == {
+        "draft": 2,
+        "published": 3,
+        "archived": 1,
+    }
 
 
 def test_a_learner_cannot_reach_administration():
@@ -707,6 +729,7 @@ def activity_membership_connection(**overrides):
     results = {
         # Ahead of the page count, because the open-attempt guard counts too.
         ACTIVITY_OPEN_ATTEMPTS: 0,
+        STATE_COUNTS: STATE_COUNT_ROW,
         TOTAL: 1,
         ACTIVITY_READINESS: ACTIVITY_READINESS_ROW,
         ACTIVITY_MEMBERSHIP_COUNTS: [],

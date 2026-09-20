@@ -281,8 +281,42 @@ describe("pageQuery", () => {
 
 describe("readMeta", () => {
   it("maps the documented envelope names onto the ones the UI uses", () => {
-    const meta = readMeta({ meta: { page: 3, page_size: 50, total_items: 101, total_pages: 3 } });
-    assert.deepEqual(meta, { page: 3, pageSize: 50, totalItems: 101, totalPages: 3 });
+    const meta = readMeta({
+      meta: {
+        page: 3,
+        page_size: 50,
+        total_items: 101,
+        total_pages: 3,
+        status_counts: { draft: 4, published: 90, archived: 7 },
+      },
+    });
+    assert.deepEqual(meta, {
+      page: 3,
+      pageSize: 50,
+      totalItems: 101,
+      totalPages: 3,
+      statusCounts: { all: 101, draft: 4, published: 90, archived: 7 },
+    });
+  });
+
+  it("reads a state holding nothing as zero rather than as no count at all", () => {
+    // The tabs badge every state. A state with nothing in it still has a
+    // number, and dropping it made an empty tab look uncounted.
+    const meta = readMeta({
+      meta: {
+        page: 1,
+        page_size: 10,
+        total_items: 2,
+        total_pages: 1,
+        status_counts: { draft: 0, published: 2, archived: 0 },
+      },
+    });
+    assert.deepEqual(meta.statusCounts, { all: 2, draft: 0, published: 2, archived: 0 });
+  });
+
+  it("falls back to zeros when the API sends no per-state counts", () => {
+    const meta = readMeta({ meta: { page: 1, page_size: 10, total_items: 0, total_pages: 0 } });
+    assert.deepEqual(meta.statusCounts, { all: 0, draft: 0, published: 0, archived: 0 });
   });
 
   it("returns null for a single-resource reply", () => {

@@ -1,4 +1,5 @@
 export { FormField } from "./components/FormField";
+export { LinkPending } from "./components/LinkPending";
 export {
   MAX_QUESTIONS_PER_SET,
   QuestionMembershipManager,

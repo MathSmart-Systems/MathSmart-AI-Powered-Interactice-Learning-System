@@ -10,6 +10,17 @@
 
 const QUESTION_BANK_PATH = "/teacher/question-bank";
 
+/**
+ * The results region, as a fragment target.
+ *
+ * Paging is the one control that should move the page: a teacher who asks for
+ * the next page wants to be looking at it. It moves to the top of the results
+ * and no further, and it does so through the router's own fragment handling
+ * rather than a scroll call, which would have to guess when the new rows had
+ * arrived.
+ */
+export const QUESTION_RESULTS_ID = "question-results";
+
 /** Builds a list URL, dropping only the filters that are not set. */
 export function questionBankUrl({
   search = "",

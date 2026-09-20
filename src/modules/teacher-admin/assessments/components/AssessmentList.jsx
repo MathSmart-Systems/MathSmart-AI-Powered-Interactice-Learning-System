@@ -37,7 +37,7 @@ export const STATUS_TABS = Object.freeze([
  * which is what `role="tablist"` promises a keyboard user. A row of buttons
  * styled to look like tabs promises the same thing and then does not do it.
  */
-function StatusTabs({ value, onChange, panelId }) {
+function StatusTabs({ value, onChange, panelId, counts = null }) {
   const tabsRef = useRef([]);
 
   function handleKeyDown(event) {
@@ -71,6 +71,9 @@ function StatusTabs({ value, onChange, panelId }) {
     >
       {STATUS_TABS.map((tab, index) => {
         const isSelected = tab.value === value;
+        // `typeof`, not truthiness: a state holding nothing still has a count,
+        // and hiding the badge made an empty state look uncounted.
+        const total = counts ? counts[tab.value] : undefined;
         return (
           <button
             key={tab.value}
@@ -90,7 +93,20 @@ function StatusTabs({ value, onChange, panelId }) {
                 : "-mb-px min-h-11 border-b-2 border-transparent px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             }
           >
-            {tab.label}
+            <span className="flex items-center gap-1.5">
+              {tab.label}
+              {typeof total === "number" ? (
+                <span
+                  className={
+                    isSelected
+                      ? "rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground tabular-nums"
+                      : "rounded-full bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground tabular-nums"
+                  }
+                >
+                  {total}
+                </span>
+              ) : null}
+            </span>
           </button>
         );
       })}

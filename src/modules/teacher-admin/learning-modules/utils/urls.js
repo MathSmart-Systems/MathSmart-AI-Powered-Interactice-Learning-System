@@ -1,5 +1,8 @@
 const LEARNING_MODULES_PATH = "/teacher/learning-modules";
 
+/** The results region, as a fragment target. See the Question Bank helper. */
+export const MODULE_RESULTS_ID = "module-results";
+
 /** Builds a list URL without dropping the active search or publication status. */
 export function learningModulesUrl({ search = "", status = "published", page = 1 } = {}) {
   const query = new URLSearchParams();

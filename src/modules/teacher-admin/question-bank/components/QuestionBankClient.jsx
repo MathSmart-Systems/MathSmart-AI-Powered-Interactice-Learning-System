@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useTransition } from "react";
 import Link from "next/link";
-import { Archive, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Archive, LoaderCircle, Pencil, Plus, Search, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import { QuestionRow } from "./QuestionRow";
 import { RestoreQuestionForm } from "./RestoreQuestionForm";
 import { STATUS_LABELS } from "../constants";
 import { rangeLabel } from "../utils/format.js";
-import { questionBankUrl } from "../utils/urls.js";
+import { QUESTION_RESULTS_ID, questionBankUrl } from "../utils/urls.js";
 import {
   deleteQuestionAction,
   readQuestionReferencesAction,
@@ -52,8 +53,23 @@ export function QuestionBankClient({
   difficulty,
   competencies,
   competenciesAvailable,
+  statusCounts,
 }) {
   const [dialog, setDialog] = useState(null);
+  const router = useRouter();
+  const [isSearching, startSearch] = useTransition();
+
+  // The field follows the address whenever the address changes on its own: a
+  // search cleared from the Clear filters button has to clear here too, and the
+  // back button has to put the previous term back. Adjusted during render
+  // rather than in an effect, which is React's own answer for state derived
+  // from a prop — an effect would render the stale term once first.
+  const [term, setTerm] = useState(search);
+  const [lastSearch, setLastSearch] = useState(search);
+  if (lastSearch !== search) {
+    setLastSearch(search);
+    setTerm(search);
+  }
 
   const filters = { search, status, competencyId, questionType, difficulty };
   const hasFilter = Boolean(search || competencyId || questionType || difficulty);
@@ -114,27 +130,44 @@ export function QuestionBankClient({
         </p>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-          <form method="get" role="search" className="flex-1 sm:max-w-80">
-            {/* The filters the address already carries, so searching narrows
-                the current view instead of resetting it. */}
-            <input type="hidden" name="status" value={status} />
-            {competencyId ? (
-              <input type="hidden" name="competency_id" value={competencyId} />
-            ) : null}
-            {questionType ? <input type="hidden" name="type" value={questionType} /> : null}
-            {difficulty ? <input type="hidden" name="difficulty" value={difficulty} /> : null}
-
+          {/*
+            A client navigation rather than a native GET submit. A GET form
+            replaces the document, so there is nothing left to keep on screen
+            while the new results are fetched and nowhere to put a pending
+            state. This keeps the rows, the address and the other filters, and
+            puts the spinner on the button that was pressed.
+          */}
+          <form
+            role="search"
+            className="flex-1 sm:max-w-80"
+            onSubmit={(event) => {
+              event.preventDefault();
+              startSearch(() => {
+                router.push(questionBankUrl({ ...filters, search: term, page: 1 }), {
+                  scroll: false,
+                });
+              });
+            }}
+          >
             <div className="flex items-center gap-2">
               <Input
                 name="search"
                 type="search"
-                defaultValue={search}
+                value={term}
+                onChange={(event) => setTerm(event.target.value)}
                 placeholder="Search questions"
                 aria-label="Search questions"
               />
-              <Button type="submit" size="sm" variant="outline">
-                <Search aria-hidden="true" className="size-4" />
-                Search
+              <Button type="submit" size="sm" variant="outline" disabled={isSearching}>
+                {isSearching ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-4 animate-spin motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Search aria-hidden="true" className="size-4" />
+                )}
+                {isSearching ? "Searching…" : "Search"}
               </Button>
             </div>
           </form>
@@ -164,11 +197,21 @@ export function QuestionBankClient({
         label="Filter questions by publication state"
         tabs={TABS}
         current={status}
-        count={totalItems}
+        counts={statusCounts}
         hrefFor={(id) => questionBankUrl({ ...filters, status: id })}
       />
 
-      <div className="flex flex-col gap-4">
+      <div
+        id={QUESTION_RESULTS_ID}
+        aria-busy={isSearching}
+        // `scroll-mt-4` keeps the first row clear of the viewport edge when
+        // paging lands here through the fragment.
+        className={
+          isSearching
+            ? "flex scroll-mt-4 flex-col gap-4 opacity-60 transition-opacity motion-reduce:transition-none"
+            : "flex scroll-mt-4 flex-col gap-4 transition-opacity motion-reduce:transition-none"
+        }
+      >
         {items.length === 0 ? (
           <QuestionBankEmpty status={status} hasFilter={hasFilter} />
         ) : (

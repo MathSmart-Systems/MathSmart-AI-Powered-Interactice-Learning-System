@@ -260,7 +260,12 @@ export function TeacherAssessmentsView() {
           </Button>
         </div>
 
-        <StatusTabs value={status} onChange={handleStatusChange} panelId={PANEL_ID} />
+        <StatusTabs
+          value={status}
+          onChange={handleStatusChange}
+          panelId={PANEL_ID}
+          counts={meta?.statusCounts ?? null}
+        />
 
         <p className="text-sm text-muted-foreground">{caption}</p>
         <ResultAnnouncer message={isLoading ? "" : caption} />

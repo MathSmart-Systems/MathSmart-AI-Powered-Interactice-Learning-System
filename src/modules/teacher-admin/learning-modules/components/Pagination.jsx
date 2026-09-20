@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { learningModulesUrl } from "../utils/urls.js";
+import { LinkPending } from "@/modules/shared";
+import { MODULE_RESULTS_ID, learningModulesUrl } from "../utils/urls.js";
 
 /**
  * Simple prev/next paging under the list. Links carry the current search, and
@@ -20,9 +21,10 @@ export function Pagination({ search, status, page, totalPages }) {
     <nav aria-label="Module pages" className="flex flex-wrap items-center justify-between gap-3">
       {hasPrevious ? (
         <Button asChild size="sm" variant="outline">
-          <Link href={learningModulesUrl({ search, status, page: page - 1 })}>
+          <Link href={`${learningModulesUrl({ search, status, page: page - 1 })}#${MODULE_RESULTS_ID}`}>
             <ChevronLeft aria-hidden="true" className="size-4" />
             Earlier
+            <LinkPending />
           </Link>
         </Button>
       ) : (
@@ -35,8 +37,9 @@ export function Pagination({ search, status, page, totalPages }) {
 
       {hasNext ? (
         <Button asChild size="sm" variant="outline">
-          <Link href={learningModulesUrl({ search, status, page: page + 1 })}>
+          <Link href={`${learningModulesUrl({ search, status, page: page + 1 })}#${MODULE_RESULTS_ID}`}>
             Later
+            <LinkPending />
             <ChevronRight aria-hidden="true" className="size-4" />
           </Link>
         </Button>

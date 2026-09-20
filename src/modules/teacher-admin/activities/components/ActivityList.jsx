@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useId, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -103,6 +104,70 @@ function ActivityListEmpty({ hasSearchOrFilter, onCreate }) {
 }
 
 /**
+ * An activity's instructions, previewed rather than printed in full.
+ *
+ * A card in a three-column grid cannot carry eight lines of prose without
+ * deciding the height of every card beside it. The first few lines are almost
+ * always enough to recognise the activity, so the rest is behind a control
+ * that says so — a real button with `aria-expanded`, not a hover tooltip or a
+ * truncation a keyboard user cannot get past.
+ *
+ * Whether the text is long enough to need the control is measured by the
+ * element, not guessed from a character count: a clamp that never clamps would
+ * otherwise still show "Show more".
+ */
+function ActivityInstructions({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
+  const bodyId = useId();
+
+  // Measured on attach rather than on every render: the clamp is a layout
+  // fact, and re-reading it while the text is expanded would report "not
+  // clamped" and take the control away mid-read.
+  const measure = useCallback((node) => {
+    if (node) {
+      setClamped(node.scrollHeight > node.clientHeight + 1);
+    }
+  }, []);
+
+  if (!text) {
+    return (
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        No instructions written for this activity yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <p
+        id={bodyId}
+        ref={measure}
+        className={
+          expanded
+            ? "text-xs leading-relaxed break-words text-muted-foreground"
+            : "line-clamp-3 text-xs leading-relaxed break-words text-muted-foreground"
+        }
+      >
+        {text}
+      </p>
+
+      {clamped || expanded ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={bodyId}
+          onClick={() => setExpanded((open) => !open)}
+          className="self-start text-xs font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+        >
+          {expanded ? "Show less" : "Show all instructions"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Responsive card grid for practice activities.
  *
  * Every action carries its own word. Archive used to be an icon with a
@@ -153,7 +218,11 @@ export function ActivityList({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+    // `items-start`, so a card is as tall as what it holds. Grid items stretch
+    // to the tallest cell in their row by default, and the card then had to
+    // spread its three sections over that height — which is where the empty
+    // band between the metrics and the footer came from.
+    <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2 xl:grid-cols-3">
       {activities.map((activity) => {
         const moduleTitle = moduleTitles.get(activity.module_id) ?? "Learning module";
         const isArchived = activity.status === "archived";
@@ -161,11 +230,14 @@ export function ActivityList({
         const questionCount = activity.question_count ?? 0;
 
         return (
+          // The primitive's own `gap-6` and `py-6` sat on top of each
+          // section's padding, so every seam was spaced twice. The sections
+          // carry their own rhythm here and the card carries none.
           <Card
             key={activity.activity_id}
-            className="flex flex-col justify-between overflow-hidden border-border bg-card"
+            className="flex flex-col gap-0 overflow-hidden border-border bg-card py-0"
           >
-            <CardHeader className="space-y-3 pb-3">
+            <CardHeader className="gap-3 px-5 pt-5 pb-0">
               <div className="flex w-full min-w-0 items-center justify-between gap-2">
                 <span className="inline-flex min-w-0 shrink items-center gap-1.5 rounded-md bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground">
                   <BookOpen className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -179,10 +251,8 @@ export function ActivityList({
               </h3>
             </CardHeader>
 
-            <CardContent className="space-y-4 pb-4">
-              <p className="min-h-8 text-xs leading-relaxed break-words text-muted-foreground">
-                {activity.description || "No instructions written for this activity yet."}
-              </p>
+            <CardContent className="space-y-3 px-5 pt-3 pb-0">
+              <ActivityInstructions text={activity.description} />
 
               <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/40 p-2.5 text-xs sm:grid-cols-4">
                 <div className="flex flex-col gap-0.5">
@@ -231,7 +301,13 @@ export function ActivityList({
               ) : null}
             </CardContent>
 
-            <CardFooter className="flex flex-col gap-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+            {/*
+              `border-t-[1px]` rather than `border-t`: the primitive reserves
+              24px of top padding for anything carrying the literal `border-t`
+              class, and that rule outranks a padding utility, which is half of
+              why the actions sat so far from the card.
+            */}
+            <CardFooter className="mt-4 flex flex-col gap-2 border-t-[1px] border-border/60 px-5 pt-3 pb-4 text-xs text-muted-foreground">
               <span className="self-start">
                 Updated {formatDate(activity.updated_at || activity.created_at)}
               </span>
