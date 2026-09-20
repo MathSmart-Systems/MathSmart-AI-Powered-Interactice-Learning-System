@@ -39,6 +39,9 @@ STATE_COUNT_ROW = {"draft": 2, "published": 3, "archived": 1}
 #: Distinctive fragments of the assessment membership statements, so a test can
 #: answer one of them without answering the others.
 READINESS = "as grade_is_active"
+#: The open-attempt count the unpublish route checks before it takes a paper
+#: back out of learners' hands.
+OPEN_ATTEMPTS = "from app.assessment_attempts"
 MEMBERSHIP_IDS = "order by assessment_questions.position"
 MEMBERSHIP_COUNTS = "group by assessment_questions.assessment_id"
 
@@ -1503,6 +1506,86 @@ def test_publishing_a_populated_assessment_succeeds():
     body = response.json()["data"]
     assert body["status"] == "published"
     assert body["question_count"] == 4
+
+
+def test_returning_a_published_assessment_to_draft_succeeds():
+    """A published paper can be corrected without being archived first."""
+    connection = admin_connection(
+        **{
+            "from app.assessments": {**ASSESSMENT_ROW, "status": "published"},
+            OPEN_ATTEMPTS: 0,
+            "returning": {**ASSESSMENT_ROW, "status": "draft"},
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/unpublish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "draft"
+
+
+def test_returning_an_assessment_a_learner_is_sitting_is_refused():
+    """Resuming a paper needs it published, so an open attempt blocks the way back."""
+    connection = admin_connection(
+        **{
+            "from app.assessments": {**ASSESSMENT_ROW, "status": "published"},
+            OPEN_ATTEMPTS: 3,
+            "returning": {**ASSESSMENT_ROW, "status": "draft"},
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/unpublish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "assessment_in_progress"
+    # The teacher is told how many, because "some" is not a number they can act on.
+    assert "3" in error["message"]
+    assert not any("set status" in query for query in connection.queries())
+
+
+def test_returning_a_draft_assessment_to_draft_is_refused():
+    """There is nowhere to go back to, and the button should never have offered it."""
+    connection = admin_connection(**{"from app.assessments": ASSESSMENT_ROW})
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/unpublish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_unpublishable"
+    assert not any("set status" in query for query in connection.queries())
+
+
+def test_returning_an_absent_assessment_reports_not_found():
+    client = build_client(admin_connection(**{"from app.assessments": None}))
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/unpublish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 404
+
+
+def test_a_learner_cannot_return_an_assessment_to_draft():
+    connection = admin_connection(
+        **{"from app.assessments": {**ASSESSMENT_ROW, "status": "published"}, OPEN_ATTEMPTS: 0}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/unpublish", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
+    assert not any("set status" in query for query in connection.queries())
 
 
 def test_reading_one_assessment_carries_its_membership_in_order():

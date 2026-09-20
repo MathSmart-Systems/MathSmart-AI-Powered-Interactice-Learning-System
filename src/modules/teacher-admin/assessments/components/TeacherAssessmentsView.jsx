@@ -19,6 +19,7 @@ import { AssessmentArchiveDialog } from "./AssessmentArchiveDialog.jsx";
 import { AssessmentFormModal } from "./AssessmentFormModal.jsx";
 import { AssessmentList, STATUS_TABS, StatusTabs } from "./AssessmentList.jsx";
 import { AssessmentPublishDialog } from "./AssessmentPublishDialog.jsx";
+import { AssessmentUnpublishDialog } from "./AssessmentUnpublishDialog.jsx";
 import { AssessmentQuestionManagerModal } from "./AssessmentQuestionManagerModal.jsx";
 import { AssessmentRestoreDialog } from "./AssessmentRestoreDialog.jsx";
 
@@ -280,6 +281,7 @@ export function TeacherAssessmentsView() {
           onEdit={(assessment) => openDialog("form", assessment)}
           onManageQuestions={(assessment) => openDialog("questions", assessment)}
           onPublish={(assessment) => openDialog("publish", assessment)}
+          onUnpublish={(assessment) => openDialog("unpublish", assessment)}
           onArchive={(assessment) => openDialog("archive", assessment)}
           onRestore={(assessment) => openDialog("restore", assessment)}
           onDelete={(assessment) => openDialog("delete", assessment)}
@@ -389,6 +391,18 @@ export function TeacherAssessmentsView() {
         onPublished={(published) => {
           setDialog(NO_DIALOG);
           confirm(`${published.title} is published and can be delivered to learners.`);
+          reload();
+        }}
+      />
+
+      <AssessmentUnpublishDialog
+        open={dialog.kind === "unpublish"}
+        onOpenChange={closeDialog}
+        assessment={dialog.kind === "unpublish" ? dialog.assessment : null}
+        onUnpublished={(draft) => {
+          const title = draft?.title ?? dialog.assessment?.title;
+          setDialog(NO_DIALOG);
+          confirm(`${title} is a draft again. Publish it when it is ready.`);
           reload();
         }}
       />

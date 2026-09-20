@@ -154,6 +154,25 @@ export function publishAssessment(assessmentId, { token = null } = {}) {
 }
 
 /**
+ * Returns a published assessment to draft so it can be corrected.
+ *
+ * A route of its own rather than a status patch. The API refuses while a
+ * learner has an attempt open, because resuming a paper needs the assessment
+ * to still be published and a half-finished sitting must not be taken away.
+ *
+ * @param {string} assessmentId - Unique assessment identifier
+ * @param {object} [options]
+ * @param {string|null} [options.token] - Optional explicit auth token
+ * @returns {Promise<object>}
+ */
+export function unpublishAssessment(assessmentId, { token = null } = {}) {
+  return request(`/teacher-admin/assessments/${encodeURIComponent(assessmentId)}/unpublish`, {
+    method: "POST",
+    token,
+  });
+}
+
+/**
  * Fetches available grade levels for authoring and filtering.
  *
  * @param {object} [options]

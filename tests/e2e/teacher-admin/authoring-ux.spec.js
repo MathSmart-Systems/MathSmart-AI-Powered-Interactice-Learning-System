@@ -136,6 +136,9 @@ describe("teacher authoring behaviour", () => {
   // specification is about what the cards look like once they exist.
   let competencyId = null;
   let moduleId = null;
+  let readyModuleId = null;
+  let questionId = null;
+  let assessmentId = null;
   const activityIds = [];
 
   test.beforeAll(async ({ request }) => {
@@ -184,6 +187,74 @@ describe("teacher authoring behaviour", () => {
       data: { status: "archived" },
     });
     expect(archived.ok()).toBe(true);
+
+    // A second module, finished this time: one complete rule and one complete
+    // worked example, which is exactly what publishing asks for. The first
+    // module has neither, so the two of them cover both sides of the new row
+    // control without either test having to author content through a dialog.
+    const readyModule = await api(request, token, "/teacher-admin/modules", {
+      method: "POST",
+      data: {
+        competency_id: competencyId,
+        title: `Disposable UX module ${RUN} ready`,
+        estimated_minutes: 20,
+        learning_objective: "Created by the browser suite. Safe to remove.",
+        short_explanation: "Created by the browser suite. Safe to remove.",
+        rules: [
+          {
+            title: "Add the ones first",
+            ruleFormula: "",
+            explanation: "Regroup when the ones column reaches ten.",
+            visualExample: "",
+          },
+        ],
+        worked_examples: [{ problem: "27 + 45", steps: [], solution: "72", tip: "" }],
+        order_index: 1,
+      },
+    });
+    expect(readyModule.ok()).toBe(true);
+    readyModuleId = (await readyModule.json()).data.module_id;
+
+    // A published assessment, so the way back out of publication has something
+    // to act on. It needs a published question in it, which is the API's own
+    // precondition rather than this suite's invention.
+    const question = await api(request, token, "/teacher-admin/questions", {
+      method: "POST",
+      data: {
+        competency_id: competencyId,
+        question_type: "multiple_choice",
+        difficulty: "easy",
+        prompt: `Disposable UX question ${RUN}: what is 5 + 5?`,
+        choices: ["9", "10", "11"],
+        answer_key: "10",
+        status: "published",
+      },
+    });
+    expect(question.ok()).toBe(true);
+    questionId = (await question.json()).data.question_id;
+
+    const assessment = await api(request, token, "/teacher-admin/assessments", {
+      method: "POST",
+      data: {
+        title: `Disposable UX assessment ${RUN}`,
+        assessment_type: "diagnostic",
+        duration_minutes: 20,
+        description: "Created by the browser suite. Safe to remove.",
+      },
+    });
+    expect(assessment.ok()).toBe(true);
+    assessmentId = (await assessment.json()).data.assessment_id;
+
+    const seated = await api(request, token, `/teacher-admin/assessments/${assessmentId}/questions`, {
+      method: "PUT",
+      data: { question_ids: [questionId] },
+    });
+    expect(seated.ok()).toBe(true);
+
+    const published = await api(request, token, `/teacher-admin/assessments/${assessmentId}/publish`, {
+      method: "POST",
+    });
+    expect(published.ok()).toBe(true);
   });
 
   test.afterAll(async ({ request }) => {
@@ -201,12 +272,38 @@ describe("teacher authoring behaviour", () => {
       });
     }
 
-    if (moduleId) {
-      await api(request, token, `/teacher-admin/modules/${moduleId}`, {
+    // The assessment before the question it holds: a question something still
+    // points at is refused, and that refusal is correct rather than a cleanup
+    // failure.
+    if (assessmentId) {
+      await api(request, token, `/teacher-admin/assessments/${assessmentId}`, {
         method: "PATCH",
         data: { status: "archived" },
       });
-      await api(request, token, `/teacher-admin/modules/${moduleId}/delete`, { method: "POST" });
+      await api(request, token, `/teacher-admin/assessments/${assessmentId}/delete`, {
+        method: "POST",
+      });
+    }
+
+    if (questionId) {
+      await api(request, token, `/teacher-admin/questions/${questionId}`, {
+        method: "PATCH",
+        data: { status: "archived" },
+      });
+      await api(request, token, `/teacher-admin/questions/${questionId}/delete`, {
+        method: "POST",
+      });
+    }
+
+    for (const id of [moduleId, readyModuleId]) {
+      if (!id) {
+        continue;
+      }
+      await api(request, token, `/teacher-admin/modules/${id}`, {
+        method: "PATCH",
+        data: { status: "archived" },
+      });
+      await api(request, token, `/teacher-admin/modules/${id}/delete`, { method: "POST" });
     }
 
     await removeCompetency(request, token, competencyId);
@@ -495,6 +592,76 @@ describe("teacher authoring behaviour", () => {
       "aria-expanded",
       "true",
     );
+  });
+
+  // ---------------------------------------------------------------------
+  // Publishing from the row
+  // ---------------------------------------------------------------------
+
+  test("a finished draft module is published from its own row", async ({ page }) => {
+    await page.goto(`/teacher/learning-modules?status=draft&search=${encodeURIComponent(RUN)}`);
+
+    const title = `Disposable UX module ${RUN} ready`;
+    await expect(page.getByRole("heading", { name: title, level: 3 })).toBeVisible();
+
+    await page.getByRole("button", { name: `Publish ${title}` }).click();
+
+    // The row leaves the draft tab, and the module is on the published one.
+    await expect(page.getByRole("heading", { name: title, level: 3 })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+
+    await page.goto(
+      `/teacher/learning-modules?status=published&search=${encodeURIComponent(RUN)}`,
+    );
+    await expect(page.getByRole("heading", { name: title, level: 3 })).toBeVisible();
+
+    // Nothing offers to publish it a second time.
+    await expect(page.getByRole("button", { name: `Publish ${title}` })).toHaveCount(0);
+  });
+
+  test("an unfinished draft module says what is missing and refuses", async ({ page }) => {
+    await page.goto(`/teacher/learning-modules?status=draft&search=${encodeURIComponent(RUN)}`);
+
+    const title = `Disposable UX module ${RUN}`;
+    const row = page.getByRole("listitem").filter({
+      has: page.getByRole("heading", { name: title, level: 3, exact: true }),
+    });
+    await expect(row).toBeVisible();
+
+    // The conditions are beside the button rather than behind it.
+    await expect(row).toContainText("core rule");
+    await expect(row).toContainText("worked example");
+
+    await row.getByRole("button", { name: `Publish ${title}` }).click();
+
+    // Checked again on the server against the module it holds, so the refusal
+    // is authoritative rather than the row's own guess.
+    await expect(row.getByRole("alert")).toContainText(/core rule|worked example/);
+    await expect(row).toContainText("Draft");
+  });
+
+  test("a published assessment can be taken back to draft", async ({ page }) => {
+    await page.goto("/teacher/assessments");
+
+    const title = `Disposable UX assessment ${RUN}`;
+    await page.getByLabel(/Search assessments/i).fill(RUN);
+
+    const row = page.getByRole("listitem").filter({ hasText: title });
+    await expect(row).toBeVisible({ timeout: 20_000 });
+
+    await row.getByRole("button", { name: `Return to draft ${title}` }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Return to draft", exact: true }).click();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+    // It is a draft now, so Publish is offered and the way back is not.
+    await expect(row.getByRole("button", { name: `Publish ${title}` })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(row.getByRole("button", { name: `Return to draft ${title}` })).toHaveCount(0);
   });
 
   // ---------------------------------------------------------------------

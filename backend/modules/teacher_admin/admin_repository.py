@@ -518,6 +518,19 @@ where assessment_questions.assessment_id = any($1::uuid[])
 group by assessment_questions.assessment_id
 """
 
+#: Attempts a learner has open on an assessment.
+#:
+#: `start_assessment_attempt` both opens and resumes, and it only finds a
+#: published assessment. Returning one to draft while somebody is sitting it
+#: would lock that learner out of their own half-finished paper, so the
+#: unpublish route counts these first.
+_ASSESSMENT_OPEN_ATTEMPTS_SQL = """
+select count(*)
+from app.assessment_attempts
+where assessment_attempts.assessment_id = $1
+  and assessment_attempts.status = 'in_progress'
+"""
+
 #: Publication preconditions, gathered in one query so the refusal can name the
 #: one that failed. An unpublished question, or an inactive grade, would reach a
 #: learner as a broken assessment. duration_minutes needs no check here: the
@@ -1266,6 +1279,11 @@ async def activity_question_counts(
 async def activity_open_attempts(connection: ActorConnection, activity_id: UUID) -> int:
     """How many learners are part-way through this activity right now."""
     return await connection.fetchval(_ACTIVITY_OPEN_ATTEMPTS_SQL, activity_id) or 0
+
+
+async def assessment_open_attempts(connection: ActorConnection, assessment_id: UUID) -> int:
+    """How many learners are part-way through this assessment right now."""
+    return await connection.fetchval(_ASSESSMENT_OPEN_ATTEMPTS_SQL, assessment_id) or 0
 
 
 async def activity_publication_readiness(

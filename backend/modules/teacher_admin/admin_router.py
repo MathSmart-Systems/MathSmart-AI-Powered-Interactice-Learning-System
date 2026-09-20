@@ -1217,6 +1217,47 @@ async def publish_assessment(
     }
 
 
+@router.post("/teacher-admin/assessments/{assessment_id}/unpublish")
+async def unpublish_assessment(
+    _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, assessment_id: UUID
+) -> dict[str, Any]:
+    """Return a published assessment to draft so it can be corrected.
+
+    A route of its own rather than a `status` patch, because the decision is
+    not just a column. `start_assessment_attempt` opens *and* resumes, and it
+    only ever finds a published assessment: returning one to draft while a
+    learner is part-way through their paper would lock them out of their own
+    answers. So an assessment with an attempt in progress is refused, and the
+    teacher is told how many.
+    """
+    current = await repository.read(connection, ASSESSMENTS, assessment_id)
+    if current is None:
+        raise ApiError(404, "No assessment was found")
+
+    if current["status"] != "published":
+        raise ApiError(
+            422,
+            "Only a published assessment can be returned to draft",
+            code="assessment_not_unpublishable",
+        )
+
+    open_attempts = await repository.assessment_open_attempts(connection, assessment_id)
+    if open_attempts > 0:
+        raise ApiError(
+            409,
+            f"{open_attempts} learner attempt(s) are still in progress, so this assessment "
+            "cannot be returned to draft yet.",
+            code="assessment_in_progress",
+        )
+
+    row = await repository.update(
+        connection, ASSESSMENTS, assessment_id, {"status": "draft"}
+    )
+    if row is None:
+        raise ApiError(404, "No assessment was found")
+    return {"data": _row(row, ASSESSMENTS)}
+
+
 # ---------------------------------------------------------------------------
 # Grades and sections
 # ---------------------------------------------------------------------------

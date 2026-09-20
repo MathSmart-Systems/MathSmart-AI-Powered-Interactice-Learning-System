@@ -8,6 +8,7 @@ import {
   PencilLine,
   Send,
   Trash2,
+  Undo2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -151,6 +152,7 @@ export function AssessmentList({
   panelId,
   labelledBy,
   onEdit,
+  onUnpublish,
   onManageQuestions,
   onPublish,
   onArchive,
@@ -273,6 +275,26 @@ export function AssessmentList({
                   >
                     <Send aria-hidden="true" />
                     Publish
+                    <span className="sr-only"> {assessment.title}</span>
+                  </Button>
+                ) : null}
+
+                {/*
+                  Publishing used to be a one-way door: a paper with a wrong
+                  passing mark, or one published a week early, could only be
+                  archived — which reads as "finished with" rather than "not
+                  yet" and hides it from the list a teacher works in.
+                */}
+                {status === "published" && onUnpublish ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11 sm:min-h-9"
+                    onClick={() => onUnpublish(assessment)}
+                  >
+                    <Undo2 aria-hidden="true" />
+                    Return to draft
                     <span className="sr-only"> {assessment.title}</span>
                   </Button>
                 ) : null}

@@ -7,6 +7,7 @@ import {
   createModule,
   deleteModule,
   listCompetencies,
+  readModule,
   readModuleReferences,
   restoreModule,
   updateModule,
@@ -16,6 +17,7 @@ import {
   readModuleForm,
   validateModule,
 } from "../utils/module-form";
+import { modulePublishBlockers } from "../utils/publish-readiness";
 
 const LEARNING_MODULES_PATH = "/teacher/learning-modules";
 
@@ -182,6 +184,58 @@ export async function restoreModuleAction(_previousState, formData) {
       : null,
   };
 }
+
+/**
+ * Publishes a finished draft straight from its row.
+ *
+ * The conditions are checked again here against the module as the server holds
+ * it, not against the row the browser is showing. A list can be minutes old, a
+ * rule can have been emptied in another tab, and the row's own hint is a
+ * courtesy rather than the gate. Publishing something a learner cannot study
+ * is the failure worth preventing.
+ *
+ * The competency rule is left to the API, which owns it and refuses in its own
+ * words.
+ */
+export async function publishModuleAction(_previousState, formData) {
+  const id = String(formData.get("id") ?? "").trim();
+
+  if (!id) {
+    return failure("This module could not be found. Refresh the page and try again.");
+  }
+
+  const current = await readModule(id);
+
+  if (!current.ok) {
+    return failure(current.message ?? "This module could not be read, so it was not published.");
+  }
+
+  const blockers = modulePublishBlockers({
+    rules: Array.isArray(current.module?.rules) ? current.module.rules : [],
+    workedExamples: Array.isArray(current.module?.worked_examples)
+      ? current.module.worked_examples
+      : [],
+  });
+
+  if (blockers.length > 0) {
+    return failure(blockers.join(" "));
+  }
+
+  const result = await updateModule(id, { status: "published" });
+
+  if (!result.ok) {
+    return failure(result.message ?? "The module could not be published.", result.fields ?? {});
+  }
+
+  revalidatePath(LEARNING_MODULES_PATH);
+  return {
+    success: true,
+    formError: null,
+    fieldErrors: {},
+    notice: "Published. Learners can open this module now.",
+  };
+}
+
 
 /**
  * The authoritative reference preview, for the delete confirmation.

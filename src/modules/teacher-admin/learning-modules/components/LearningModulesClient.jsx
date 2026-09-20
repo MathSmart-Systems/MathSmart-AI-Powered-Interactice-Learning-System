@@ -18,6 +18,7 @@ import { deleteModuleAction, readModuleReferencesAction } from "../services/acti
 import { ArchiveModuleDialog } from "./ArchiveModuleDialog";
 import { ModuleDialog } from "./ModuleDialog";
 import { ModuleRow } from "./ModuleRow";
+import { PublishModuleForm } from "./PublishModuleForm";
 import { LearningModulesEmpty } from "./LearningModulesStates";
 import { Pagination } from "./Pagination";
 import { RestoreModuleForm } from "./RestoreModuleForm";
@@ -250,6 +251,12 @@ export function LearningModulesClient({
                         <Pencil aria-hidden="true" className="size-4" />
                         Edit<span className="sr-only">{module.title}</span>
                       </Button>
+                      {/*
+                        Only on a draft. A published module is already where it
+                        needs to be, and offering Publish on it would say
+                        otherwise.
+                      */}
+                      {module.status === "draft" ? <PublishModuleForm module={module} /> : null}
                       <Button
                         variant="ghost"
                         size="sm"

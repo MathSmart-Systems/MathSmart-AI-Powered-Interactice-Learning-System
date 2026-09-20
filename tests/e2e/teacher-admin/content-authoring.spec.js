@@ -121,8 +121,12 @@ describe("teacher content authoring", () => {
 
     // The caption describes the rows above it, in the state the address names,
     // rather than counting every status in the bank.
+    // `.first()`, because the caption is said twice on purpose: once on the
+    // page and once into a screen-reader live region. Matching both is a
+    // strict-mode violation the moment the announcer has caught up, which
+    // under a loaded worker it has.
     await expect(
-      page.getByText(/^Showing \d+–\d+ of \d+ published questions$/),
+      page.getByText(/^Showing \d+–\d+ of \d+ published questions$/).first(),
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: FIXTURE.firstQuestion, level: 3 }),
