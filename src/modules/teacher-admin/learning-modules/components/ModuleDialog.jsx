@@ -14,11 +14,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { FormField } from "@/modules/shared";
 
 import { MODULE_DIALOG_MODES, MODULE_FORM_INITIAL_STATE } from "../action-state";
-import { MAX_ESTIMATED_MINUTES, MIN_ESTIMATED_MINUTES, STATUS_OPTIONS } from "../constants";
+import {
+  MAX_ESTIMATED_MINUTES,
+  MIN_ESTIMATED_MINUTES,
+  SELECT_CLASS,
+  STATUS_OPTIONS,
+} from "../constants";
 import { createModuleAction, updateModuleAction } from "../services/actions";
 import {
   blankExample,
@@ -27,35 +32,12 @@ import {
   normalizeRule,
 } from "../utils/module-form";
 
-import { RulesEditor } from "./RulesEditor";
+import { editableRule, RulesEditor } from "./RulesEditor";
 import { SubmitButton } from "./SubmitButton";
 import { editableWorkedExample, WorkedExamplesEditor } from "./WorkedExamplesEditor";
 
-/**
- * The one decorative gradient token a native <select> shares with the Input
- * primitive, kept here so the author form never sprinkles raw theme values.
- */
-const SELECT_CLASS =
-  "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 md:text-sm";
-
-function Field({ id, label, error, hint, required = false, children }) {
-  const errorId = `${id}-error`;
-
-  return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={id} className={required ? "after:ml-0.5 after:text-destructive after:content-['*']" : undefined}>
-        {label}
-      </Label>
-      {children}
-      {hint ? <p className="text-sm leading-relaxed text-muted-foreground">{hint}</p> : null}
-      {error ? (
-        <p id={errorId} className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
+/** Groups a labelled authoring control with its hint and validation message. */
+const Field = FormField;
 
 /**
  * The create or edit author form, one dialog for both. Every module field is
@@ -70,8 +52,8 @@ export function ModuleDialog({ mode, module, competencies, onOpenChange }) {
 
   const [rules, setRules] = useState(() =>
     isEdit && Array.isArray(module?.rules) && module.rules.length > 0
-      ? module.rules.map(normalizeRule)
-      : [blankRule()],
+      ? module.rules.map((rule) => editableRule(normalizeRule(rule)))
+      : [editableRule(blankRule())],
   );
   const [workedExamples, setWorkedExamples] = useState(() =>
     isEdit && Array.isArray(module?.workedExamples) && module.workedExamples.length > 0

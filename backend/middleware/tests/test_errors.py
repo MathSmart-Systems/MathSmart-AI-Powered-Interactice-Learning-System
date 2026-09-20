@@ -1,5 +1,6 @@
 """Every error leaves through one envelope, and it never carries internals out."""
 
+import asyncpg
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -34,6 +35,29 @@ def client() -> TestClient:
     @app.get("/boom")
     async def boom():
         raise RuntimeError("relation app.questions does not exist: answer_key")
+
+    # The three PL/pgSQL codes the definer functions raise. Every route that
+    # calls one expects a missing row to come back as None and answers 404, but
+    # a function raises instead of returning — so these escaped to the catch-all
+    # and a teacher archiving content turned a learner's next request into a
+    # 500 the browser could only report as a failed fetch.
+    @app.get("/gone")
+    async def gone():
+        raise asyncpg.exceptions.NoDataFoundError(
+            "The assessment is not published: 30e7f94d-0daa-4c0d-9a4b-908e47029a51"
+        )
+
+    @app.get("/refused")
+    async def refused():
+        raise asyncpg.exceptions.RaiseError(
+            "app.start_activity_attempt: the learner is not in grade 6"
+        )
+
+    @app.get("/incomplete")
+    async def incomplete():
+        raise asyncpg.exceptions.AssertError(
+            "app.submit_assessment_attempt: snapshot count 4 <> graded 5"
+        )
 
     @app.post("/validated")
     async def validated(body: Body):
@@ -101,3 +125,36 @@ def test_an_unexpected_failure_hides_internals(client):
     assert "app.questions" not in response.text
     assert "RuntimeError" not in response.text
     assert error["request_id"].startswith("req_")
+
+
+def test_a_function_that_found_nothing_is_a_404_not_a_crash(client):
+    """Archived or unpublished content is missing, not broken."""
+    response = client.get("/gone")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+    # The identifier and the function name stay in the log.
+    assert "30e7f94d" not in response.text
+    assert "assessment is not published" not in response.text
+
+
+def test_a_rule_a_function_enforces_is_a_refusal_not_a_crash(client):
+    response = client.get("/refused")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "rule_violation"
+    assert "start_activity_attempt" not in response.text
+
+
+def test_an_attempt_with_incomplete_evidence_is_a_conflict(client):
+    """The function refuses rather than grading against content that has moved.
+
+    Refusing is the point. A 409 says the record is in a state somebody has to
+    resolve, which is true: the attempt needs resetting, not a corrected field.
+    """
+    response = client.get("/incomplete")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "attempt_evidence_incomplete"
+    assert "snapshot count" not in response.text
+    assert "submit_assessment_attempt" not in response.text

@@ -358,6 +358,208 @@ def test_a_published_module_locks_its_published_competency_before_update():
     assert lock_index < write_index
 
 
+#: The statements the restore route runs, each named by a clause only it
+#: carries, so a test can answer one without answering the others.
+MODULE_RESTORE_READ = "as module_status"
+MODULE_ORDER_TAKEN = "and learning_modules.module_id <> $3"
+NEXT_MODULE_ORDER = "coalesce(max(learning_modules.order_index) + 1, 0)"
+
+
+def test_an_archived_module_is_restored_into_the_place_it_left():
+    """Nothing took the slot, so the module goes back exactly where it was."""
+    connection = FakeConnection(
+        results={
+            MODULE_RESTORE_READ: {
+                "competency_id": COMPETENCY,
+                "title": MODULE_ROW["title"],
+                "order_index": 1,
+                "module_status": "archived",
+            },
+            MODULE_ORDER_TAKEN: None,
+            "returning": MODULE_ROW,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/modules/{MODULE}/restore", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["order_index_changed"] is False
+
+    update = next(call for call in connection.calls if "update app.learning_modules" in call[0])
+    # Only the status is rewritten; the place is left alone.
+    assert "order_index = $" not in update[0]
+
+
+def test_a_restored_module_moves_when_its_place_was_taken():
+    """Archiving frees the slot, so by restore time something else usually holds it.
+
+    `learning_modules_competency_order_key` exempts archived rows, which is what
+    made this the normal case rather than a rare one — and setting the status
+    alone violated the index, reaching the teacher as "Another record already
+    uses one of those values" on a control with no way to change the order.
+    """
+    connection = FakeConnection(
+        results={
+            MODULE_RESTORE_READ: {
+                "competency_id": COMPETENCY,
+                "title": MODULE_ROW["title"],
+                "order_index": 1,
+                "module_status": "archived",
+            },
+            MODULE_ORDER_TAKEN: MODULE,
+            NEXT_MODULE_ORDER: 7,
+            "returning": {**MODULE_ROW, "order_index": 7},
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/modules/{MODULE}/restore", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["order_index"] == 7
+    # The teacher is told the module moved. A module that quietly changed place
+    # in the learning path is not a detail.
+    assert body["order_index_changed"] is True
+
+    update = next(call for call in connection.calls if "update app.learning_modules" in call[0])
+    assert "order_index = $" in update[0]
+    assert 7 in update[1]
+
+
+def test_the_restore_locks_the_module_before_it_reads_the_place():
+    """The check and the write are one transaction, so the slot cannot move."""
+    connection = FakeConnection(
+        results={
+            MODULE_RESTORE_READ: {
+                "competency_id": COMPETENCY,
+                "title": MODULE_ROW["title"],
+                "order_index": 1,
+                "module_status": "archived",
+            },
+            MODULE_ORDER_TAKEN: None,
+            "returning": MODULE_ROW,
+        }
+    )
+    client = build_client(connection)
+
+    client.post(f"/api/v1/teacher-admin/modules/{MODULE}/restore", headers=ADVISER_HEADERS)
+
+    queries = connection.queries()
+    lock = next(index for index, query in enumerate(queries) if "for update" in query)
+    check = next(index for index, query in enumerate(queries) if MODULE_ORDER_TAKEN in query)
+    assert lock < check
+
+
+def test_only_an_archived_module_can_be_restored():
+    connection = FakeConnection(
+        results={
+            MODULE_RESTORE_READ: {
+                "competency_id": COMPETENCY,
+                "title": MODULE_ROW["title"],
+                "order_index": 1,
+                "module_status": "published",
+            },
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/modules/{MODULE}/restore", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "module_not_archived"
+    assert not [call for call in connection.calls if "update app.learning_modules" in call[0]]
+
+
+def test_restoring_a_module_that_is_not_there_is_a_404():
+    client = build_client(FakeConnection(results={}))
+
+    response = client.post(
+        f"/api/v1/teacher-admin/modules/{MODULE}/restore", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 404
+
+
+def test_restoring_a_module_needs_a_live_session():
+    connection = FakeConnection(
+        results={
+            MODULE_RESTORE_READ: {
+                "competency_id": COMPETENCY,
+                "title": MODULE_ROW["title"],
+                "order_index": 1,
+                "module_status": "archived",
+            },
+        }
+    )
+    client = build_client(connection, live_session=False)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/modules/{MODULE}/restore", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 401
+
+
+def test_a_learner_cannot_restore_a_module():
+    client = build_client(FakeConnection(results={}))
+
+    response = client.post(
+        f"/api/v1/teacher-admin/modules/{MODULE}/restore", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 403
+
+
+def test_a_module_order_collision_names_the_field_it_is_about():
+    """The generic conflict sentence told a teacher nothing they could act on."""
+    import asyncpg
+
+    class ExplodingConnection(FakeConnection):
+        async def fetchrow(self, query: str, *args):
+            if "update app.learning_modules" in query:
+                raise asyncpg.exceptions.UniqueViolationError(
+                    "duplicate key value violates unique constraint "
+                    '"learning_modules_competency_order_key"'
+                )
+            return await super().fetchrow(query, *args)
+
+    connection = ExplodingConnection(
+        results={
+            "for update": MODULE_ROW,
+            "for share": COMPETENCY_ROW,
+        }
+    )
+    connection.results["learning_modules_competency_order_key"] = None
+    # asyncpg carries the constraint name on the exception, not in the message.
+    original = asyncpg.exceptions.UniqueViolationError.constraint_name
+    asyncpg.exceptions.UniqueViolationError.constraint_name = (
+        "learning_modules_competency_order_key"
+    )
+    try:
+        client = build_client(connection)
+        response = client.patch(
+            f"/api/v1/teacher-admin/modules/{MODULE}",
+            json={"order_index": 1},
+            headers=ADVISER_HEADERS,
+        )
+    finally:
+        asyncpg.exceptions.UniqueViolationError.constraint_name = original
+
+    assert response.status_code == 409
+    assert response.json()["error"]["fields"]["order_index"]
+    assert "learning path" in response.json()["error"]["message"]
+    # The constraint name stays in the log.
+    assert "learning_modules_competency_order_key" not in response.text
+
+
 def test_archiving_a_competency_does_not_delete_it():
     connection = admin_connection()
     client = build_client(connection)

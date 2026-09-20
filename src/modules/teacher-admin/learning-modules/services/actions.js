@@ -164,5 +164,19 @@ export async function restoreModuleAction(_previousState, formData) {
   }
 
   revalidatePath(LEARNING_MODULES_PATH);
-  return { success: true, formError: null, fieldErrors: {} };
+
+  // A module whose place had been taken comes back at the end of its
+  // competency instead. That changes the order learners work through, so it is
+  // said out loud rather than discovered later.
+  const moved = result.data?.order_index_changed === true;
+  const orderIndex = result.data?.order_index;
+
+  return {
+    success: true,
+    formError: null,
+    fieldErrors: {},
+    notice: moved
+      ? `Another module had taken this one's place, so it was restored as a draft at position ${orderIndex} instead. Edit it to move it.`
+      : null,
+  };
 }

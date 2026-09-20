@@ -23,10 +23,11 @@ export function ModuleRow({ module, actions }) {
         }
       >
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <StatusBadge status={module.status} label={module.statusLabel} />
             <ModuleBadges
               competency={module.competency}
+              strand={module.competencyStrand}
               rulesCount={module.rulesCount}
               workedExamplesCount={module.workedExamplesCount}
             />
@@ -39,8 +40,8 @@ export function ModuleRow({ module, actions }) {
           <h3
             className={
               archived
-                ? "font-display text-lg leading-snug font-semibold tracking-tight text-muted-foreground"
-                : "font-display text-lg leading-snug font-semibold tracking-tight text-foreground"
+                ? "font-display text-lg leading-snug font-semibold tracking-tight break-words text-muted-foreground"
+                : "font-display text-lg leading-snug font-semibold tracking-tight break-words text-foreground"
             }
           >
             {module.title}
@@ -51,7 +52,7 @@ export function ModuleRow({ module, actions }) {
 
         {module.visibilityWarning ? (
           <p
-            role="note"
+            role="status"
             className="flex items-start gap-2.5 border-l-[3px] border-destructive bg-destructive/5 px-3 py-2 text-sm text-destructive"
           >
             <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />

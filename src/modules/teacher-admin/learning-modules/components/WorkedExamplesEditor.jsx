@@ -1,11 +1,13 @@
 "use client";
 
-import { useId } from "react";
-import { GripVertical, Minus, Plus, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
+import { Minus, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ReorderControls, ResultAnnouncer } from "@/modules/shared";
+import { moveItem, movedMessage } from "@/modules/shared/utils/reorder.js";
 
 function clientIdentifier() {
   return globalThis.crypto.randomUUID();
@@ -32,6 +34,7 @@ export function editableWorkedExample(raw) {
 export function WorkedExamplesEditor({ examples, onChange, error }) {
   const baseId = useId();
   const errorId = `${baseId}-examples-error`;
+  const [announcement, setAnnouncement] = useState("");
 
   function updateExample(index, patch) {
     const next = examples.slice();
@@ -62,15 +65,50 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
     });
   }
 
+  function moveExample(index, offset) {
+    const next = moveItem(examples, index, offset);
+    if (next === examples) {
+      return;
+    }
+    onChange(next);
+    setAnnouncement(
+      movedMessage(
+        examples[index].problem || `Example ${index + 1}`,
+        index + offset + 1,
+        examples.length,
+      ),
+    );
+  }
+
+  function moveStep(exampleIndex, stepIndex, offset) {
+    const example = examples[exampleIndex];
+    const steps = moveItem(example.steps, stepIndex, offset);
+    if (steps === example.steps) {
+      return;
+    }
+    updateExample(exampleIndex, {
+      steps,
+      stepIds: moveItem(example.stepIds, stepIndex, offset),
+    });
+    setAnnouncement(
+      movedMessage(
+        example.steps[stepIndex] || `Step ${stepIndex + 1}`,
+        stepIndex + offset + 1,
+        example.steps.length,
+      ),
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-4">
+    <fieldset className="flex min-w-0 flex-col gap-4">
       <div>
-        <Label className="after:ml-0.5 after:text-destructive after:content-['*']">
+        <legend className="text-sm leading-none font-medium after:ml-0.5 after:text-destructive after:content-['*']">
           Worked examples
-        </Label>
+        </legend>
         <p className="text-sm leading-relaxed text-muted-foreground">
           Step-by-step calculations a learner studies before trying one
-          themselves. A published module needs at least one complete example.
+          themselves, in the order they are read. A published module needs at
+          least one complete example.
         </p>
       </div>
 
@@ -78,28 +116,40 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
         {examples.map((example, exampleIndex) => (
           <div
             key={example.clientId}
-            className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
+            className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4"
           >
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <GripVertical aria-hidden="true" className="size-4" />
-                Example {exampleIndex + 1}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                Example {exampleIndex + 1} of {examples.length}
               </span>
               {examples.length > 1 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Remove example ${exampleIndex + 1}`}
-                  onClick={() => onChange(examples.filter((_, i) => i !== exampleIndex))}
-                >
-                  <Minus aria-hidden="true" className="size-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <ReorderControls
+                    itemName={example.problem || `example ${exampleIndex + 1}`}
+                    index={exampleIndex}
+                    total={examples.length}
+                    onMove={(offset) => moveExample(exampleIndex, offset)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => onChange(examples.filter((_, i) => i !== exampleIndex))}
+                  >
+                    <Minus aria-hidden="true" className="size-4" />
+                    Remove
+                    <span className="sr-only">
+                      {" "}
+                      {example.problem || `example ${exampleIndex + 1}`}
+                    </span>
+                  </Button>
+                </div>
               ) : null}
             </div>
 
             <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor={`${baseId}-example-${exampleIndex}-problem`}>Problem</Label>
                 <Input
                   id={`${baseId}-example-${exampleIndex}-problem`}
@@ -110,29 +160,42 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
                 />
               </div>
 
-              <fieldset className="flex flex-col gap-2">
+              <fieldset className="flex min-w-0 flex-col gap-2">
                 <legend className="flex items-center gap-2 text-sm font-medium text-foreground">
                   Steps
                 </legend>
                 <div className="flex flex-col gap-2">
                   {example.steps.map((step, stepIndex) => (
-                    <div key={example.stepIds[stepIndex]} className="flex items-center gap-2">
+                    <div
+                      key={example.stepIds[stepIndex]}
+                      className="flex min-w-0 flex-wrap items-center gap-2"
+                    >
                       <Input
                         name={`example_step_${exampleIndex}`}
                         value={step}
                         onChange={(event) => updateStep(exampleIndex, stepIndex, event.target.value)}
                         aria-label={`Example ${exampleIndex + 1}, step ${stepIndex + 1}`}
                         placeholder={`Step ${stepIndex + 1}`}
-                        className="flex-1"
+                        className="min-w-40 flex-1"
                       />
+                      {example.steps.length > 1 ? (
+                        <ReorderControls
+                          itemName={step || `step ${stepIndex + 1}`}
+                          index={stepIndex}
+                          total={example.steps.length}
+                          onMove={(offset) => moveStep(exampleIndex, stepIndex, offset)}
+                        />
+                      ) : null}
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Remove step ${stepIndex + 1}`}
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => removeStep(exampleIndex, stepIndex)}
                       >
                         <Trash2 aria-hidden="true" className="size-4" />
+                        Remove
+                        <span className="sr-only"> step {stepIndex + 1}</span>
                       </Button>
                     </div>
                   ))}
@@ -188,11 +251,13 @@ export function WorkedExamplesEditor({ examples, onChange, error }) {
         Add another example
       </Button>
 
+      <ResultAnnouncer message={announcement} />
+
       {error ? (
         <p id={errorId} role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}
-    </div>
+    </fieldset>
   );
 }

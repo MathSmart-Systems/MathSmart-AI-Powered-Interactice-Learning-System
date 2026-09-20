@@ -418,6 +418,60 @@ async def update_module(
     return {"data": _row(row, LEARNING_MODULES)}
 
 
+@router.post("/teacher-admin/modules/{module_id}/restore")
+async def restore_module(
+    _actor: TeacherAdmin,
+    _session: SensitiveActor,
+    connection: ActorDb,
+    module_id: UUID,
+) -> dict[str, Any]:
+    """Bring an archived module back as a draft, into a place that is free.
+
+    Archiving a module frees its place in the competency, because
+    `learning_modules_competency_order_key` exempts archived rows — so the
+    normal thing that happens next is that another module takes it. Restoring
+    the row by setting its status alone then violated that index, and the
+    teacher was told "Another record already uses one of those values" on a
+    control that offered no way to change the order.
+
+    The place is checked and, when it is taken, the module is restored after
+    the competency's last live module instead. Both statements run inside the
+    request's transaction with the row locked, so nothing can claim the place
+    between the check and the write. The response says where it landed, because
+    a module that quietly moved in the learning path is not a detail.
+    """
+    current = await repository.module_restore_state(connection, module_id)
+    if current is None:
+        raise ApiError(404, "No record was found")
+
+    if str(current["module_status"]) != "archived":
+        raise ApiError(
+            422,
+            "Only an archived module can be restored.",
+            code="module_not_archived",
+        )
+
+    competency_id = current["competency_id"]
+    order_index = current["order_index"]
+    moved = await repository.module_order_is_taken(
+        connection,
+        competency_id=competency_id,
+        order_index=order_index,
+        module_id=module_id,
+    )
+
+    values: dict[str, Any] = {"status": "draft"}
+    if moved:
+        order_index = await repository.next_module_order(connection, competency_id)
+        values["order_index"] = order_index
+
+    row = await repository.update(connection, LEARNING_MODULES, module_id, values)
+    if row is None:
+        raise ApiError(404, "No record was found")
+
+    return {"data": {**_row(row, LEARNING_MODULES), "order_index_changed": moved}}
+
+
 @router.delete("/teacher-admin/modules/{module_id}", status_code=204)
 async def archive_module(
     _actor: TeacherAdmin, _session: SensitiveActor, connection: ActorDb, module_id: UUID

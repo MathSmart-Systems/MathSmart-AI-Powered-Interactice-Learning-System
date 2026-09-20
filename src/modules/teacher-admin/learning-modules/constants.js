@@ -21,6 +21,11 @@ export const STATUS_LABELS = Object.freeze({
 
 export const DEFAULT_PAGE_SIZE = 10;
 
+// A relative path, not the `@/` alias: `node --test` resolves neither
+// `jsconfig.json` paths nor the bundler, and this module is reached from the
+// pure-function tests.
+export { NATIVE_SELECT_CLASS as SELECT_CLASS } from "../../shared/utils/native-select.js";
+
 /** The bounded study-time range the API accepts, in minutes. */
 export const MIN_ESTIMATED_MINUTES = 1;
 export const MAX_ESTIMATED_MINUTES = 600;

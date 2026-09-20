@@ -1,13 +1,15 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Archive, Pencil, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResultAnnouncer, StatusTabs } from "@/modules/shared";
 
 import { MODULE_DIALOG_MODES } from "../action-state";
+import { STATUS_LABELS } from "../constants";
 import { rangeLabel } from "../utils/format.js";
 import { learningModulesUrl } from "../utils/urls.js";
 
@@ -17,6 +19,12 @@ import { ModuleRow } from "./ModuleRow";
 import { LearningModulesEmpty } from "./LearningModulesStates";
 import { Pagination } from "./Pagination";
 import { RestoreModuleForm } from "./RestoreModuleForm";
+
+const TABS = [
+  { id: "published", label: "Published" },
+  { id: "draft", label: "Draft" },
+  { id: "archived", label: "Archived" },
+];
 
 /**
  * The interactive shell the library list lives in. Every button, every dialog
@@ -34,13 +42,9 @@ export function LearningModulesClient({
   competencies,
 }) {
   const [dialog, setDialog] = useState(null);
-  const tabsId = useId();
 
-  const TABS = [
-    { id: "published", label: "Published" },
-    { id: "draft", label: "Draft" },
-    { id: "archived", label: "Archived" },
-  ];
+  const statusLabel = STATUS_LABELS[status] ?? "Draft";
+  const caption = rangeLabel({ page, pageSize, totalItems, statusLabel });
 
   function openCreate() {
     setDialog({ key: "create", mode: MODULE_DIALOG_MODES.CREATE, module: null });
@@ -89,7 +93,7 @@ export function LearningModulesClient({
               />
               <Button type="submit" size="sm" variant="outline">
                 <Search aria-hidden="true" className="size-4" />
-                <span className="sr-only">Search</span>
+                Search
               </Button>
             </div>
           </form>
@@ -109,45 +113,15 @@ export function LearningModulesClient({
         </div>
       </header>
 
-      <div
-        role="tablist"
-        aria-label="Filter the Learning Modules"
-        className="flex items-center gap-5 border-b border-border"
-      >
-        {TABS.map((item) => {
-          const selected = status === item.id;
-          return (
-            <Link
-              key={item.id}
-              role="tab"
-              id={`${tabsId}-${item.id}-tab`}
-              aria-selected={selected}
-              aria-controls={`${tabsId}-${item.id}-panel`}
-              href={learningModulesUrl({ search, status: item.id })}
-              className={
-                selected
-                  ? "-mb-px inline-flex items-center gap-1.5 rounded-t-sm border-b-2 border-primary px-1 pb-2.5 text-sm font-semibold text-primary outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  : "-mb-px inline-flex items-center gap-1.5 rounded-t-sm border-b-2 border-transparent px-1 pb-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              }
-            >
-              {item.label}
-              {selected ? (
-                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                  {totalItems}
-                </span>
-              ) : null}
-            </Link>
-          );
-        })}
-      </div>
+      <StatusTabs
+        label="Filter modules by publication state"
+        tabs={TABS}
+        current={status}
+        count={totalItems}
+        hrefFor={(id) => learningModulesUrl({ search, status: id })}
+      />
 
-      <div
-        role="tabpanel"
-        id={`${tabsId}-${status}-panel`}
-        aria-labelledby={`${tabsId}-${status}-tab`}
-        tabIndex={0}
-        className="flex flex-col gap-4 outline-none"
-      >
+      <div className="flex flex-col gap-4">
         {items.length === 0 ? (
           <LearningModulesEmpty hasSearch={Boolean(search)} status={status} />
         ) : (
@@ -157,7 +131,25 @@ export function LearningModulesClient({
                 <ModuleRow
                   key={module.id}
                   module={module}
-                  actions={<RestoreModuleForm module={module} />}
+                  actions={
+                    <>
+                      {/* Editing an archived module is the only way to give it
+                          a free place before it is restored. Without it a
+                          module whose slot had been taken could be refused
+                          forever with nothing the teacher could do about it. */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => openEdit(module)}
+                      >
+                        <Pencil aria-hidden="true" className="size-4" />
+                        Edit
+                        <span className="sr-only"> module</span>
+                      </Button>
+                      <RestoreModuleForm module={module} />
+                    </>
+                  }
                 />
               ) : (
                 <ModuleRow
@@ -166,20 +158,24 @@ export function LearningModulesClient({
                   actions={
                     <>
                       <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Edit module"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => openEdit(module)}
                       >
                         <Pencil aria-hidden="true" className="size-4" />
+                        Edit
+                        <span className="sr-only"> module</span>
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon-sm"
-                        aria-label="Archive module"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => openArchive(module)}
                       >
                         <Archive aria-hidden="true" className="size-4" />
+                        Archive
+                        <span className="sr-only"> module</span>
                       </Button>
                     </>
                   }
@@ -191,11 +187,8 @@ export function LearningModulesClient({
       </div>
 
       <footer className="flex flex-col gap-4">
-        {items.length > 0 ? (
-          <p aria-live="polite" className="text-sm text-muted-foreground">
-            {rangeLabel({ page, pageSize, totalItems })}
-          </p>
-        ) : null}
+        <p className="text-sm text-muted-foreground">{caption}</p>
+        <ResultAnnouncer message={caption} />
 
         <Pagination search={search} status={status} page={page} totalPages={totalPages} />
       </footer>

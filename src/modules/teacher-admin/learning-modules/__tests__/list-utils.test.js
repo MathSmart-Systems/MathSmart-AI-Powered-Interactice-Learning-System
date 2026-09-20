@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { secureApiBaseUrl } from "../utils/api-url.js";
-import { formatDate } from "../utils/format.js";
+import { formatDate, rangeLabel } from "../utils/format.js";
 import { learningModulesUrl } from "../utils/urls.js";
 
 describe("secureApiBaseUrl", () => {
@@ -32,5 +32,28 @@ describe("learningModulesUrl", () => {
 describe("formatDate", () => {
   it("uses the Philippine calendar date", () => {
     assert.equal(formatDate("2026-09-13T17:00:00.000Z"), "Sep 14, 2026");
+  });
+});
+
+describe("rangeLabel", () => {
+  it("names the state it is counting, because the list shows only that state", () => {
+    assert.equal(
+      rangeLabel({ page: 2, pageSize: 10, totalItems: 23, statusLabel: "Published" }),
+      "Showing 11–20 of 23 published modules",
+    );
+  });
+
+  it("stops the last page at the total", () => {
+    assert.equal(
+      rangeLabel({ page: 3, pageSize: 10, totalItems: 23, statusLabel: "Draft" }),
+      "Showing 21–23 of 23 draft modules",
+    );
+  });
+
+  it("says nothing is there rather than counting to zero", () => {
+    assert.equal(
+      rangeLabel({ page: 1, pageSize: 10, totalItems: 0, statusLabel: "Archived" }),
+      "No archived modules",
+    );
   });
 });

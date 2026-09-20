@@ -27,6 +27,11 @@ function toCompetency(row) {
     code: typeof row?.code === "string" ? row.code : null,
     name: typeof row?.name === "string" ? row.name : null,
     status: typeof row?.status === "string" ? row.status : null,
+    // Shown on a row so a teacher can see which strand a module teaches. It is
+    // read here and never offered as a choice anywhere: a strand written under
+    // "Other" belongs to its own competency and must not become an option
+    // every later competency can be filed under.
+    domain: typeof row?.domain === "string" ? row.domain : null,
   };
 }
 
@@ -142,6 +147,8 @@ function toModuleRow(row, competencyByCode) {
     statusLabel: STATUS_LABELS[row?.status] ?? "Draft",
     competencyStatus: competency?.status ?? null,
     competency: competencyLabel(competencyByCode, competencyId),
+    // Read-only, and never promoted into a filter or a dropdown.
+    competencyStrand: competency?.domain ?? null,
     visibilityWarning: moduleVisibilityWarning({
       moduleStatus: status,
       competencyStatus: competency?.status ?? null,

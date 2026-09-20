@@ -12,6 +12,9 @@ export const CONFIRM_ACTION_INITIAL_STATE = Object.freeze({
   success: false,
   formError: null,
   fieldErrors: {},
+  // A restore can succeed and still have something worth saying: a module
+  // whose place had been taken comes back at the end of its competency.
+  notice: null,
 });
 
 /** The two server actions a dialog can back, so the dialog can pick by mode. */

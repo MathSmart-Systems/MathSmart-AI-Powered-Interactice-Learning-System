@@ -32,14 +32,22 @@ export function formatUpdated(value) {
   return date ? `Updated ${date}` : null;
 }
 
-/** Range caption like "1–10 of 47 modules" under the list. */
-export function rangeLabel({ page, pageSize, totalItems }) {
-  if (totalItems === 0) {
-    return "No modules";
+/**
+ * The caption under the list: "Showing 21–40 of 118 published modules".
+ *
+ * The state is named because the list only ever shows one of them. Both
+ * numbers come from the same filtered read, so the caption describes the rows
+ * above it rather than the library as a whole.
+ */
+export function rangeLabel({ page, pageSize, totalItems, statusLabel = null }) {
+  const scope = statusLabel ? `${statusLabel.toLowerCase()} modules` : "modules";
+
+  if (!totalItems) {
+    return `No ${scope}`;
   }
 
   const first = (page - 1) * pageSize + 1;
   const last = Math.min(page * pageSize, totalItems);
 
-  return `${first}–${last} of ${totalItems} modules`;
+  return `Showing ${first}–${last} of ${totalItems} ${scope}`;
 }

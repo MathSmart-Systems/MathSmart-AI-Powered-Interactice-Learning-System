@@ -1,4 +1,5 @@
 export { FormField } from "./components/FormField";
+export { ReorderControls } from "./components/ReorderControls";
 export { ResultAnnouncer } from "./components/ResultAnnouncer";
 export { SidebarFrame } from "./components/SidebarFrame";
 export { StatusTabs } from "./components/StatusTabs";

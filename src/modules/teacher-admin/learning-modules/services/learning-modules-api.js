@@ -183,10 +183,17 @@ export async function archiveModule(moduleId) {
   return apiRequest(`/teacher-admin/modules/${moduleId}`, { method: "DELETE" });
 }
 
-/** Brings an archived module back to draft so it can be edited and published. */
+/**
+ * Brings an archived module back as a draft so it can be edited and published.
+ *
+ * A dedicated route rather than a `status` patch. Archiving frees the module's
+ * place in its competency — the unique index on (competency, order) exempts
+ * archived rows — so by the time anybody restores it, another module has
+ * usually taken that place. Patching the status alone then violated the index
+ * and came back as "Another record already uses one of those values". The
+ * route checks the place and the write in one transaction and moves the module
+ * to the end of the competency when it has to.
+ */
 export async function restoreModule(moduleId) {
-  return apiRequest(`/teacher-admin/modules/${moduleId}`, {
-    method: "PATCH",
-    body: { status: "draft" },
-  });
+  return apiRequest(`/teacher-admin/modules/${moduleId}/restore`, { method: "POST" });
 }

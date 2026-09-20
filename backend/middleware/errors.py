@@ -145,6 +145,34 @@ _UNIQUE_FIELDS: dict[str, tuple[str, str]] = {
         "learner_id",
         "That learner id already belongs to a learner.",
     ),
+    # The partial unique index that keeps live modules in a single sequence.
+    # Archived rows are exempt from it, so this is most often hit by restoring
+    # a module into a place something else has taken since.
+    "learning_modules_competency_order_key": (
+        "order_index",
+        "Another module in this competency already sits at that place in the "
+        "learning path. Give this one a different order.",
+    ),
+    "learning_modules_competency_title_version_key": (
+        "title",
+        "Another module in this competency already uses that title.",
+    ),
+    "activities_module_title_version_key": (
+        "title",
+        "Another activity in this module already uses that title.",
+    ),
+    "assessments_grade_title_version_key": (
+        "title",
+        "Another assessment already uses that title.",
+    ),
+    "assessment_questions_position_key": (
+        "question_ids",
+        "Two questions were given the same place in the assessment.",
+    ),
+    "activity_questions_position_key": (
+        "question_ids",
+        "Two questions were given the same place in the activity.",
+    ),
 }
 
 
@@ -192,6 +220,79 @@ def install_error_handlers(app: FastAPI) -> None:
             "This action is not set up on this database yet. A pending migration has "
             "not been applied here.",
             code="not_configured",
+        )
+
+    @app.exception_handler(asyncpg.exceptions.NoDataFoundError)
+    async def _no_data_found(
+        request: Request, exc: asyncpg.exceptions.NoDataFoundError
+    ) -> JSONResponse:
+        """A definer function that found nothing to work on, answered as a 404.
+
+        The learner-facing functions raise `P0002` when the thing they were
+        asked about is not there any more, or is no longer published: a module
+        that has been archived mid-read, an activity whose parent was
+        unpublished, an assessment that is no longer deliverable. Every route
+        that calls one expects a missing row to come back as `None` and answers
+        404 — but a function *raises* instead of returning, so the exception
+        escaped to the catch-all and a learner opening archived content was
+        told the server had failed.
+
+        The exception text is logged, never rendered.
+        """
+        logger.info(
+            "No data from a database function on %s %s", request.method, request.url.path
+        )
+        return error_response(
+            404,
+            "That content is not available any more. Go back and choose it again "
+            "from the list.",
+            code="not_found",
+        )
+
+    @app.exception_handler(asyncpg.exceptions.RaiseError)
+    async def _raised_refusal(
+        request: Request, exc: asyncpg.exceptions.RaiseError
+    ) -> JSONResponse:
+        """A rule a database function enforces, answered as a refusal.
+
+        `P0001` is what the attempt and progress functions raise when a request
+        breaks one of their own rules — a grade that does not match, an attempt
+        that is already finished. It is the caller's mistake, so it is a 422
+        rather than a crash the browser can only report as a failed fetch.
+        """
+        logger.warning(
+            "Refused by a database rule on %s %s", request.method, request.url.path
+        )
+        return error_response(
+            422,
+            "That action is not allowed on this record right now. Refresh the page "
+            "and try again.",
+            code="rule_violation",
+        )
+
+    @app.exception_handler(asyncpg.exceptions.AssertError)
+    async def _assert_failure(
+        request: Request, exc: asyncpg.exceptions.AssertError
+    ) -> JSONResponse:
+        """An invariant a definer function checks, answered as a conflict.
+
+        `P0004` guards the places where a function will not proceed on evidence
+        it does not trust — most of all an attempt whose frozen question set is
+        incomplete. Refusing is the point; grading such an attempt against
+        whatever the content says now is the outcome this prevents. It is a 409
+        because the record is in a state the caller has to resolve, not a value
+        they can correct in the request.
+        """
+        logger.error(
+            "Invariant refused on %s %s — an attempt's stored evidence is incomplete",
+            request.method,
+            request.url.path,
+        )
+        return error_response(
+            409,
+            "This attempt cannot be continued safely, because the questions it "
+            "was started with are no longer complete. Ask your teacher to reset it.",
+            code="attempt_evidence_incomplete",
         )
 
     @app.exception_handler(asyncpg.exceptions.UniqueViolationError)

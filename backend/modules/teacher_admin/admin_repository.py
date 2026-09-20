@@ -299,6 +299,45 @@ where competencies.competency_id = $1
 for share
 """
 
+#: A module about to be restored, locked so its place in the learning path
+#: cannot be taken between the check and the write.
+_MODULE_RESTORE_STATE_SQL = """
+select
+  learning_modules.competency_id,
+  learning_modules.title,
+  learning_modules.order_index,
+  learning_modules.status as module_status
+from app.learning_modules
+where learning_modules.module_id = $1
+for update
+"""
+
+#: Whether a live module already sits at this place in the competency.
+#:
+#: `learning_modules_competency_order_key` is a partial unique index that
+#: exempts archived rows, which is what lets an archived module keep the place
+#: it had. The consequence is that archiving frees the slot, something else
+#: normally takes it, and restoring the row then violates the index — which
+#: reached the teacher as "Another record already uses one of those values" on
+#: a control that offered no way to change the order.
+_MODULE_ORDER_TAKEN_SQL = """
+select learning_modules.module_id
+from app.learning_modules
+where learning_modules.competency_id = $1
+  and learning_modules.order_index = $2
+  and learning_modules.status <> 'archived'
+  and learning_modules.module_id <> $3
+limit 1
+"""
+
+#: The first place after the last live module in the competency.
+_NEXT_MODULE_ORDER_SQL = """
+select coalesce(max(learning_modules.order_index) + 1, 0)
+from app.learning_modules
+where learning_modules.competency_id = $1
+  and learning_modules.status <> 'archived'
+"""
+
 #: The stored competency and state of a question, locked, so a publish check
 #: reads the row the write is about to change rather than a stale copy. A change
 #: that publishes without naming a competency still has to be checked against
@@ -548,6 +587,29 @@ async def question_listing_total(
 async def question_write_state(connection: ActorConnection, question_id: UUID) -> Any:
     """Lock a question so its competency cannot change under a publish check."""
     return await connection.fetchrow(_QUESTION_WRITE_STATE_SQL, question_id)
+
+
+async def module_restore_state(connection: ActorConnection, module_id: UUID) -> Any:
+    """Lock a module so its place cannot be taken while a restore decides."""
+    return await connection.fetchrow(_MODULE_RESTORE_STATE_SQL, module_id)
+
+
+async def module_order_is_taken(
+    connection: ActorConnection, *, competency_id: UUID, order_index: int, module_id: UUID
+) -> bool:
+    """Whether a live sibling already occupies this place in the competency."""
+    return (
+        await connection.fetchval(
+            _MODULE_ORDER_TAKEN_SQL, competency_id, order_index, module_id
+        )
+        is not None
+    )
+
+
+async def next_module_order(connection: ActorConnection, competency_id: UUID) -> int:
+    """The first free place after the competency's last live module."""
+    value = await connection.fetchval(_NEXT_MODULE_ORDER_SQL, competency_id)
+    return int(value or 0)
 
 
 async def read(connection: ActorConnection, resource: Resource, key: UUID) -> Any:
