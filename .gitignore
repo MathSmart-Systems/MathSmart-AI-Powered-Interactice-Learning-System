@@ -56,3 +56,5 @@ env/
 # local scratch
 .opencode/
 feature-f2/
+.agents/skills/frequent-commit-push/
+.claude/skills/frequent-commit-push/
