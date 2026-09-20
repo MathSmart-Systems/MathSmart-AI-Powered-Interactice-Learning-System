@@ -204,6 +204,12 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --   set_account_status,      role and account_status are not in the column
 --   reset_diagnostic         grant for `authenticated`, and voiding an attempt
 --                            spans three tables that must agree
+--   purge_learner_audit_trail  app.audit_events holds no DELETE grant for any
+--                            role, deliberately. A permanent purge still has
+--                            to remove the learner's own records, because
+--                            actor_user_id restricts the deletion of their
+--                            profile. A function keeps that exception narrow:
+--                            one learner, and never anyone who is not one.
 --
 -- A new name appearing here is a review item, not a formatting change.
 select is(
@@ -215,7 +221,7 @@ select is(
   'activity_hint,archive_intervention,authorize_reassessment,'
   || 'check_activity_answer,claim_assessment_submission_idempotency,'
   || 'complete_assessment_submission_idempotency,complete_module,is_active_account,may_start_reassessment,module_section_ids,'
-  || 'open_intervention,record_audit_event,reset_diagnostic,'
+  || 'open_intervention,purge_learner_audit_trail,record_audit_event,reset_diagnostic,'
   || 'save_assessment_answers,save_module_progress,set_account_status,'
   || 'setting_integer,start_activity_attempt,start_assessment_attempt,'
   || 'submit_activity_attempt,submit_assessment_attempt,update_intervention',

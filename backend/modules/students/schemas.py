@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class EnrolLearnerRequest(BaseModel):
@@ -54,6 +54,75 @@ class LearnerRecordChanges(BaseModel):
     school_name: str | None = Field(default=None, min_length=2, max_length=160)
 
 
+#: How many learners one request may drop by name. A whole section is asked for
+#: by `section_id` instead, so this bound is not a ceiling on the real work —
+#: it only stops an arbitrarily long list of ids arriving in one body.
+MAX_DROP_BATCH = 500
+
+
+class DropLearnersRequest(BaseModel):
+    """Which learners to drop.
+
+    Two ways of saying it, and exactly one per request. `user_ids` names
+    accounts; `section_id` names a section and lets the database decide who is
+    in it. The second exists because the roster is paginated: a browser that
+    expanded a section into ids would send the page it had loaded and silently
+    leave the rest of the section enrolled.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_ids: list[UUID] | None = Field(default=None, max_length=MAX_DROP_BATCH)
+    section_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_target(self) -> "DropLearnersRequest":
+        named = self.user_ids is not None
+        sectioned = self.section_id is not None
+        if named and sectioned:
+            raise ValueError("Name either user_ids or section_id, not both.")
+        if not named and not sectioned:
+            raise ValueError("Name either user_ids or section_id.")
+        if named and not self.user_ids:
+            raise ValueError("user_ids cannot be empty.")
+        return self
+
+
+class RestoreLearnerRequest(BaseModel):
+    """Where a dropped learner is being put back.
+
+    The section is required rather than inferred. A learner's former section
+    may have been retired or may belong to another grade by the time anyone
+    restores them, and silently reusing it would put them somewhere the
+    curriculum does not reach. The caller names the destination; the server
+    still checks it against the Grade 6 scope.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    section_id: UUID
+
+
+class PurgeLearnerRequest(BaseModel):
+    """The typed confirmation for a permanent purge.
+
+    Only a confirmation. The learner being purged is the one the path names —
+    this value is compared against the record the server reads for itself, so a
+    tampered body can cause a refusal but never a different target.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    learner_id: str = Field(min_length=1, max_length=32)
+    acknowledged: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def must_be_acknowledged(self) -> "PurgeLearnerRequest":
+        if not self.acknowledged:
+            raise ValueError("This action must be acknowledged before it can be carried out.")
+        return self
+
+
 class LearnerSummary(BaseModel):
     """A learner as the roster and the enrolment response present them."""
 
@@ -68,3 +137,8 @@ class LearnerSummary(BaseModel):
     school_name: str | None = None
     monitoring_status: str | None = None
     diagnostic_status: str | None = None
+    #: Whether the account is still usable. A dropped learner is archived
+    #: rather than deleted — their recorded work is referenced by seven tables
+    #: and every one of those references is ON DELETE RESTRICT — so the roster
+    #: needs to be able to say which learners those are.
+    account_status: str | None = None

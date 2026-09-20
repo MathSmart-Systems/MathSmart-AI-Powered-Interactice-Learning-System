@@ -14,6 +14,8 @@
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
+import { rosterStatus } from "../utils/roster";
+
 const REQUEST_TIMEOUT_MS = 30_000;
 
 function apiBaseUrl() {
@@ -39,10 +41,11 @@ function newIdempotencyKey() {
 }
 
 /** Build a query string from the filter values that are set. */
-function rosterQuery({ gradeId, sectionId }) {
+function rosterQuery({ gradeId, sectionId, status }) {
   const params = new URLSearchParams({ page_size: "100" });
   if (gradeId) params.set("grade_id", gradeId);
   if (sectionId) params.set("section_id", sectionId);
+  params.set("status", rosterStatus(status));
   return `/students?${params.toString()}`;
 }
 
@@ -103,14 +106,23 @@ async function apiRequest(method, path, { body, extraHeaders } = {}) {
 
 /** The learner list from a collection envelope, plus the total it claims. */
 function extractRoster(response) {
-  if (!response.ok) return { data: [], total: 0, error: response.error ?? "Request failed" };
+  if (!response.ok) {
+    return { data: [], total: 0, sections: [], error: response.error ?? "Request failed" };
+  }
   const payload = response.data;
   const list = Array.isArray(payload) ? payload : payload?.data ?? [];
-  return { data: list, total: response.meta?.total_items ?? list.length, error: null };
+  return {
+    data: list,
+    total: response.meta?.total_items ?? list.length,
+    // Counted by the API across the whole roster, not the page it returned.
+    // A section header offering "select all" needs a true number.
+    sections: response.meta?.sections ?? [],
+    error: null,
+  };
 }
 
-export async function listStudents({ gradeId = null, sectionId = null } = {}) {
-  const result = await apiRequest("GET", rosterQuery({ gradeId, sectionId }));
+export async function listStudents({ gradeId = null, sectionId = null, status } = {}) {
+  const result = await apiRequest("GET", rosterQuery({ gradeId, sectionId, status }));
   return extractRoster(result);
 }
 
@@ -157,4 +169,65 @@ export async function fetchStudent(studentId) {
  */
 export async function fetchStudentProgress(studentId) {
   return apiRequest("GET", `/progress/${studentId}`);
+}
+
+/**
+ * Drops learners from the school.
+ *
+ * Archives the accounts rather than deleting them, which is the only
+ * retirement this data model has: seven tables reference a learner's recorded
+ * work and every one of those foreign keys is ON DELETE RESTRICT, so a learner
+ * who has attempted anything cannot be removed without destroying the class
+ * reporting that points at them. Archiving stops the account being usable —
+ * the account-status check refuses its next request — it takes the learner off
+ * the roster, and it is reversible.
+ *
+ * One target per request: `{ section_id }` for a whole class, or
+ * `{ user_ids }` for named accounts. Naming a section rather than expanding it
+ * here is deliberate — the roster is paginated, so a browser that sent ids
+ * would send the page it had loaded and quietly leave the rest enrolled.
+ *
+ * @param {{section_id?: string, user_ids?: string[]}} target
+ */
+export async function dropStudents(target) {
+  return apiRequest("POST", "/students/drop", { body: target });
+}
+
+/**
+ * Puts a dropped learner back on the roster.
+ *
+ * The destination section is required rather than inferred: a learner's former
+ * section may have been retired, or may belong to another grade, by the time
+ * anybody restores them. Nothing recorded about the learner is recalculated —
+ * this returns their access, their monitoring and their placement, and touches
+ * no score, attempt or intervention.
+ */
+export async function restoreStudent(studentId, sectionId) {
+  return apiRequest("POST", `/students/${studentId}/restore`, {
+    body: { section_id: sectionId },
+  });
+}
+
+/**
+ * What a permanent purge would remove, counted before anything is.
+ *
+ * Read so the confirmation can say what is actually about to be destroyed
+ * rather than warn in the abstract.
+ */
+export async function previewPurge(studentId) {
+  return apiRequest("GET", `/students/${studentId}/purge-preview`);
+}
+
+/**
+ * Permanently removes one dropped learner.
+ *
+ * The learner being purged is the one named in the path; `learner_id` is the
+ * teacher's typed confirmation and is checked against the record the server
+ * reads for itself. Safe to send again after a failure — the server records
+ * the operation before the first deletion and resumes from where it stopped.
+ */
+export async function purgeStudent(studentId, { learnerId, acknowledged }) {
+  return apiRequest("POST", `/students/${studentId}/purge`, {
+    body: { learner_id: learnerId, acknowledged: Boolean(acknowledged) },
+  });
 }

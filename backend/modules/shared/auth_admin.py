@@ -140,9 +140,17 @@ class SupabaseAuthAdmin:
             page += 1
         return None
 
-    async def delete_user(self, user_id: str | UUID) -> None:
-        """Remove an account. Only ever used to undo one this backend just created."""
+    async def delete_user(self, user_id: str | UUID, *, missing_ok: bool = False) -> None:
+        """Remove an account, and the identities Auth holds for it.
+
+        `missing_ok` exists for the resumable purge: an account that is already
+        gone is the state that was asked for, and treating that 404 as a
+        failure would mean a retry could never finish the operation it is
+        resuming. Callers that expect the account to be there leave it off.
+        """
         response = await self._request("DELETE", f"/admin/users/{user_id}")
+        if missing_ok and response.status_code == httpx.codes.NOT_FOUND:
+            return
         _raise_for_status(response, "delete a user")
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:

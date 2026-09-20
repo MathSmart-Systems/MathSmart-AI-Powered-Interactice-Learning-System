@@ -12,7 +12,9 @@ import { describe, it } from "node:test";
 import {
   DIAGNOSTIC_STATUS,
   MONITORING_STATUS,
+  accountStatus,
   diagnosticStatus,
+  isDropped,
   monitoringStatus,
 } from "../utils/labels.js";
 
@@ -80,5 +82,39 @@ describe("monitoringStatus", () => {
       label: "Not available",
       variant: "outline",
     });
+  });
+});
+
+describe("accountStatus", () => {
+  it("says nothing about an active account, which is the unremarkable case", () => {
+    assert.equal(accountStatus("active"), null);
+  });
+
+  it("calls an archived account dropped, in the marking-pen tone", () => {
+    assert.deepEqual(accountStatus("archived"), { label: "Dropped", variant: "destructive" });
+  });
+
+  it("names a suspended account without shouting about it", () => {
+    assert.deepEqual(accountStatus("suspended"), { label: "Suspended", variant: "outline" });
+  });
+
+  it("says nothing for a status it does not recognise", () => {
+    assert.equal(accountStatus("something_new"), null);
+    assert.equal(accountStatus(undefined), null);
+    assert.equal(accountStatus(null), null);
+  });
+});
+
+describe("isDropped", () => {
+  it("recognises a dropped learner", () => {
+    assert.equal(isDropped({ account_status: "archived" }), true);
+  });
+
+  it("treats every other state as still enrolled", () => {
+    assert.equal(isDropped({ account_status: "active" }), false);
+    assert.equal(isDropped({ account_status: "suspended" }), false);
+    // An older reply with no status at all is not a dropped learner.
+    assert.equal(isDropped({}), false);
+    assert.equal(isDropped(null), false);
   });
 });

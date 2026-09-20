@@ -38,3 +38,42 @@ export function monitoringStatus(value) {
     Object.freeze({ label: "Not available", variant: "outline" })
   );
 }
+
+/**
+ * `app.account_status` as a roster row reads it.
+ *
+ * Only a dropped learner is worth saying out loud: an active account is the
+ * unremarkable case, and a badge on every row would be noise.
+ */
+export const ACCOUNT_STATUS = Object.freeze({
+  active: null,
+  suspended: Object.freeze({ label: "Suspended", variant: "outline" }),
+  archived: Object.freeze({ label: "Dropped", variant: "destructive" }),
+});
+
+export function accountStatus(value) {
+  return ACCOUNT_STATUS[value] ?? null;
+}
+
+/** Whether this learner has been dropped from the school. */
+export function isDropped(learner) {
+  return learner?.account_status === "archived";
+}
+
+/**
+ * The one status a roster row shows.
+ *
+ * Access outranks monitoring. A dropped learner's `monitoring_status` is
+ * retired to `inactive` when they are dropped, but even so there must be a
+ * single place that decides, or a row ends up saying "Active" and "Dropped" at
+ * the same time — which is what it used to do, with the account state as a
+ * second badge beside a monitoring state that contradicted it.
+ *
+ * So: archived reads Dropped, suspended reads Suspended, and only an account
+ * that is actually usable reports how its learner is being monitored.
+ */
+export function learnerStatus(learner) {
+  const account = accountStatus(learner?.account_status);
+  if (account) return account;
+  return monitoringStatus(learner?.monitoring_status);
+}

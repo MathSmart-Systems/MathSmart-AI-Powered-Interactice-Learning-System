@@ -7,7 +7,7 @@ import { ArrowLeft, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
-import { diagnosticStatus, monitoringStatus } from "../utils/labels";
+import { diagnosticStatus, isDropped, learnerStatus } from "../utils/labels";
 import { buildInsightEvidence, weakestCompetency } from "../utils/insight-evidence";
 import { MVP_GRADE_NAME, learnerName } from "../utils/roster";
 import { StudentInsightPanel } from "./StudentInsightPanel";
@@ -63,7 +63,10 @@ function Fact({ label, children }) {
 export function StudentDetailView({ student, progress }) {
   const name = learnerName(student);
   const diagnostic = diagnosticStatus(student?.diagnostic_status);
-  const monitoring = monitoringStatus(student?.monitoring_status);
+  // The same single status the roster shows: a dropped learner reads
+  // "Dropped" here too, rather than reporting the monitoring state they were
+  // in when they left.
+  const monitoring = learnerStatus(student);
 
   const competencies = Array.isArray(progress?.competencies) ? progress.competencies : [];
 
@@ -94,6 +97,17 @@ export function StudentDetailView({ student, progress }) {
         <p className="font-mono text-sm text-muted-foreground">{student?.learner_id}</p>
       </header>
 
+      {isDropped(student) ? (
+        <p
+          role="status"
+          className="max-w-prose rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          This learner has been dropped and can no longer sign in. Everything recorded below is
+          the work they did while they were enrolled. Restore them, or remove them permanently,
+          from the roster.
+        </p>
+      ) : null}
+
       <section aria-labelledby="enrollment-heading">
         <Card>
           <CardContent className="flex flex-col gap-4">
@@ -109,7 +123,7 @@ export function StudentDetailView({ student, progress }) {
               <Fact label="Diagnostic">
                 <Badge variant={diagnostic.variant}>{diagnostic.label}</Badge>
               </Fact>
-              <Fact label="Monitoring">
+              <Fact label="Status">
                 <Badge variant={monitoring.variant}>{monitoring.label}</Badge>
               </Fact>
             </dl>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { UserMinus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +32,16 @@ const SELECT_STYLE =
  * The edit form body. Keyed by the student it edits, so React remounts it each
  * time the dialog opens for a different learner and state starts fresh.
  */
-function EditStudentFields({ student, grade, sections, onCancel, onSubmit, busy, error }) {
+function EditStudentFields({
+  student,
+  grade,
+  sections,
+  onCancel,
+  onSubmit,
+  onDrop,
+  busy,
+  error,
+}) {
   const originalSectionId = student?.section_id ?? "";
 
   // MathSmart teaches one grade, so a learner is never moved between grades.
@@ -122,13 +132,32 @@ function EditStudentFields({ student, grade, sections, onCancel, onSubmit, busy,
         ) : null}
       </DialogBody>
 
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+      {/*
+       * Dropping sits apart from saving, and on the other side of the footer,
+       * because it is the one action here that ends a learner's access rather
+       * than adjusting it. It opens its own confirmation; nothing happens from
+       * this button alone.
+       */}
+      <DialogFooter className="sm:justify-between">
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={onDrop}
+          disabled={busy}
+        >
+          <UserMinus aria-hidden="true" className="size-4" />
+          Drop student
         </Button>
-        <Button type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save Changes"}
-        </Button>
+
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Saving…" : "Save Changes"}
+          </Button>
+        </div>
       </DialogFooter>
     </form>
   );
@@ -139,7 +168,17 @@ function EditStudentFields({ student, grade, sections, onCancel, onSubmit, busy,
  * when the dialog is closed. Grades and sections supply the dropdowns; the
  * section list follows the chosen grade.
  */
-export function EditStudentDialog({ student, grade, sections, open, onOpenChange, onSubmit, busy, error }) {
+export function EditStudentDialog({
+  student,
+  grade,
+  sections,
+  open,
+  onOpenChange,
+  onSubmit,
+  onDrop,
+  busy,
+  error,
+}) {
   const hasGrades = Boolean(grade);
   const noGradesError = !hasGrades && open ? "No grade levels exist, so this student cannot be placed." : null;
 
@@ -162,6 +201,7 @@ export function EditStudentDialog({ student, grade, sections, open, onOpenChange
           </div>
         ) : (
           <EditStudentFields
+            onDrop={onDrop}
             key={student.student_id}
             student={student}
             grade={grade}

@@ -9,7 +9,7 @@ import { StudentsView } from "./StudentsView";
  * this awaits.
  */
 export async function Students() {
-  const { learners, grades, sections, rosterTotal, rosterTruncated, error } =
+  const { learners, grades, sections, sectionCounts, rosterTotal, rosterTruncated, error } =
     await readStudentsData();
 
   return (
@@ -17,6 +17,7 @@ export async function Students() {
       initialLearners={learners}
       initialGrades={grades}
       initialSections={sections}
+      initialSectionCounts={sectionCounts}
       initialError={error}
       initialTruncated={rosterTruncated}
       initialTotal={rosterTotal}

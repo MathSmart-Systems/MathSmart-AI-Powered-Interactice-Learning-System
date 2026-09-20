@@ -58,6 +58,97 @@ export function rosterTruncationMessage(shown, total) {
 }
 
 /**
+ * Which learners a roster read is about.
+ *
+ * Sent to the API rather than applied here, so the page, the total and the
+ * per-section counts are one question asked once. Filtering the loaded page
+ * would make a roster of 412 report whatever the first hundred happened to
+ * contain.
+ */
+export const ROSTER_STATUS = Object.freeze({
+  ENROLLED: "enrolled",
+  DROPPED: "dropped",
+  ALL: "all",
+});
+
+export const ROSTER_STATUS_OPTIONS = Object.freeze([
+  Object.freeze({ value: ROSTER_STATUS.ENROLLED, label: "Enrolled" }),
+  Object.freeze({ value: ROSTER_STATUS.DROPPED, label: "Dropped" }),
+  Object.freeze({ value: ROSTER_STATUS.ALL, label: "All students" }),
+]);
+
+/** A status the API will accept, falling back to the default rather than guessing. */
+export function rosterStatus(value) {
+  return ROSTER_STATUS_OPTIONS.some((option) => option.value === value)
+    ? value
+    : ROSTER_STATUS.ENROLLED;
+}
+
+/**
+ * What a section heading says about its size.
+ *
+ * Reads back the status the roster is being viewed under, because "38" means
+ * something different in each: enrolled learners, dropped ones, or both. The
+ * "shown" clause appears only when the page is holding fewer than the section
+ * has, so an untruncated section says one plain number.
+ */
+export function sectionCountLabel({ status, enrolled = 0, dropped = 0, shown = 0 }) {
+  if (status === ROSTER_STATUS.DROPPED) {
+    return `${dropped} dropped`;
+  }
+
+  const base =
+    status === ROSTER_STATUS.ALL
+      ? `${enrolled} enrolled · ${dropped} dropped`
+      : `${enrolled} enrolled`;
+
+  const total = status === ROSTER_STATUS.ALL ? enrolled + dropped : enrolled;
+  return total > shown ? `${base}, ${shown} shown` : base;
+}
+
+/** The heading for learners who are in no section this roster recognises. */
+export const UNPLACED_GROUP_NAME = "Needs section assignment";
+
+/**
+ * The roster split into the classes it is made of.
+ *
+ * Class section is the unit a teacher works in — they clear a section at the
+ * end of the year, not a school — so the roster is grouped by it rather than
+ * filtered down to one at a time.
+ *
+ * Headings come only from the sections passed in, which are the active ones of
+ * the canonical Grade 6 record. A learner's own `section_name` is never used
+ * to invent a heading: a legacy section from an earlier deployment would
+ * otherwise appear on this roster simply because one row still points at it.
+ * Such a learner is not dropped from the list — losing them would be worse
+ * than showing them — but is grouped under a heading that names the problem.
+ *
+ * @param {Array} learners - The loaded page of the roster
+ * @param {Array} sections - The active sections of the canonical Grade 6 record
+ * @returns {Array<{sectionId: string|null, name: string, learners: Array}>}
+ */
+export function groupBySection(learners, sections) {
+  const rows = Array.isArray(learners) ? learners : [];
+  const groups = new Map();
+
+  for (const section of Array.isArray(sections) ? sections : []) {
+    groups.set(section.section_id, { sectionId: section.section_id, name: section.name, learners: [] });
+  }
+
+  const unassigned = { sectionId: null, name: UNPLACED_GROUP_NAME, learners: [] };
+
+  for (const learner of rows) {
+    const group = learner.section_id ? groups.get(learner.section_id) : null;
+    if (group) group.learners.push(learner);
+    else unassigned.learners.push(learner);
+  }
+
+  const ordered = [...groups.values()].filter((group) => group.learners.length > 0);
+  if (unassigned.learners.length > 0) ordered.push(unassigned);
+  return ordered;
+}
+
+/**
  * A learner's display name, or a plain stand-in.
  *
  * Never an empty string, because the name is the link to their record and a

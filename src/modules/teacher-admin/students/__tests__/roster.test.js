@@ -12,7 +12,9 @@ import { describe, it } from "node:test";
 import {
   MVP_GRADE_LEVEL,
   MVP_GRADE_NAME,
+  UNPLACED_GROUP_NAME,
   assignableSections,
+  groupBySection,
   learnerName,
   mvpGrade,
   rosterTruncationMessage,
@@ -147,5 +149,81 @@ describe("learnerName", () => {
     assert.equal(learnerName({ full_name: null }), "Unnamed learner");
     assert.equal(learnerName({}), "Unnamed learner");
     assert.equal(learnerName(null), "Unnamed learner");
+  });
+});
+
+describe("groupBySection", () => {
+  const sections = [
+    { section_id: "sec-a", name: "Grade 6 - Mabini" },
+    { section_id: "sec-b", name: "Grade 6 - Rizal" },
+  ];
+
+  it("groups the roster under the sections it belongs to", () => {
+    const groups = groupBySection(
+      [
+        { student_id: "1", section_id: "sec-b" },
+        { student_id: "2", section_id: "sec-a" },
+        { student_id: "3", section_id: "sec-a" },
+      ],
+      sections,
+    );
+
+    assert.deepEqual(
+      groups.map((group) => [group.name, group.learners.length]),
+      [
+        ["Grade 6 - Mabini", 2],
+        ["Grade 6 - Rizal", 1],
+      ],
+    );
+  });
+
+  it("leaves out a section that has nobody on this page", () => {
+    const groups = groupBySection([{ student_id: "1", section_id: "sec-a" }], sections);
+    assert.equal(groups.length, 1);
+  });
+
+  it("puts learners with no section last, under a heading that names the fix", () => {
+    const groups = groupBySection(
+      [
+        { student_id: "1", section_id: null },
+        { student_id: "2", section_id: "sec-a" },
+      ],
+      sections,
+    );
+
+    assert.equal(groups.at(-1).name, UNPLACED_GROUP_NAME);
+    assert.equal(groups.at(-1).sectionId, null);
+  });
+
+  it("never invents a heading from a legacy section a learner still points at", () => {
+    // The defect this guards: a section from an earlier deployment appeared as
+    // a Grade 6 group purely because one learner row still referenced it.
+    const groups = groupBySection([{ student_id: "1", section_id: "sec-legacy" }], sections);
+
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0].name, UNPLACED_GROUP_NAME);
+    assert.equal(groups[0].sectionId, null);
+    // And the learner is still on the roster, which is the point.
+    assert.equal(groups[0].learners.length, 1);
+  });
+
+  it("builds headings only from the sections it was given", () => {
+    const groups = groupBySection(
+      [
+        { student_id: "1", section_id: "sec-a" },
+        { student_id: "2", section_id: "sec-legacy" },
+      ],
+      sections,
+    );
+
+    assert.deepEqual(
+      groups.map((group) => group.name),
+      ["Grade 6 - Mabini", UNPLACED_GROUP_NAME],
+    );
+  });
+
+  it("answers with nothing for an empty roster", () => {
+    assert.deepEqual(groupBySection([], sections), []);
+    assert.deepEqual(groupBySection(undefined, undefined), []);
   });
 });

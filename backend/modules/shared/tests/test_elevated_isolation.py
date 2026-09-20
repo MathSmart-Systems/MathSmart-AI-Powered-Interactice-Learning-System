@@ -29,8 +29,13 @@ SESSION_GATEWAY_ALLOWED = {
 ALLOWED = {
     # Owns the objects, because something must, and hands them to nobody.
     "app/main.py",
-    # The one sanctioned elevated operation: administrator-provisioned accounts.
+    # The two sanctioned elevated operations, and the only ones. Creating a
+    # learner account, and permanently removing a dropped one: both span
+    # Supabase Auth and the application database, neither can run as the
+    # caller, and each lives in its own module so the reach of the secret key
+    # stays visible in the import graph.
     "modules/students/provisioning.py",
+    "modules/students/purge.py",
     # The administrative bootstrap, which is a local command and is never
     # mounted on the API. It attaches a profile to an Auth account that already
     # exists, for the first educator, who has nobody to provision them.
@@ -135,7 +140,11 @@ def test_the_shared_dependencies_offer_no_elevated_accessor():
 
 
 def test_the_allowlist_is_short_on_purpose():
-    assert len(ALLOWED) == 5
+    # Six: the two modules that own elevated access, the two operations that
+    # are allowed to use it, the local bootstrap command, and main.py which
+    # constructs them. Growing this number is a decision, not a detail — which
+    # is why it is written down here and has to be changed deliberately.
+    assert len(ALLOWED) == 6
 
 
 def test_only_the_sensitive_dependency_reaches_the_session_gateway():
