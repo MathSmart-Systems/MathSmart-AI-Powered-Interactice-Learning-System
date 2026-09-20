@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Search, TriangleAlert } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  LoaderCircle,
+  Plus,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -192,9 +200,21 @@ export function TeacherActivitiesView() {
     appliedSearch || status !== "all" || selectedModuleId !== "all",
   );
 
+  /**
+   * Whether there is nothing on screen yet, as opposed to a list being
+   * refreshed.
+   *
+   * Publishing, archiving or restoring an activity re-reads the collection,
+   * and the skeleton used to take the cards away while it did. A page of
+   * placeholder cards is shorter than a page of real ones, so the browser
+   * clamped a scroll offset it could no longer honour and the cards came back
+   * with the reader at the top. The skeleton is for arriving with nothing.
+   */
+  const isFirstLoad = isLoading && meta === null;
+
   /** The sentence under the list, and the one that gets announced. */
   const caption = (() => {
-    if (isLoading) {
+    if (isFirstLoad) {
       return "Loading activities…";
     }
     if (error) {
@@ -394,26 +414,54 @@ export function TeacherActivitiesView() {
         </div>
       </div>
 
+      {/*
+        A small, fixed-height indicator beside the list rather than a page of
+        placeholders. It keeps its space whether or not it is showing
+        anything, so the list does not move by a line when a refresh starts
+        and again when it ends — which is its own way of losing a reader's
+        place.
+      */}
+      <div className="flex min-h-5 items-center">
+        {isLoading && !isFirstLoad ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderCircle
+              aria-hidden="true"
+              className="size-4 animate-spin motion-reduce:animate-none"
+            />
+            Updating the activity list…
+          </p>
+        ) : null}
+      </div>
+
       {/* Main List Grid */}
-      <ActivityList
-        activities={activities}
-        moduleTitles={moduleTitles}
-        isLoading={isLoading}
-        hasError={Boolean(error)}
-        hasSearchOrFilter={hasSearchOrFilter}
-        onEdit={(activity) => openDialog("form", activity)}
-        onQuestions={(activity) => openDialog("questions", activity)}
-        onPublish={(activity) => openDialog("publish", activity)}
-        onArchive={(activity) => openDialog("archive", activity)}
-        onRestore={(activity) => openDialog("restore", activity)}
-        onDelete={(activity) => openDialog("delete", activity)}
-        onCreate={() => openDialog("form", null)}
-      />
+      <div
+        aria-busy={isLoading}
+        className={
+          isLoading && !isFirstLoad
+            ? "opacity-60 transition-opacity motion-reduce:transition-none"
+            : "transition-opacity motion-reduce:transition-none"
+        }
+      >
+        <ActivityList
+          activities={activities}
+          moduleTitles={moduleTitles}
+          isLoading={isFirstLoad}
+          hasError={Boolean(error)}
+          hasSearchOrFilter={hasSearchOrFilter}
+          onEdit={(activity) => openDialog("form", activity)}
+          onQuestions={(activity) => openDialog("questions", activity)}
+          onPublish={(activity) => openDialog("publish", activity)}
+          onArchive={(activity) => openDialog("archive", activity)}
+          onRestore={(activity) => openDialog("restore", activity)}
+          onDelete={(activity) => openDialog("delete", activity)}
+          onCreate={() => openDialog("form", null)}
+        />
+      </div>
 
       {/* Result count and pagination */}
       <div className="flex flex-col gap-4 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">{caption}</p>
-        <ResultAnnouncer message={isLoading ? "" : caption} />
+        <ResultAnnouncer message={isFirstLoad ? "" : caption} />
 
         {totalPages > 1 ? (
           <nav

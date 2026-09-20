@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, RotateCw, TriangleAlert } from "lucide-react";
+import { LoaderCircle, Plus, RotateCw, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -167,6 +167,20 @@ export function TeacherAssessmentsView() {
 
   const totalPages = meta?.totalPages ?? 1;
   const hasFilter = Boolean(appliedSearch) || status !== "all";
+
+  /**
+   * Whether there is nothing on screen yet, as opposed to a list being
+   * refreshed.
+   *
+   * Restoring an archived assessment re-reads the collection, and the skeleton
+   * used to take the rows away while it did. That is a bad trade on its own —
+   * a teacher loses the row they were working on, for something they just did
+   * — and it also moved the page: a page of placeholder rows is shorter than a
+   * page of real ones, the browser clamps a scroll offset it can no longer
+   * honour, and the rows come back with the reader at the top. The skeleton is
+   * for arriving with nothing; a refresh keeps what it has and says it is busy.
+   */
+  const isFirstLoad = isLoading && meta === null;
   const selectedTab = STATUS_TABS.find((tab) => tab.value === status) ?? STATUS_TABS[0];
 
   /**
@@ -178,7 +192,7 @@ export function TeacherAssessmentsView() {
    * on the first render of the whole workspace.
    */
   const caption = (() => {
-    if (isLoading) {
+    if (isFirstLoad) {
       return "Loading assessments…";
     }
     if (error) {
@@ -269,28 +283,56 @@ export function TeacherAssessmentsView() {
         />
 
         <p className="text-sm text-muted-foreground">{caption}</p>
-        <ResultAnnouncer message={isLoading ? "" : caption} />
+        <ResultAnnouncer message={isFirstLoad ? "" : caption} />
 
-        <AssessmentList
-          assessments={assessments}
-          isLoading={isLoading}
-          hasFilter={hasFilter}
-          panelId={PANEL_ID}
-          labelledBy={`assessment-status-tab-${status}`}
-          onCreateDraft={() => openDialog("form")}
-          onEdit={(assessment) => openDialog("form", assessment)}
-          onManageQuestions={(assessment) => openDialog("questions", assessment)}
-          onPublish={(assessment) => openDialog("publish", assessment)}
-          onUnpublish={(assessment) => openDialog("unpublish", assessment)}
-          onArchive={(assessment) => openDialog("archive", assessment)}
-          onRestore={(assessment) => openDialog("restore", assessment)}
-          onDelete={(assessment) => openDialog("delete", assessment)}
-          onClearFilter={() => {
-            setSearch("");
-            setStatus("all");
-            setPage(1);
-          }}
-        />
+        {/*
+          A small, fixed-height indicator beside the list rather than a page of
+          placeholders. It keeps its space whether or not it is showing
+          anything, so the list does not move by a line when a refresh starts
+          and again when it ends — which is its own way of losing a reader's
+          place.
+        */}
+        <div className="flex min-h-5 items-center">
+          {isLoading && !isFirstLoad ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-4 animate-spin motion-reduce:animate-none"
+              />
+              Updating the assessment list…
+            </p>
+          ) : null}
+        </div>
+
+        <div
+          aria-busy={isLoading}
+          className={
+            isLoading && !isFirstLoad
+              ? "opacity-60 transition-opacity motion-reduce:transition-none"
+              : "transition-opacity motion-reduce:transition-none"
+          }
+        >
+          <AssessmentList
+            assessments={assessments}
+            isLoading={isFirstLoad}
+            hasFilter={hasFilter}
+            panelId={PANEL_ID}
+            labelledBy={`assessment-status-tab-${status}`}
+            onCreateDraft={() => openDialog("form")}
+            onEdit={(assessment) => openDialog("form", assessment)}
+            onManageQuestions={(assessment) => openDialog("questions", assessment)}
+            onPublish={(assessment) => openDialog("publish", assessment)}
+            onUnpublish={(assessment) => openDialog("unpublish", assessment)}
+            onArchive={(assessment) => openDialog("archive", assessment)}
+            onRestore={(assessment) => openDialog("restore", assessment)}
+            onDelete={(assessment) => openDialog("delete", assessment)}
+            onClearFilter={() => {
+              setSearch("");
+              setStatus("all");
+              setPage(1);
+            }}
+          />
+        </div>
 
         {totalPages > 1 ? (
           <nav aria-label="Assessment pages" className="flex items-center justify-between gap-4">

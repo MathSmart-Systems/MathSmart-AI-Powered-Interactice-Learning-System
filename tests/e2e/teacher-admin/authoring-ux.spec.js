@@ -665,6 +665,113 @@ describe("teacher authoring behaviour", () => {
   });
 
   // ---------------------------------------------------------------------
+  // Restoring, without losing the list or the reader's place
+  // ---------------------------------------------------------------------
+
+  test("ordinary Activities actions never replace the list with a skeleton", async ({ page }) => {
+    await page.goto("/teacher/activities");
+    await narrowToFixtures(page);
+
+    const skeleton = page.getByText("Loading activities", { exact: true });
+    const cards = page.locator('[data-slot="card"]');
+
+    // The status filter, the module filter and the search box in turn. Each
+    // re-reads the collection, and none of them may take the cards away.
+    await page.getByLabel("Status").selectOption("draft");
+    await expect(skeleton).toHaveCount(0);
+
+    await page.getByLabel("Status").selectOption("all");
+    await expect(skeleton).toHaveCount(0);
+    await expect(cards.first()).toBeVisible({ timeout: 20_000 });
+
+    await page.getByLabel("Search activities").fill(`${RUN} long`);
+    await expect(skeleton).toHaveCount(0);
+    await expect(cards).toHaveCount(1, { timeout: 20_000 });
+  });
+
+  test("ordinary Assessments actions never replace the list with a skeleton", async ({ page }) => {
+    await page.goto("/teacher/assessments");
+    await page.getByLabel(/Search assessments/i).fill(RUN);
+
+    const title = `Disposable UX assessment ${RUN}`;
+    const row = page.getByRole("listitem").filter({ hasText: title });
+    await expect(row).toBeVisible({ timeout: 20_000 });
+
+    const skeleton = page.getByText("Loading assessments", { exact: true });
+
+    for (const label of ["Drafts", "Published", "Archived", "All"]) {
+      await page.getByRole("tab", { name: new RegExp(`^${label}`) }).click();
+      await expect(skeleton).toHaveCount(0);
+    }
+
+    await expect(row).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("restoring an activity keeps the cards and the reader's place", async ({ page }) => {
+    await page.goto("/teacher/activities");
+    await narrowToFixtures(page);
+
+    const title = `Disposable UX activity ${RUN} short`;
+    const skeleton = page.getByText("Loading activities", { exact: true });
+
+    await page.setViewportSize({ width: 390, height: 420 });
+    await page.evaluate(() => window.scrollTo(0, 300));
+    await expect.poll(() => scrollTop(page)).toBeGreaterThan(0);
+    const before = await scrollTop(page);
+
+    await page.getByRole("button", { name: `Restore ${title}` }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: /^Restore/ }).click();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+    // The re-read keeps the cards rather than replacing them with placeholders,
+    // which is also what keeps the page from collapsing and losing the offset.
+    await expect(skeleton).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: title, level: 3 })).toBeVisible();
+    await expectKeptPlace(page, before);
+  });
+
+  test("restoring an assessment keeps the rows and the reader's place", async ({
+    page,
+    request,
+  }) => {
+    // Archived through the API: getting there through the archive dialog is a
+    // different control's test, and this one is about what the list does when
+    // it re-reads itself.
+    const token = await accessToken(request);
+    const archived = await api(request, token, `/teacher-admin/assessments/${assessmentId}`, {
+      method: "PATCH",
+      data: { status: "archived" },
+    });
+    expect(archived.ok()).toBe(true);
+
+    await page.goto("/teacher/assessments");
+    await page.getByLabel(/Search assessments/i).fill(RUN);
+
+    const title = `Disposable UX assessment ${RUN}`;
+    const row = page.getByRole("listitem").filter({ hasText: title });
+    await expect(row).toBeVisible({ timeout: 20_000 });
+
+    const skeleton = page.getByText("Loading assessments", { exact: true });
+
+    await page.setViewportSize({ width: 390, height: 420 });
+    await page.evaluate(() => window.scrollTo(0, 300));
+    await expect.poll(() => scrollTop(page)).toBeGreaterThan(0);
+    const before = await scrollTop(page);
+
+    await row.getByRole("button", { name: `Restore ${title}` }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Restore as draft" }).click();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+    await expect(skeleton).toHaveCount(0);
+    await expect(row).toBeVisible();
+    await expectKeptPlace(page, before);
+  });
+
+  // ---------------------------------------------------------------------
   // The dialogs
   // ---------------------------------------------------------------------
 
