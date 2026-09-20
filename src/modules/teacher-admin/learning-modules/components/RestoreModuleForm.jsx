@@ -31,8 +31,7 @@ export function RestoreModuleForm({ module }) {
         label={
           <>
             <ArchiveRestore aria-hidden="true" className="size-4" />
-            Restore
-            <span className="sr-only"> module</span>
+            Restore<span className="sr-only">{module.title}</span>
           </>
         }
         pendingLabel="Restoring…"

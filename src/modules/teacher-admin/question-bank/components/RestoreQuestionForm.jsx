@@ -30,8 +30,7 @@ export function RestoreQuestionForm({ question }) {
         label={
           <>
             <ArchiveRestore aria-hidden="true" className="size-4" />
-            Restore
-            <span className="sr-only"> question</span>
+            Restore<span className="sr-only">{question.prompt}</span>
           </>
         }
         pendingLabel="Restoring…"

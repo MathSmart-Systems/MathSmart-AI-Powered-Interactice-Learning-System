@@ -54,6 +54,22 @@ const DIALOGS = [
     trigger: { role: "button", name: "Add competency", exact: true },
     ready: { role: "heading", name: "New competency" },
   },
+  {
+    // The two authoring dialogs that were missing from this list entirely.
+    // The question editors are wider still, but they can only be opened from a
+    // row, and this specification is deliberately content-free — the
+    // content-authoring run opens them against its own fixtures instead.
+    name: "an authoring form (Activities)",
+    route: "/teacher/activities",
+    trigger: { role: "button", name: "Create activity", exact: true },
+    ready: { role: "heading", name: "Create new practice activity" },
+  },
+  {
+    name: "an authoring form (Assessments)",
+    route: "/teacher/assessments",
+    trigger: { role: "button", name: "New assessment", exact: true },
+    ready: { role: "heading", name: "New assessment" },
+  },
 ];
 
 /** Opens one of the cases above, or skips when the page cannot offer it. */
@@ -61,8 +77,10 @@ async function openDialog(page, entry) {
   await page.goto(entry.route);
   const trigger = page.getByRole(entry.trigger.role, {
     name: entry.trigger.name,
-    exact: entry.trigger.exact,
-  });
+    // `exact` is meaningless against a pattern, and passing it with one is a
+    // Playwright error rather than a no-op.
+    ...(entry.trigger.exact === undefined ? {} : { exact: entry.trigger.exact }),
+  }).first();
 
   await expect(trigger).toBeVisible();
   test.skip(await trigger.isDisabled(), `${entry.name} cannot be opened on this data`);

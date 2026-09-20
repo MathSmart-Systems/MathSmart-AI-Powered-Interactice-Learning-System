@@ -187,7 +187,11 @@ function ActivityForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-0">
+    // `min-h-0 flex-1` is what lets the body scroll instead of the form
+    // growing: without it the dialog's column cannot shrink, and the footer —
+    // with Cancel and Save in it — is pushed below the bottom of the screen on
+    // a phone.
+    <form onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
       <DialogBody className="flex flex-col gap-5">
         {serverError ? (
           <p

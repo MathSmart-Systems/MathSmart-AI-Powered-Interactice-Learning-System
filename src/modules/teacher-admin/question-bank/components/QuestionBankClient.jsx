@@ -180,6 +180,9 @@ export function QuestionBankClient({
                   question={question}
                   actions={
                     <>
+                      {/* Every row action names the row it is about. A list of
+                          buttons that all read "Archive question" gives a
+                          screen-reader user no way to tell one from another. */}
                       <RestoreQuestionForm question={question} />
                       {/*
                         Only on an archived row, because only an archived
@@ -194,8 +197,7 @@ export function QuestionBankClient({
                         onClick={() => openDelete(question)}
                       >
                         <Trash2 aria-hidden="true" className="size-4" />
-                        Delete permanently
-                        <span className="sr-only"> question</span>
+                        Delete permanently<span className="sr-only">{question.prompt}</span>
                       </Button>
                     </>
                   }
@@ -213,8 +215,7 @@ export function QuestionBankClient({
                         onClick={() => openEdit(question)}
                       >
                         <Pencil aria-hidden="true" className="size-4" />
-                        Edit
-                        <span className="sr-only"> question</span>
+                        Edit<span className="sr-only">{question.prompt}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -223,8 +224,7 @@ export function QuestionBankClient({
                         onClick={() => openArchive(question)}
                       >
                         <Archive aria-hidden="true" className="size-4" />
-                        Archive
-                        <span className="sr-only"> question</span>
+                        Archive<span className="sr-only">{question.prompt}</span>
                       </Button>
                     </>
                   }

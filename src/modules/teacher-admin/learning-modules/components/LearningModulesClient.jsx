@@ -161,8 +161,7 @@ export function LearningModulesClient({
                         onClick={() => openEdit(module)}
                       >
                         <Pencil aria-hidden="true" className="size-4" />
-                        Edit
-                        <span className="sr-only"> module</span>
+                        Edit<span className="sr-only">{module.title}</span>
                       </Button>
                       <RestoreModuleForm module={module} />
                       {/*
@@ -178,8 +177,7 @@ export function LearningModulesClient({
                         onClick={() => openDelete(module)}
                       >
                         <Trash2 aria-hidden="true" className="size-4" />
-                        Delete permanently
-                        <span className="sr-only"> module</span>
+                        Delete permanently<span className="sr-only">{module.title}</span>
                       </Button>
                     </>
                   }
@@ -197,8 +195,7 @@ export function LearningModulesClient({
                         onClick={() => openEdit(module)}
                       >
                         <Pencil aria-hidden="true" className="size-4" />
-                        Edit
-                        <span className="sr-only"> module</span>
+                        Edit<span className="sr-only">{module.title}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -207,8 +204,7 @@ export function LearningModulesClient({
                         onClick={() => openArchive(module)}
                       >
                         <Archive aria-hidden="true" className="size-4" />
-                        Archive
-                        <span className="sr-only"> module</span>
+                        Archive<span className="sr-only">{module.title}</span>
                       </Button>
                     </>
                   }

@@ -165,8 +165,17 @@ export function TeacherAssessmentsView() {
   );
 
   const totalPages = meta?.totalPages ?? 1;
+  const hasFilter = Boolean(appliedSearch) || status !== "all";
+  const selectedTab = STATUS_TABS.find((tab) => tab.value === status) ?? STATUS_TABS[0];
 
-  /** The sentence under the tabs, and the one that gets announced. */
+  /**
+   * The sentence under the tabs, and the one that gets announced.
+   *
+   * Declared after the two values it reads, not before them. An immediately
+   * invoked expression is evaluated where it is written, so placing it above
+   * `hasFilter` and `selectedTab` put both in the temporal dead zone and threw
+   * on the first render of the whole workspace.
+   */
   const caption = (() => {
     if (isLoading) {
       return "Loading assessments…";
@@ -179,13 +188,12 @@ export function TeacherAssessmentsView() {
     }
     const first = (page - 1) * DEFAULT_PAGE_SIZE + 1;
     const last = Math.min(first + assessments.length - 1, totalItems);
-    const scope = status === "all" ? "assessments" : `${selectedTab.label.toLowerCase()} assessments`;
+    const scope =
+      status === "all" ? "assessments" : `${selectedTab.label.toLowerCase()} assessments`;
     return `Showing ${first}–${last} of ${totalItems} ${scope}${
       appliedSearch ? ` matching “${appliedSearch}”` : ""
     }`;
   })();
-  const hasFilter = Boolean(appliedSearch) || status !== "all";
-  const selectedTab = STATUS_TABS.find((tab) => tab.value === status) ?? STATUS_TABS[0];
 
   return (
     <div className="flex flex-col gap-8">
