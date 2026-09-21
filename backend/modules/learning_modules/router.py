@@ -13,7 +13,6 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import asyncpg
-
 from fastapi import APIRouter, Query
 
 from app.dependencies import ActorDb, CurrentActor
@@ -28,7 +27,6 @@ from modules.learning_modules.schemas import (
     ModuleSummary,
     SaveModuleProgressRequest,
 )
-
 
 # A learner's path can refuse a write that the route itself would allow: a
 # module whose earlier items are unfinished is not open yet. The database says
