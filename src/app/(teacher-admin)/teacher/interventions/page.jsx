@@ -15,13 +15,20 @@ function interventionsErrorMessage(error) {
   return INTERVENTIONS_ERROR_MESSAGES[error] ?? "Could not load intervention cases. Please try again.";
 }
 
-export default async function TeacherInterventionsPage() {
-  const { cases, grades, sections, competencies, error } = await readInterventionsData();
+/**
+ * The intervention queue, filtered by the address.
+ *
+ * The filters arrive as search params, so a queue narrowed before opening a
+ * case is the queue that comes back with the teacher — and a refresh, a
+ * bookmark or a shared link lands on the same rows rather than on everything.
+ */
+export default async function TeacherInterventionsPage({ searchParams }) {
+  const query = await searchParams;
+  const { cases, sections, competencies, error } = await readInterventionsData(query);
 
   return (
     <InterventionDashboard
       initialCases={cases}
-      grades={grades}
       sections={sections}
       competencies={competencies}
       initialError={interventionsErrorMessage(error)}

@@ -13,35 +13,45 @@ import {
 /**
  * A class-level advisory pattern summary for the filtered batch.
  *
- * Only appears when the teacher has scoped the queue by grade and/or competency
- * and there is at least one case; the payload aggregates severity and status
- * counts with no learner identity, and every failure mode collapses to a quiet
- * note. It never decides which learners need help or alters the queue.
+ * Only appears when the teacher has scoped the queue by section and/or
+ * competency and there is at least one case; the payload aggregates severity
+ * and status counts with no learner identity, and every failure mode collapses
+ * to a quiet note. It never decides which learners need help or alters the
+ * queue.
+ *
+ * Scoping used to key on grade. MathSmart is a Grade 6 product, so that scope
+ * described every case in the system and the control behind it is gone; a
+ * section is the batch a teacher actually means.
  *
  * @param {object} props
  * @param {Array<object>} props.cases - The filtered queue rows
- * @param {string|null} props.gradeId
+ * @param {string|null} props.sectionId
  * @param {string|null} props.competencyId
- * @param {Array<object>} props.grades
+ * @param {Array<object>} props.sections
  */
-export function PatternAnalysisPanel({ cases = [], gradeId = null, competencyId = null, grades = [] }) {
+export function PatternAnalysisPanel({
+  cases = [],
+  sectionId = null,
+  competencyId = null,
+  sections = [],
+}) {
   const [state, setState] = useState({ result: null, loading: false, key: null });
   const [nonce, setNonce] = useState(0);
 
   // An empty scope still produces the string "|", which is truthy, so the
   // panel needs an explicit check rather than the key's own truthiness.
-  const hasScope = Boolean(gradeId || competencyId);
+  const hasScope = Boolean(sectionId || competencyId);
   const hasCases = Array.isArray(cases) && cases.length > 0;
-  const requestKey = `${gradeId ?? ""}|${competencyId ?? ""}|${nonce}`;
+  const requestKey = `${sectionId ?? ""}|${competencyId ?? ""}|${nonce}`;
 
   useEffect(() => {
     let active = true;
     if (!hasCases || !hasScope) return undefined;
 
     const payload = buildClassPatternAnalysisPayload(cases, {
-      gradeId,
+      sectionId,
       competencyId,
-      grades,
+      sections,
     });
     if (!payload) return undefined;
 
@@ -63,7 +73,7 @@ export function PatternAnalysisPanel({ cases = [], gradeId = null, competencyId 
     return () => {
       active = false;
     };
-  }, [hasCases, hasScope, requestKey, gradeId, competencyId, grades, cases]);
+  }, [hasCases, hasScope, requestKey, sectionId, competencyId, sections, cases]);
 
   if (!hasCases || !hasScope) return null;
 

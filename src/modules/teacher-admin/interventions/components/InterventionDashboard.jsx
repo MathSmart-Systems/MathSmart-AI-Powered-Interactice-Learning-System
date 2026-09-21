@@ -1,21 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Clock, Download, X } from "lucide-react";
 
 import { useInterventionQueue } from "../hooks/useInterventionQueue";
 import { useInterventionActions } from "../hooks/useInterventionActions";
+import { useQueueScrollMemory } from "../hooks/useQueueScrollMemory";
 import { useQueueShortcuts } from "../hooks/useQueueShortcuts";
 import { InterventionFilters } from "./InterventionFilters";
 import { InterventionCaseTable } from "./InterventionCaseTable";
-import { InterventionReviewModal } from "./InterventionReviewModal";
 import { PatternAnalysisPanel } from "./PatternAnalysisPanel";
 import { ReportPrintPane } from "./ReportPrintPane";
 import { WeeklySummaryCard } from "./WeeklySummaryCard";
 import {
+  caseHref,
   casesToCsv,
   downloadCsv,
   eligibleForStatus,
+  filtersToQuery,
 } from "../utils/intervention-helpers";
 
 const BULK_BUTTON_STYLE =
@@ -28,29 +31,33 @@ const BULK_BUTTON_STYLE =
  * AI dependency. AI is advisory only and would be layered on later; its absence
  * changes nothing here.
  *
- * Keyboard shortcuts: "/" focuses the filter bar, "n" opens the next case in
- * the queue, "r" resolves the case currently open for review (never reopens).
+ * A case opens as its own page rather than a dialog over this one, so the
+ * filters live in the address: a row link carries them, the case page hands
+ * them back, and the browser's own back button restores both them and the
+ * place in the list.
+ *
+ * Keyboard shortcuts: "/" focuses the filter bar, "n" opens the first case in
+ * the queue.
  *
  * @param {object} props
  * @param {Array<object>} props.initialCases
- * @param {Array<object>} props.grades
  * @param {Array<object>} props.sections
  * @param {Array<object>} props.competencies
  * @param {string} [props.initialError]
  */
 export function InterventionDashboard({
   initialCases = [],
-  grades = [],
   sections = [],
   competencies = [],
   initialError = undefined,
 }) {
-  const [reviewingId, setReviewingId] = useState(null);
+  const router = useRouter();
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [printReport, setPrintReport] = useState(null);
   const queue = useInterventionQueue(initialCases);
   const actions = useInterventionActions();
+  const listRef = useQueueScrollMemory(filtersToQuery(queue.filters));
 
   useEffect(() => {
     if (!printReport) return undefined;
@@ -63,27 +70,14 @@ export function InterventionDashboard({
     };
   }, [printReport]);
 
-  const reviewingCase = queue.cases.find((item) => item.id === reviewingId) || null;
   const selectedCases = queue.cases.filter((item) => selectedIds.has(item.id));
   const allSelected = queue.cases.length > 0 && selectedIds.size === queue.cases.length;
-
-  const handleReview = useCallback((interventionId) => {
-    setReviewingId(interventionId);
-  }, []);
-
-  const handleCloseReview = useCallback(() => {
-    setReviewingId(null);
-  }, []);
 
   const applySaved = useCallback((updated) => {
     if (!updated?.id) return;
     queue.applyCase(updated);
     queue.refresh();
   }, [queue]);
-
-  const handleRecorded = useCallback((updated) => {
-    applySaved(updated);
-  }, [applySaved]);
 
   const handlePrintReport = useCallback((report) => {
     setPrintReport(report);
@@ -150,37 +144,18 @@ export function InterventionDashboard({
   }, [selectedCases]);
 
   const handleNextCase = useCallback(() => {
-    if (queue.cases.length === 0) return;
-    if (reviewingId === null || reviewingId === undefined) {
-      setReviewingId(queue.cases[0].id);
-      return;
-    }
-    const index = queue.cases.findIndex((item) => item.id === reviewingId);
-    const nextIndex = index >= 0 ? (index + 1) % queue.cases.length : 0;
-    setReviewingId(queue.cases[nextIndex].id);
-  }, [queue.cases, reviewingId]);
+    const first = queue.cases[0];
+    if (!first) return;
+    router.push(caseHref(first.id, queue.filters));
+  }, [queue.cases, queue.filters, router]);
 
-  const handleResolveReview = useCallback(async () => {
-    if (!reviewingCase) return;
-    if (reviewingCase.status === "Resolved") return;
-    const updated = await handleQuickStatus(reviewingCase.id, "Resolved");
-    // On a failed mutation the modal stays open so its error stays visible.
-    if (!updated) return;
-    actions.closeCase();
-    setReviewingId(null);
-  }, [actions, reviewingCase, handleQuickStatus]);
-
-  const filterFocusRef = useQueueShortcuts({
-    onNextCase: handleNextCase,
-    onResolveReview: handleResolveReview,
-    resolveBusy: actions.saving,
-  });
+  const filterFocusRef = useQueueShortcuts({ onNextCase: handleNextCase });
 
   // A successful client load retires the server component's own read error.
   const pageError = queue.error ?? (queue.loaded ? undefined : initialError);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={listRef} className="flex flex-col gap-6">
       <header className="flex flex-col gap-3">
         <p className="inline-flex w-fit items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-700 dark:text-rose-300">
           <AlertTriangle aria-hidden="true" className="size-3.5" />
@@ -193,8 +168,7 @@ export function InterventionDashboard({
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
           Diagnose learning obstacles, review deterministic evidence, and record targeted remediation
           actions for students who need support. Press <kbd className="rounded bg-muted px-1 font-mono text-[11px]">/</kbd> to
-          focus filters, <kbd className="rounded bg-muted px-1 font-mono text-[11px]">n</kbd> for the next case, and{" "}
-          <kbd className="rounded bg-muted px-1 font-mono text-[11px]">r</kbd> to resolve the case open for review.
+          focus filters and <kbd className="rounded bg-muted px-1 font-mono text-[11px]">n</kbd> to open the first case.
         </p>
       </header>
 
@@ -204,7 +178,6 @@ export function InterventionDashboard({
         onApply={queue.applyFilters}
         onClear={queue.clearFilters}
         competencies={competencies}
-        grades={grades}
         sections={sections}
         disabled={queue.loading}
         cases={queue.cases}
@@ -213,9 +186,9 @@ export function InterventionDashboard({
 
       <PatternAnalysisPanel
         cases={queue.cases}
-        gradeId={queue.filters.gradeId}
+        sectionId={queue.filters.sectionId}
         competencyId={queue.filters.competencyId}
-        grades={grades}
+        sections={sections}
       />
 
       {queue.cases.length > 0 ? <WeeklySummaryCard cases={queue.cases} /> : null}
@@ -276,7 +249,7 @@ export function InterventionDashboard({
 
       <InterventionCaseTable
         cases={queue.cases}
-        onReview={handleReview}
+        filters={queue.filters}
         onQuickStatus={handleQuickStatus}
         onToggleSelected={handleToggleSelected}
         onToggleSelectAll={handleToggleSelectAll}
@@ -285,14 +258,7 @@ export function InterventionDashboard({
         disabled={bulkBusy}
         loading={queue.loading}
         error={pageError}
-      />
-
-      <InterventionReviewModal
-        caseItem={reviewingCase}
-        actions={actions}
-        onClose={handleCloseReview}
-        onRecorded={handleRecorded}
-        onPrint={handlePrintReport}
+        onRetry={queue.refresh}
       />
 
       <ReportPrintPane report={printReport} />

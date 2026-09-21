@@ -98,5 +98,5 @@ class InterventionDetail(InterventionSummary):
     ai_insight: str | None = None
     ai_recommendation: str | None = None
     ai_provider: str | None = None
-    ai_model: str | None = None
     ai_confidence_score: float | None = None
+    ai_plan: dict[str, Any] | None = None

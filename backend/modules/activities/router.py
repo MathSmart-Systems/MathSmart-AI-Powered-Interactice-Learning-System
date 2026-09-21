@@ -43,7 +43,7 @@ from modules.activities.schemas import (
 # than restated. A Teacher/Administrator who turns `features.groq_advisory` off
 # means it off everywhere, and a second copy of that rule here would be a second
 # thing to keep true.
-from modules.ai.router import _is_groq_feature_enabled
+from modules.ai.service import is_advisory_enabled
 from modules.competencies.schemas import PublicationStatus
 
 # Practice belongs to a module, and a module the learner's path has not opened
@@ -139,7 +139,7 @@ async def _advisory_hint(request: Request, *, actor: Any, authored: str | None) 
     if not authored:
         return None
 
-    if not await _is_groq_feature_enabled(request, actor):
+    if not await is_advisory_enabled(request, actor):
         return None
 
     adviser = getattr(request.app.state, "groq", None)

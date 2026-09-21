@@ -1,32 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { listInterventionCases } from "../services/interventions-api";
-import { normalizeCase, sortCases } from "../utils/intervention-helpers";
+import {
+  emptyFilters,
+  filtersFromQuery,
+  filtersToQuery,
+  normalizeCase,
+  sortCases,
+} from "../utils/intervention-helpers";
 
 /**
  * Manages the deterministic intervention queue.
  *
- * The initial cases come from the server component; this hook owns the live
- * state, applies the documented filters through the API, and keeps the queue
- * sorted by severity deterministically. AI is never consulted here.
+ * The filters live in the query string rather than in this hook's state. A
+ * case is its own page now, so narrowing the queue and opening a case is a
+ * real navigation, and the only place a filter set survives one of those —
+ * along with a refresh, a bookmark, and the browser's own back button — is the
+ * address bar. Everything else here is unchanged: the initial cases come from
+ * the server component, the documented filters go to the API, and the queue
+ * stays sorted by severity. AI is never consulted.
  *
  * @param {Array<object>} initialCases
  */
 export function useInterventionQueue(initialCases = []) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [cases, setCases] = useState(() => sortCases(initialCases.map(normalizeCase)));
-  const [filters, setFilters] = useState({
-    gradeId: null,
-    sectionId: null,
-    competencyId: null,
-    severity: null,
-    status: null,
-    dateFrom: null,
-    dateTo: null,
-    minAttempts: null,
-    minScoreDrop: null,
-  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,6 +41,12 @@ export function useInterventionQueue(initialCases = []) {
   // Filter changes and silent refreshes can overlap. Only the newest request
   // may commit, or an older reply replaces the queue the controls describe.
   const requestToken = useRef(0);
+
+  const query = searchParams.toString();
+  const filters = useMemo(
+    () => filtersFromQuery(new URLSearchParams(query)),
+    [query],
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -84,52 +94,65 @@ export function useInterventionQueue(initialCases = []) {
     return null;
   }, []);
 
+  /**
+   * Re-reads the queue whenever the address says something different.
+   *
+   * The first pass is skipped: the server component already read this exact
+   * filter set and handed the rows in, and asking again would replace real
+   * content with a pending state for no new information.
+   */
+  const lastQuery = useRef(query);
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!seeded.current) {
+      seeded.current = true;
+      lastQuery.current = query;
+      return;
+    }
+    if (lastQuery.current === query) return;
+    lastQuery.current = query;
+    load(filtersFromQuery(new URLSearchParams(query)));
+  }, [query, load]);
+
+  /**
+   * Puts a filter set in the address without adding a history entry.
+   *
+   * `replace` rather than `push`, because ten filter changes should not be ten
+   * presses of the back button between a teacher and the page they came from.
+   * `scroll: false`, because a filter narrows what is already on screen and
+   * the reader should keep their place.
+   */
+  const applyToUrl = useCallback(
+    (next) => {
+      const nextQuery = filtersToQuery(next);
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
+
   const setFilter = useCallback(
     (key, value) => {
-      const next = { ...filters, [key]: value || null };
-      setFilters(next);
-      load(next);
+      applyToUrl({ ...filters, [key]: value || null });
     },
-    [filters, load]
+    [applyToUrl, filters],
   );
 
   /**
-   * Applies a full filter snapshot at once and reloads the queue. Used by the
-   * saved-preset flow so every documented key is restored, not just one.
+   * Applies a full filter snapshot at once. Used by the saved-view flow so
+   * every documented key is restored, not just the ones that differ.
    *
    * @param {object} nextFilters
    */
-  const applyFilters = useCallback((nextFilters) => {
-    const next = {
-      gradeId: nextFilters.gradeId ?? null,
-      sectionId: nextFilters.sectionId ?? null,
-      competencyId: nextFilters.competencyId ?? null,
-      severity: nextFilters.severity ?? null,
-      status: nextFilters.status ?? null,
-      dateFrom: nextFilters.dateFrom ?? null,
-      dateTo: nextFilters.dateTo ?? null,
-      minAttempts: nextFilters.minAttempts ?? null,
-      minScoreDrop: nextFilters.minScoreDrop ?? null,
-    };
-    setFilters(next);
-    load(next);
-  }, [load]);
+  const applyFilters = useCallback(
+    (nextFilters) => {
+      applyToUrl({ ...emptyFilters(), ...nextFilters });
+    },
+    [applyToUrl],
+  );
 
   const clearFilters = useCallback(() => {
-    const reset = {
-      gradeId: null,
-      sectionId: null,
-      competencyId: null,
-      severity: null,
-      status: null,
-      dateFrom: null,
-      dateTo: null,
-      minAttempts: null,
-      minScoreDrop: null,
-    };
-    setFilters(reset);
-    load(reset);
-  }, [load]);
+    applyToUrl(emptyFilters());
+  }, [applyToUrl]);
 
   /**
    * Replaces one case in place after a mutation, so the queue reflects the
@@ -151,6 +174,10 @@ export function useInterventionQueue(initialCases = []) {
     load(filters, { silent: true });
   }, [filters, load]);
 
+  const reload = useCallback(() => {
+    load(filters);
+  }, [filters, load]);
+
   return {
     cases,
     filters,
@@ -163,5 +190,6 @@ export function useInterventionQueue(initialCases = []) {
     clearFilters,
     applyCase,
     refresh,
+    reload,
   };
 }

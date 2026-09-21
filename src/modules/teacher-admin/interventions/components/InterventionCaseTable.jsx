@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { BookOpen, User, ChevronRight } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 
 import { CaseStatusBadge } from "./CaseStatusBadge";
 import { CaseRowMenu } from "./CaseRowMenu";
-import { formatScore } from "../utils/intervention-helpers";
+import { caseHref, formatScore } from "../utils/intervention-helpers";
 
 const CHECKBOX_STYLE = "size-4 accent-primary";
 
@@ -16,7 +19,8 @@ const CHECKBOX_STYLE = "size-4 accent-primary";
  *
  * @param {object} props
  * @param {Array<object>} props.cases
- * @param {(interventionId: string) => void} props.onReview
+ * @param {object} [props.filters] - The queue to carry into a case, and back out of it
+ * @param {(() => void)|null} [props.onRetry] - Re-reads the queue after a failure
  * @param {(interventionId: string, status: "In Progress"|"Resolved") => void} props.onQuickStatus
  * @param {(interventionId: string, selected: boolean) => void} props.onToggleSelected
  * @param {() => void} props.onToggleSelectAll
@@ -28,7 +32,7 @@ const CHECKBOX_STYLE = "size-4 accent-primary";
  */
 export function InterventionCaseTable({
   cases,
-  onReview,
+  filters = null,
   onQuickStatus,
   onToggleSelected,
   onToggleSelectAll,
@@ -37,12 +41,27 @@ export function InterventionCaseTable({
   disabled = false,
   loading = false,
   error = null,
+  onRetry = null,
 }) {
   if (error) {
+    // An error replaces the rows rather than sitting above them: the cases
+    // that were on screen are no longer known to exist, and leaving them under
+    // a warning invites acting on a queue that may have moved on.
     return (
-      <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-        {error}
-      </p>
+      <div
+        role="alert"
+        className="space-y-3 rounded-xl border-l-[3px] border-destructive bg-destructive/5 px-4 py-3"
+      >
+        <div>
+          <p className="text-sm font-semibold text-foreground">Could not load intervention cases</p>
+          <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+        </div>
+        {onRetry ? (
+          <Button type="button" size="sm" variant="outline" onClick={onRetry} disabled={loading}>
+            {loading ? "Trying again…" : "Try again"}
+          </Button>
+        ) : null}
+      </div>
     );
   }
 
@@ -144,18 +163,22 @@ export function InterventionCaseTable({
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onReview(item.id)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      {/* A link, not a button: the case is a page now, so
+                          middle-click, open-in-new-tab and the browser's own
+                          back button all work without anything being wired up
+                          for them. The queue travels in the address. */}
+                      <Link
+                        href={caseHref(item.id, filters)}
+                        aria-label={`Review the case for ${item.student.full_name}`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                       >
                         Review
                         <ChevronRight aria-hidden="true" className="size-3.5" />
-                      </button>
+                      </Link>
                       <CaseRowMenu
                         item={item}
+                        filters={filters}
                         onQuickStatus={onQuickStatus}
-                        onRecord={onReview}
                         disabled={disabled}
                       />
                     </div>

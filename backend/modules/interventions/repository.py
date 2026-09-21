@@ -9,6 +9,7 @@ written in the same transaction as the change it describes.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -37,6 +38,7 @@ _QUEUE_COLUMNS = """
   interventions.ai_provider,
   interventions.ai_model,
   interventions.ai_confidence_score,
+  interventions.ai_plan,
   interventions.teacher_admin_id,
   educator.full_name as recorded_by,
   competency_progress.diagnostic_score,
@@ -115,6 +117,10 @@ where interventions.intervention_id = $1
 _OPEN_SQL = "select * from app.open_intervention($1, $2, $3, $4, $5, $6)"
 _UPDATE_SQL = "select * from app.update_intervention($1, $2, $3, $4, $5, $6, $7)"
 _ARCHIVE_SQL = "select app.archive_intervention($1, $2)"
+_ATTACH_ADVICE_SQL = (
+    "select * from app.attach_intervention_advice($1, $2, $3, $4, $5, $6, $7, $8)"
+)
+_CLEAR_ADVICE_SQL = "select * from app.clear_intervention_advice($1, $2)"
 
 
 async def queue(
@@ -212,3 +218,41 @@ async def archive(
     connection: ActorConnection, *, intervention_id: UUID, request_id: str | None
 ) -> bool:
     return bool(await connection.fetchval(_ARCHIVE_SQL, intervention_id, request_id))
+
+
+async def attach_advice(
+    connection: ActorConnection,
+    *,
+    intervention_id: UUID,
+    insight: str | None,
+    recommendation: str | None,
+    provider: str | None,
+    model: str | None,
+    confidence: float | None,
+    plan: dict[str, Any] | None,
+    request_id: str | None,
+) -> Any:
+    """Stores advisory text the API generated, then reads the case back.
+
+    The text reaching this function was produced server-side moments ago. No
+    route accepts it from a body, so there is no path by which a browser's own
+    words arrive in a column the interface labels as machine-written.
+    """
+    written = await connection.fetchrow(
+        _ATTACH_ADVICE_SQL,
+        intervention_id, insight, recommendation, provider, model, confidence,
+        json.dumps(plan) if plan is not None else None,
+        request_id,
+    )
+    if written is None:
+        return None
+    return await intervention(connection, written["intervention_id"])
+
+
+async def clear_advice(
+    connection: ActorConnection, *, intervention_id: UUID, request_id: str | None
+) -> Any:
+    written = await connection.fetchrow(_CLEAR_ADVICE_SQL, intervention_id, request_id)
+    if written is None:
+        return None
+    return await intervention(connection, written["intervention_id"])

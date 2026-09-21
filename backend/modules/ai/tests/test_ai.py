@@ -42,10 +42,10 @@ class FakeGroq:
     def enabled(self) -> bool:
         return self._enabled
 
-    async def advise(self, *, purpose: str, evidence: dict):
+    async def advise(self, *, purpose: str, evidence: dict, **shape):
         from datetime import UTC, datetime
 
-        self.calls.append({"purpose": purpose, "evidence": evidence})
+        self.calls.append({"purpose": purpose, "evidence": evidence, **shape})
         if self.text is None:
             return None
         return AdvisoryResult(

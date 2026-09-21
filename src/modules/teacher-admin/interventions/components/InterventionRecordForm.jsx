@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send } from "lucide-react";
+import { Send } from "lucide-react";
 
 import {
   INTERVENTION_TEMPLATES,
@@ -20,21 +20,42 @@ const TYPE_BUTTON_STYLE = {
  *
  * The teacher always decides. The form sends only the educator's choices
  * (type, notes, status) to the API, which enforces the lifecycle in the
- * database. No advisory AI text is sent or promised here.
+ * database. Nothing generated is sent from here: a suggestion reaches the
+ * record only as a draft the teacher has read, may edit, and then signs by
+ * pressing Record.
+ *
+ * The notes value is owned by the caller so the advisory panel can hand a
+ * draft into it. Notes survive a failed save deliberately — a request that
+ * did not land is not a reason to make somebody write their plan twice.
+ *
+ * Success is confirmed by the page, not here. A banner inside the form pushed
+ * the record button down at the moment somebody had just pressed it, so the
+ * confirmation moved out of the flow and into a toast.
  *
  * @param {object} props
  * @param {(payload: object) => Promise<object|null>} props.onSubmit
  *   Receives `{interventionType, educatorNotes, status, reopenReason}`.
  * @param {string|null|undefined} props.currentStatus
+ * @param {string} [props.notes] - The current notes draft
+ * @param {(value: string) => void} [props.onNotesChange]
  * @param {boolean} [props.saving]
  * @param {string|null} [props.error]
  */
-export function InterventionRecordForm({ onSubmit, currentStatus, saving = false, error = null }) {
+export function InterventionRecordForm({
+  onSubmit,
+  currentStatus,
+  notes,
+  onNotesChange,
+  saving = false,
+  error = null,
+}) {
   const [interventionType, setInterventionType] = useState(INTERVENTION_TYPES[1] ?? "One-on-One Remediation");
-  const [educatorNotes, setEducatorNotes] = useState("");
+  const [ownNotes, setOwnNotes] = useState("");
+  const controlled = typeof notes === "string" && typeof onNotesChange === "function";
+  const educatorNotes = controlled ? notes : ownNotes;
+  const setEducatorNotes = controlled ? onNotesChange : setOwnNotes;
   const [newStatus, setNewStatus] = useState("");
   const [reopenReason, setReopenReason] = useState("");
-  const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
 
   const statusOptions = useMemo(() => nextStatusOptions(currentStatus), [currentStatus]);
@@ -43,8 +64,6 @@ export function InterventionRecordForm({ onSubmit, currentStatus, saving = false
   const handleSubmit = async (event) => {
     event.preventDefault();
     setFieldErrors({});
-    // A success message from an earlier save must not sit beside a new failure.
-    setSubmitted(false);
 
     const errors = {};
     if (!educatorNotes.trim()) {
@@ -66,7 +85,6 @@ export function InterventionRecordForm({ onSubmit, currentStatus, saving = false
     });
 
     if (saved) {
-      setSubmitted(true);
       setEducatorNotes("");
       setNewStatus("");
       setReopenReason("");
@@ -199,13 +217,6 @@ export function InterventionRecordForm({ onSubmit, currentStatus, saving = false
       {error ? (
         <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {error}
-        </p>
-      ) : null}
-
-      {submitted ? (
-        <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-          <CheckCircle2 aria-hidden="true" className="size-4 text-emerald-600" />
-          Intervention recorded to the learner&apos;s case history.
         </p>
       ) : null}
 

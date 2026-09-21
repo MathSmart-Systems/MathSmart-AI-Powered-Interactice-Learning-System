@@ -12,10 +12,15 @@ import {
  * recording a teacher action on it. Every mutation goes through the API, which
  * enforces the lifecycle in the database and writes its own audit row.
  *
+ * `initialDetail` is how the case page seeds this without a second request:
+ * the server component already read the case, so re-reading it in the browser
+ * would replace a rendered page with a pending one for nothing.
+ *
+ * @param {object|null} [initialDetail]
  * @returns {object}
  */
-export function useInterventionActions() {
-  const [caseDetail, setCaseDetail] = useState(null);
+export function useInterventionActions(initialDetail = null) {
+  const [caseDetail, setCaseDetail] = useState(initialDetail);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -102,6 +107,20 @@ export function useInterventionActions() {
   }, []);
 
   /**
+   * Replaces the open case with a version the server has just returned.
+   *
+   * Used by the advisory panel, which changes only the case's `ai_*` fields
+   * and gets the whole record back. Guarded on the identifier so a reply that
+   * arrives after the teacher has moved on cannot redraw somebody else's case.
+   *
+   * @param {object} detail - The refreshed case detail
+   */
+  const applyDetail = useCallback((detail) => {
+    if (!detail?.id) return;
+    setCaseDetail((current) => (current?.id === detail.id ? detail : current));
+  }, []);
+
+  /**
    * A quick lifecycle move from a row: mark the case In Progress or Resolved
    * without opening the record form. Reopens are never done here, because they
    * need an educator-written reason. The queue applies the returned data.
@@ -151,5 +170,6 @@ export function useInterventionActions() {
     closeCase,
     recordAction,
     setCaseStatus,
+    applyDetail,
   };
 }

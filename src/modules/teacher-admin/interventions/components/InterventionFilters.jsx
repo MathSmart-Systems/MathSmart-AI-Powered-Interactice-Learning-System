@@ -1,35 +1,53 @@
 "use client";
 
 import { useState } from "react";
-import { Filter, Layers, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Filter, Layers, Plus, Trash2 } from "lucide-react";
 
 import { useFilterPresets } from "../hooks/useFilterPresets";
+import { activeFilterCount, advancedFilterCount } from "../utils/intervention-helpers";
 
+// `max-w-full min-w-0` is load-bearing, not decoration: a select is sized by
+// its longest option, and a competency name is long enough to push the filter
+// row past a 360px phone and take the whole page sideways with it.
+const CONTROL_FIT = "max-w-full min-w-0";
 const SELECT_STYLE =
-  "h-9 rounded-md border border-input bg-card text-foreground px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  `h-9 ${CONTROL_FIT} rounded-md border border-input bg-card text-foreground px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50`;
 const DATE_STYLE =
-  "h-9 rounded-md border border-input bg-card px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  `h-9 ${CONTROL_FIT} rounded-md border border-input bg-card px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50`;
 const BUTTON_STYLE =
   "inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-card px-3 text-xs font-semibold text-foreground shadow-xs transition-colors hover:bg-muted/40 disabled:pointer-events-none disabled:opacity-60";
+const QUIET_BUTTON_STYLE =
+  "inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none";
 
 /**
- * Deterministic filter bar for the intervention queue, including the advanced
- * date/attempt/score-drop filters and saved filter views.
+ * Deterministic filter bar for the intervention queue.
+ *
+ * The four a teacher reaches for every day stay on screen: severity, status,
+ * competency and section. The date range, the attempt and score-drop floors
+ * and the saved views sit behind a disclosure, because a row of nine controls
+ * reads as a form to fill in rather than a queue to narrow.
+ *
+ * Grade is deliberately absent. MathSmart is a Grade 6 product, and a control
+ * with one option is a question nobody needed to be asked. `grade_id` remains
+ * a supported query parameter; only the control is gone.
+ *
+ * The disclosure carries a count, so a collapsed panel can never hide an
+ * applied filter: the badge is the promise that what you cannot see is not
+ * secretly narrowing your queue.
  *
  * Every control maps to a documented backend filter or a client-side snapshot
  * of the same keys. None of these decisions are made by Groq.
  *
  * @param {object} props
- * @param {object} filters - Current filter state
- * @param {(key: string, value: string|null) => void} onChange
- * @param {(next: object) => void} [onApply] - Applies a full filter snapshot (presets)
- * @param {() => void} [onClear] - Resets every filter to its default
- * @param {Array<object>} [competencies]
- * @param {Array<object>} [grades]
- * @param {Array<object>} [sections]
- * @param {boolean} [disabled]
- * @param {Array<object>} [cases] - Current visible cases (for the count line)
- * @param {React.RefObject} [focusRef] - First control, focused by the "/" shortcut
+ * @param {object} props.filters - Current filter state
+ * @param {(key: string, value: string|null) => void} props.onChange
+ * @param {(next: object) => void} [props.onApply] - Applies a full filter snapshot (presets)
+ * @param {() => void} [props.onClear] - Resets every filter to its default
+ * @param {Array<object>} [props.competencies]
+ * @param {Array<object>} [props.sections]
+ * @param {boolean} [props.disabled]
+ * @param {Array<object>} [props.cases] - Current visible cases (for the count line)
+ * @param {React.RefObject} [props.focusRef] - First control, focused by the "/" shortcut
  */
 export function InterventionFilters({
   filters,
@@ -37,7 +55,6 @@ export function InterventionFilters({
   onApply,
   onClear,
   competencies = [],
-  grades = [],
   sections = [],
   disabled = false,
   cases = [],
@@ -47,6 +64,15 @@ export function InterventionFilters({
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [activePreset, setActivePreset] = useState("");
+  const [requestedOpen, setRequestedOpen] = useState(null);
+
+  const advanced = advancedFilterCount(filters);
+  const anyApplied = activeFilterCount(filters) > 0;
+  // Until the teacher says otherwise, the panel is open exactly when something
+  // inside it is already applied — which is what a filter set restored from the
+  // address, or from a saved view, needs it to do. Derived, so arriving with a
+  // date range set never costs a second render to correct.
+  const open = requestedOpen === null ? advanced > 0 : requestedOpen;
 
   const applyPreset = (name) => {
     const preset = presets.find((item) => item.name === name);
@@ -136,24 +162,6 @@ export function InterventionFilters({
           ))}
         </select>
 
-        <label className="sr-only" htmlFor="intervention-filter-grade">
-          Grade
-        </label>
-        <select
-          id="intervention-filter-grade"
-          className={SELECT_STYLE}
-          value={filters.gradeId ?? ""}
-          onChange={(event) => handleChange("gradeId", event.target.value || null)}
-          disabled={disabled}
-        >
-          <option value="" className="bg-card text-foreground">All grades</option>
-          {grades.map((grade) => (
-            <option key={grade.grade_id} value={grade.grade_id} className="bg-card text-foreground">
-              {grade.name}
-            </option>
-          ))}
-        </select>
-
         <label className="sr-only" htmlFor="intervention-filter-section">
           Section
         </label>
@@ -177,11 +185,42 @@ export function InterventionFilters({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3" aria-label="Advanced filters">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Advanced
-        </span>
+      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls="intervention-advanced-filters"
+          onClick={() => setRequestedOpen(!open)}
+          className={QUIET_BUTTON_STYLE}
+        >
+          <ChevronDown
+            aria-hidden="true"
+            className={`size-3.5 transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+          />
+          Advanced filters
+          {advanced > 0 ? (
+            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-secondary-foreground">
+              {advanced}
+              <span className="sr-only"> applied</span>
+            </span>
+          ) : null}
+        </button>
 
+        {anyApplied ? (
+          <button type="button" onClick={handleClear} className={`${QUIET_BUTTON_STYLE} ml-auto`}>
+            <Layers aria-hidden="true" className="size-3.5" />
+            Clear filters
+          </button>
+        ) : null}
+      </div>
+
+      {/* Hidden rather than unmounted: an open panel must not reflow the page
+          around it, and a half-typed view name should survive being collapsed. */}
+      <div
+        id="intervention-advanced-filters"
+        hidden={!open}
+        className="flex flex-wrap items-center gap-3 border-t border-border pt-3"
+      >
         <label className="sr-only" htmlFor="intervention-filter-date-from">Opened from</label>
         <input
           id="intervention-filter-date-from"
@@ -266,20 +305,16 @@ export function InterventionFilters({
         ) : null}
 
         {savingPreset ? (
-          <span className="flex items-center gap-1.5">
+          <span className="flex flex-wrap items-center gap-1.5">
             <input
               type="text"
               value={presetName}
               onChange={(event) => setPresetName(event.target.value)}
               placeholder="Name this view"
               aria-label="Name for this saved view"
-              className="h-9 w-44 rounded-md border border-input bg-card px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className={`h-9 w-44 ${CONTROL_FIT} rounded-md border border-input bg-card px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50`}
             />
-            <button
-              type="button"
-              onClick={handleSavePreset}
-              className={BUTTON_STYLE}
-            >
+            <button type="button" onClick={handleSavePreset} className={BUTTON_STYLE}>
               Save
             </button>
             <button
@@ -291,24 +326,11 @@ export function InterventionFilters({
             </button>
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => setSavingPreset(true)}
-            className={BUTTON_STYLE}
-          >
+          <button type="button" onClick={() => setSavingPreset(true)} className={BUTTON_STYLE}>
             <Plus aria-hidden="true" className="size-3.5" />
             Save current view
           </button>
         )}
-
-        <button
-          type="button"
-          onClick={handleClear}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-        >
-          <Layers aria-hidden="true" className="size-3.5" />
-          Clear filters
-        </button>
 
         {presetsError ? (
           <p role="alert" className="text-xs text-destructive">{presetsError}</p>

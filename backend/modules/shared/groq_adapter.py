@@ -111,8 +111,25 @@ class GroqAdapter:
     def enabled(self) -> bool:
         return self._settings.groq_enabled
 
-    async def advise(self, *, purpose: str, evidence: dict[str, Any]) -> AdvisoryResult | None:
-        """Ask Groq for advisory text, or return None so the caller uses its own."""
+    async def advise(
+        self,
+        *,
+        purpose: str,
+        evidence: dict[str, Any],
+        instructions: str | None = None,
+        max_tokens: int | None = None,
+    ) -> AdvisoryResult | None:
+        """Ask Groq for advisory text, or return None so the caller uses its own.
+
+        `instructions` lets a caller say what shape it needs back — a JSON
+        object with named fields, a word budget, no Markdown. Without it the
+        model answers in whatever prose it likes, and a caller that has to
+        render the answer in a small panel cannot do anything with that but
+        show a wall of text. `max_tokens` is the same argument in the other
+        direction: a bound the caller sets because it knows how much room it
+        has. Both are optional, and leaving them out is the behaviour every
+        existing caller already relies on.
+        """
         if not self._settings.groq_enabled:
             return None
 
@@ -121,13 +138,15 @@ class GroqAdapter:
         if api_key is None or not model:
             return None
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": [
-                {"role": "system", "content": _system_prompt(purpose)},
+                {"role": "system", "content": _system_prompt(purpose, instructions)},
                 {"role": "user", "content": _evidence_prompt(redact_evidence(evidence))},
             ],
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
 
         try:
             response = await self._post(payload, api_key.get_secret_value())
@@ -171,13 +190,14 @@ class GroqAdapter:
             return await client.post(GROQ_CHAT_COMPLETIONS_URL, json=payload, headers=headers)
 
 
-def _system_prompt(purpose: str) -> str:
-    return (
+def _system_prompt(purpose: str, instructions: str | None = None) -> str:
+    base = (
         "You are an advisory assistant for a Grade 6 mathematics learning system. "
         "Your output is suggestive and is never authoritative: you do not decide "
         "correctness, scores, mastery, progression or permissions. "
         f"Purpose: {purpose}."
     )
+    return f"{base} {instructions}" if instructions else base
 
 
 def _evidence_prompt(evidence: dict[str, Any]) -> str:

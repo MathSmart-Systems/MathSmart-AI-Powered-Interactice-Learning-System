@@ -2,9 +2,10 @@
  * Feature API calls for the Teacher Interventions workspace.
  *
  * The deterministic endpoints (queue, detail, record, update, archive) are the
- * only source of what a learner's case is. The two Groq endpoints return
- * advisory text and are fetched separately by the caller, never blocking the
- * deterministic evidence and never deciding severity, status, or the queue.
+ * only source of what a learner's case is. Advisory text is asked for
+ * explicitly by a teacher, generated server-side and stored against the case;
+ * the class-level pattern summary stays a plain advisory read. None of it
+ * blocks the deterministic evidence or decides severity, status, or the queue.
  *
  * This wraps the module's private transport (api-client.js), which normalises
  * every reply to `{ok, status, data, meta, error, code, fields, requestId}`.
@@ -163,51 +164,23 @@ export function archiveIntervention(interventionId) {
 }
 
 /**
- * Advisory insight about this learner and competency. Returns a normalised
- * response, or a refusal with `code === "groq_assistance_unavailable"` when
- * Groq is disabled. Never used to decide any deterministic value.
+ * Asks the server for advisory support on one case, and keeps what it said.
  *
- * @param {object} payload
- * @param {string} payload.competencyId
- * @param {number|null} [payload.diagnosticScore]
- * @param {number|null} [payload.currentScore]
- * @param {number} [payload.attemptCount]
- * @param {number} [payload.unsuccessfulAttempts]
- * @param {Array} [payload.incorrectPatterns]
- * @param {Array} [payload.completedModules]
- */
-export function fetchTeacherInsight(payload) {
-  return client.request("/ai/teacher-insight", {
-    method: "POST",
-    body: {
-      competency_id: payload.competencyId,
-      diagnostic_score: payload.diagnosticScore ?? null,
-      current_score: payload.currentScore ?? null,
-      attempt_count: payload.attemptCount ?? null,
-      unsuccessful_attempts: payload.unsuccessfulAttempts ?? null,
-      incorrect_patterns: payload.incorrectPatterns ?? [],
-      completed_modules: payload.completedModules ?? [],
-    },
-  });
-}
-
-/**
- * Advisory remediation suggestion for an educator. Same advisory boundary as
- * `fetchTeacherInsight`.
+ * The browser sends no evidence and no text. The API assembles the evidence
+ * from the case's own deterministic record, calls Groq server-side, and stores
+ * the answer in the case's advisory columns, so nothing a client could write
+ * can arrive in a field the interface labels as machine-written.
  *
- * @param {object} payload
- * @param {string} payload.competencyId
- * @param {number|null} [payload.currentScore]
- * @param {string} [payload.displayContext]
+ * Storing is not applying: severity, status, type and the educator's notes are
+ * untouched, and the teacher still decides what to record. A refusal carries
+ * `code === "groq_assistance_unavailable"` and leaves the case unchanged.
+ *
+ * @param {string} interventionId
  */
-export function fetchRemediationSupport(payload) {
-  return client.request("/ai/remediation-support", {
+export function generateInterventionSuggestion(interventionId) {
+  return client.request(`/interventions/${interventionId}/ai-suggestion`, {
     method: "POST",
-    body: {
-      competency_id: payload.competencyId,
-      current_score: payload.currentScore ?? null,
-      display_context: payload.displayContext ?? null,
-    },
+    body: {},
   });
 }
 

@@ -201,6 +201,11 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --   open_intervention,       educator's record about a learner; neither may be
 --   update_intervention,     written by the caller directly
 --   archive_intervention
+--   attach_intervention_advice,  advisory text and its provenance belong to
+--   clear_intervention_advice    the same record and the same audit trail. A
+--                            teacher may attach or dismiss; neither writes any
+--                            deterministic field, and neither is a column the
+--                            caller may set directly.
 --   set_account_status,      role and account_status are not in the column
 --   reset_diagnostic         grant for `authenticated`, and voiding an attempt
 --                            spans three tables that must agree
@@ -233,9 +238,11 @@ select is(
    join pg_namespace on pg_namespace.oid = pg_proc.pronamespace
    where pg_namespace.nspname = 'app'
      and pg_proc.prosecdef),
-  'activity_hint,archive_intervention,authorize_reassessment,'
+  'activity_hint,archive_intervention,attach_intervention_advice,'
+  || 'authorize_reassessment,'
   || 'check_activity_answer,claim_assessment_submission_idempotency,'
-  || 'complete_assessment_submission_idempotency,complete_module,'
+  || 'clear_intervention_advice,complete_assessment_submission_idempotency,'
+  || 'complete_module,'
   || 'enforce_activity_attempt_unlocked,enforce_module_progress_unlocked,'
   || 'is_active_account,may_start_reassessment,module_activity_passed,'
   || 'module_has_required_activity,module_is_locked_for,module_is_satisfied,'

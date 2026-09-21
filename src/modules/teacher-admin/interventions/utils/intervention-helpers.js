@@ -291,47 +291,132 @@ export function scoreDrop(item) {
 /** Cap matching the backend's MAX_ATTEMPTS so a request can never exceed it. */
 const MAX_AI_EVIDENCE_ITEMS = 20;
 
+/** Matching `MAX_NOTES_LENGTH` in the interventions schema. */
+const MAX_NOTES_LENGTH = 4000;
+
+/** Matching `MAX_STRATEGIES` in the backend's support-plan contract. */
+const MAX_PLAN_STRATEGIES = 3;
+
 /**
- * Builds the bounded evidence for the advisory `/ai/teacher-insight` call from
- * one case detail. Arrays are capped at the backend limit and scores are
- * normalised numbers; nothing here can carry a learner name, because the key
- * names sent upstream must survive the adapter's evidence redaction.
+ * The support plan stored against a case, in the shape the panel renders.
+ *
+ * Reads only the `ai_*` fields, which is what keeps machine-written text
+ * distinguishable from the deterministic evidence beside it and from the notes
+ * the educator wrote. Returns null when the case carries no suggestion, which
+ * is the ordinary state and not a failure.
+ *
+ * The plan arrives as structure — a gap, up to three strategies, a scaffold, a
+ * next check — because a teacher needs to take one strategy and leave the
+ * rest. `ai_insight` is the same gap sentence in plain text, and it is what a
+ * case saved before the plan existed still has, so it stands in when the
+ * structure is missing.
  *
  * @param {object|null|undefined} detail - The case detail object
- * @returns {object}
+ * @returns {{gap: string, strategies: string[], scaffold: string|null,
+ *   nextCheck: string|null, provider: string|null, generatedAt: string|null}|null}
  */
-export function buildCaseAIEvidence(detail) {
-  const evidence = detail?.evidence ?? {};
-  const list = (value) => (Array.isArray(value) ? value.slice(0, MAX_AI_EVIDENCE_ITEMS) : []);
+export function storedPlan(detail) {
+  const plan = detail?.ai_plan && typeof detail.ai_plan === "object" ? detail.ai_plan : null;
+  const text = (value) => (typeof value === "string" ? value.trim() : "");
+
+  const gap = text(plan?.gap) || text(detail?.ai_insight);
+  const strategies = (Array.isArray(plan?.strategies) ? plan.strategies : [])
+    .map(text)
+    .filter(Boolean)
+    .slice(0, MAX_PLAN_STRATEGIES);
+  const scaffold = text(plan?.scaffold);
+  const nextCheck = text(plan?.next_check);
+
+  // A case carrying only the older single-text advice still has something to
+  // show, and it shows as the gap rather than as an empty panel.
+  const fallback = text(detail?.ai_recommendation);
+  if (!gap && !strategies.length && !fallback) return null;
+
   return {
-    competencyId: detail?.competency?.id ?? null,
-    diagnosticScore: normalizeScore(evidence.diagnostic_score),
-    currentScore: normalizeScore(evidence.current_score),
-    attemptCount: evidence.attempt_count ?? 0,
-    unsuccessfulAttempts: evidence.unsuccessful_attempts ?? 0,
-    incorrectPatterns: list(detail?.incorrect_patterns),
-    completedModules: list(detail?.modules_attempted),
+    gap: gap || fallback,
+    strategies: gap ? strategies : strategies,
+    scaffold: scaffold || null,
+    nextCheck: nextCheck || null,
+    provider: typeof detail?.ai_provider === "string" ? detail.ai_provider : null,
+    generatedAt: typeof detail?.ai_generated_at === "string" ? detail.ai_generated_at : null,
   };
 }
 
 /**
- * Builds the bounded evidence for the advisory `/ai/remediation-support` call.
- * The display context is a short, PII-free sentence about the case's own
- * deterministic state; it never references the learner by name.
+ * One line of a plan, as a draft the teacher edits and signs.
+ *
+ * Taking a single strategy is the common case: a teacher reads three and wants
+ * the second one. What arrives in the notes field is that sentence and nothing
+ * else — a preamble somebody has to delete before they can write is not a
+ * draft, it is homework. The record already knows the suggestion existed: the
+ * plan is stored in its own columns and the request is in the audit trail.
+ *
+ * @param {string} line
+ * @returns {string}
+ */
+export function strategyNote(line) {
+  const text = typeof line === "string" ? line.trim() : "";
+  return text.slice(0, MAX_NOTES_LENGTH);
+}
+
+/**
+ * The whole plan as a draft the teacher edits and signs.
+ *
+ * The suggestion itself and nothing else. It used to arrive behind "Reviewed
+ * an AI suggestion and plan to act on it:", which every teacher then had to
+ * delete before they could write their own sentence. Capped at the notes limit
+ * the API enforces.
  *
  * @param {object|null|undefined} detail - The case detail object
- * @returns {object}
+ * @returns {string}
  */
-export function buildRemediationContext(detail) {
-  const parts = [];
-  if (detail?.severity) parts.push(`Case severity: ${String(detail.severity).toUpperCase()}.`);
-  if (detail?.status) parts.push(`Status: ${String(detail.status)}.`);
-  if (parts.length === 0) parts.push("An intervention case is being reviewed.");
-  return {
-    competencyId: detail?.competency?.id ?? null,
-    currentScore: normalizeScore(detail?.evidence?.current_score),
-    displayContext: parts.join(" ").slice(0, 2000),
-  };
+export function suggestionNoteDraft(detail) {
+  const plan = storedPlan(detail);
+  if (!plan) return "";
+
+  return [plan.gap, ...plan.strategies, plan.scaffold, plan.nextCheck]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, MAX_NOTES_LENGTH);
+}
+
+/**
+ * Why a suggestion could not be produced, in a sentence a teacher can act on.
+ *
+ * Deliberately not a diagnosis. A teacher in front of a case needs to know
+ * whether to wait or to carry on without the advice; they do not need to be
+ * told to restart a server, and telling them made the message longer without
+ * making it more useful to the person reading it. The detail a maintainer
+ * needs is in the API's own logs, where it belongs.
+ *
+ * `caseClosed` is what separates the two readings of a 404. The API answers
+ * 404 both for a case that is no longer open and for a route it does not have,
+ * and only the client knows which case it was looking at.
+ *
+ * Every message says what is still true: the notes and the evidence are
+ * untouched, because a failed suggestion changes nothing.
+ *
+ * @param {object|null|undefined} result - The normalised API client reply
+ * @param {{caseClosed?: boolean}} [context]
+ * @returns {string}
+ */
+export function suggestionFailure(result, { caseClosed = false } = {}) {
+  const code = result && typeof result === "object" ? result.code : null;
+  const status = result && typeof result === "object" ? result.status : null;
+
+  if (code === "no_session" || status === 401) {
+    return "Your session has ended. Sign in again to ask for a suggestion.";
+  }
+  if (status === 403) {
+    return "This account cannot ask for suggestions.";
+  }
+  if (status === 404 && caseClosed) {
+    return "This case is closed, so it takes no new suggestions.";
+  }
+  if (status === 404 || code === "api_unconfigured") {
+    return "Suggestions are not available here yet. The case is unchanged.";
+  }
+  return "The suggestion could not be produced just now. Your notes and the evidence are unchanged.";
 }
 
 /**
@@ -378,8 +463,16 @@ export function formatGeneratedAt(value) {
 }
 
 /**
- * One provenance line for an advisory block: `provider · model · when`, with
- * whichever parts are present. Returns null when nothing is available.
+ * When a suggestion was written, and by what kind of thing.
+ *
+ * Deliberately not the model identifier. `GROQ_MODEL` is a deployment value
+ * from `.env`, and `AGENTS.md` is explicit that `.env` values are never
+ * printed, logged, documented or exposed — putting one under a teacher's
+ * suggestion did exactly that. It also told the reader nothing: "openai/
+ * gpt-oss-20b" does not help anybody decide whether to act on the advice.
+ *
+ * What does help is that it was generated rather than written by a colleague,
+ * and when. Returns null when even that is unknown.
  *
  * @param {object|null} advisory
  * @returns {string|null}
@@ -387,8 +480,7 @@ export function formatGeneratedAt(value) {
 export function provenanceLabel(advisory) {
   if (!advisory) return null;
   const when = formatGeneratedAt(advisory.generatedAt);
-  const parts = [advisory.provider, advisory.model, when !== "—" ? when : null].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : null;
+  return when === "—" ? "Suggested by AI" : `Suggested by AI · ${when}`;
 }
 
 /**
@@ -408,10 +500,10 @@ export function provenanceLabel(advisory) {
  */
 export function buildClassPatternAnalysisPayload(
   cases,
-  { gradeId = null, competencyId = null, grades = [] } = {}
+  { sectionId = null, competencyId = null, sections = [] } = {}
 ) {
   if (!Array.isArray(cases) || cases.length === 0) return null;
-  if (!gradeId && !competencyId) return null;
+  if (!sectionId && !competencyId) return null;
 
   const severities = { HIGH: 0, MEDIUM: 0, LOW: 0 };
   const statuses = {};
@@ -433,13 +525,21 @@ export function buildClassPatternAnalysisPayload(
     "No individually identifying learner details are included.",
   ].join(" ");
 
-  const gradeRecord = Array.isArray(grades)
-    ? grades.find((grade) => grade?.id && String(grade.id) === String(gradeId))
+  // The advisory contract's `grade` field is the class this batch belongs to.
+  // MathSmart is a Grade 6 product and the grade control is gone, so the scope
+  // a teacher actually chooses is a section — which is the more useful answer
+  // anyway, because "Grade 6" describes every case in the system.
+  const sectionRecord = Array.isArray(sections)
+    ? sections.find(
+        (section) =>
+          (section?.section_id ?? section?.id) &&
+          String(section.section_id ?? section.id) === String(sectionId),
+      )
     : null;
 
-  const grade = typeof gradeRecord?.name === "string" ? gradeRecord.name.slice(0, 60) : null;
+  const grade = typeof sectionRecord?.name === "string" ? sectionRecord.name.slice(0, 60) : null;
 
-  // A grade filter that no directory entry resolves would leave the payload
+  // A section filter that no directory entry resolves would leave the payload
   // with no scope at all, which this advisory contract does not accept.
   if (!grade && !competencyId) return null;
 
@@ -552,4 +652,133 @@ export function normalizeCase(item) {
     educator_notes: item.educator_notes ?? null,
     reopen_reason: item.reopen_reason ?? null,
   };
+}
+/**
+ * The queue's filters, as the query string spells them.
+ *
+ * The filters live in the URL rather than in component state, because a case
+ * now opens as its own page. A teacher who narrows the queue, opens a case and
+ * comes back should find the queue they left; the only version of that which
+ * survives a real navigation, a refresh, a bookmark and the browser's own back
+ * button is the address bar.
+ *
+ * The names are short and readable on purpose. A teacher may well read the URL,
+ * and `?severity=HIGH&status=In+Progress` says what it is.
+ */
+export const QUEUE_FILTER_PARAMS = Object.freeze({
+  severity: "severity",
+  status: "status",
+  competencyId: "competency",
+  sectionId: "section",
+  gradeId: "grade",
+  dateFrom: "from",
+  dateTo: "to",
+  minAttempts: "attempts",
+  minScoreDrop: "drop",
+});
+
+/**
+ * The filters that live behind the disclosure.
+ *
+ * Kept as data rather than as markup, so the badge that counts them and the
+ * panel that holds them can never disagree about which is which.
+ */
+export const ADVANCED_FILTER_KEYS = Object.freeze([
+  "dateFrom",
+  "dateTo",
+  "minAttempts",
+  "minScoreDrop",
+]);
+
+/** Every filter key, unset. */
+export function emptyFilters() {
+  return Object.fromEntries(Object.keys(QUEUE_FILTER_PARAMS).map((key) => [key, null]));
+}
+
+/**
+ * Reads the filters out of a query string.
+ *
+ * Anything absent, blank or unrecognised reads as unset. A URL somebody typed
+ * or edited is untrusted input, and the queue has to survive it.
+ *
+ * @param {URLSearchParams|null|undefined} params
+ * @returns {object}
+ */
+export function filtersFromQuery(params) {
+  const filters = emptyFilters();
+  if (!params || typeof params.get !== "function") return filters;
+
+  for (const [key, name] of Object.entries(QUEUE_FILTER_PARAMS)) {
+    const value = params.get(name);
+    if (typeof value === "string" && value.trim() !== "") {
+      filters[key] = value;
+    }
+  }
+  return filters;
+}
+
+/**
+ * Writes the filters back into a query string, shortest form first.
+ *
+ * Unset filters are left out rather than written as empty, so a queue with
+ * nothing applied has a clean address and two identical filter sets always
+ * produce the same string.
+ *
+ * @param {object} filters
+ * @param {object} [extra] - Extra pairs to append, such as `{at: "record"}`
+ * @returns {string} The query string without its leading "?"
+ */
+export function filtersToQuery(filters, extra = {}) {
+  const params = new URLSearchParams();
+  for (const [key, name] of Object.entries(QUEUE_FILTER_PARAMS)) {
+    const value = filters?.[key];
+    if (value !== null && value !== undefined && String(value) !== "") {
+      params.set(name, String(value));
+    }
+  }
+  for (const [name, value] of Object.entries(extra)) {
+    if (value !== null && value !== undefined && String(value) !== "") {
+      params.set(name, String(value));
+    }
+  }
+  return params.toString();
+}
+
+/** How many of the filters behind the disclosure are applied. */
+export function advancedFilterCount(filters) {
+  return ADVANCED_FILTER_KEYS.filter((key) => {
+    const value = filters?.[key];
+    return value !== null && value !== undefined && String(value) !== "";
+  }).length;
+}
+
+/** How many filters are applied in total, primary and advanced together. */
+export function activeFilterCount(filters) {
+  return Object.keys(QUEUE_FILTER_PARAMS).filter((key) => {
+    const value = filters?.[key];
+    return value !== null && value !== undefined && String(value) !== "";
+  }).length;
+}
+
+/** The queue's own address, carrying the filters currently applied. */
+export function queueHref(filters) {
+  const query = filtersToQuery(filters);
+  return query ? `/teacher/interventions?${query}` : "/teacher/interventions";
+}
+
+/**
+ * One case's address, carrying the queue it was opened from.
+ *
+ * `at` names the part of the page to arrive at. Review arrives at the top;
+ * recording an action arrives at the form, which is what makes two entry
+ * points into one page distinguishable rather than duplicated.
+ *
+ * @param {string} interventionId
+ * @param {object} [filters] - The queue to come back to
+ * @param {{at?: "record"}} [options]
+ */
+export function caseHref(interventionId, filters = null, { at = null } = {}) {
+  const query = filtersToQuery(filters ?? {}, at ? { at } : {});
+  const base = `/teacher/interventions/${interventionId}`;
+  return query ? `${base}?${query}` : base;
 }

@@ -1,22 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
+
+import { caseHref } from "../utils/intervention-helpers";
 
 /**
  * Quick actions for one queue row.
  *
  * Only transitions that need no educator-written reason are performed inline.
- * A reopen from "Resolved" always routes through the full review form, because
+ * A reopen from "Resolved" always routes through the full record form, because
  * it requires a reason and a deliberate decision.
  *
+ * Recording an action is a link to the case page's form rather than a second
+ * way of opening what "Review" opens. The row therefore offers two things that
+ * genuinely differ: read the evidence, or go and write the plan.
+ *
  * @param {object} props
- * @param {object} item - The normalized queue row
+ * @param {object} props.item - The normalized queue row
+ * @param {object} [props.filters] - The queue to carry into the case
  * @param {(interventionId: string, status: "In Progress"|"Resolved") => void} props.onQuickStatus
- * @param {(interventionId: string) => void} props.onRecord
  * @param {boolean} [props.disabled]
  */
-export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false }) {
+export function CaseRowMenu({ item, filters = null, onQuickStatus, disabled = false }) {
   const [requested, setRequested] = useState(false);
   // A disabled queue closes the menu beneath the pointer. Deriving the open
   // state keeps that edge from needing an effect, and the menu cannot outlive
@@ -33,7 +40,9 @@ export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false })
 
   const menuItems = useCallback(
     (root) =>
-      Array.from((root ?? menuRef.current)?.querySelectorAll('button[role="menuitem"]') ?? []),
+      Array.from(
+        (root ?? menuRef.current)?.querySelectorAll('[role="menuitem"]') ?? [],
+      ),
     []
   );
 
@@ -138,15 +147,15 @@ export function CaseRowMenu({ item, onQuickStatus, onRecord, disabled = false })
               Mark Resolved
             </button>
           ) : null}
-          <button
-            type="button"
+          <Link
             role="menuitem"
-            onClick={() => run(() => onRecord(item.id))}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-foreground transition-colors hover:bg-muted/40"
+            href={caseHref(item.id, filters, { at: "record" })}
+            onClick={() => closeMenu(false)}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {status === "Resolved" ? "Reopen case…" : "Record action…"}
             <ChevronRight aria-hidden="true" className="ml-auto size-3.5" />
-          </button>
+          </Link>
         </div>
       ) : null}
     </div>
