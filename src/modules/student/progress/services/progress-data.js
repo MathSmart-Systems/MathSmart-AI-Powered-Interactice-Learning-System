@@ -9,12 +9,12 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { PROGRESS_STATE, readProgressFromApi } from "./progress-transport.js";
+import { apiBaseUrlFrom, trimmedBaseUrl } from "../../../../lib/api/base-url.js";
 
 export { PROGRESS_STATE };
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, trimmedBaseUrl);
 }
 
 async function accessToken() {

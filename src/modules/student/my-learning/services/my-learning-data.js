@@ -19,6 +19,7 @@ import {
   isLockedModule,
 } from "../utils/my-learning-model";
 import { readCataloguePages } from "./catalogue-pagination";
+import { sameOriginApiBaseUrl } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -30,8 +31,8 @@ export const MY_LEARNING_STATE = Object.freeze({
 });
 
 function apiBaseUrl(base = process.env.NEXT_PUBLIC_API_BASE_URL) {
-  if (typeof base !== "string" || !base) {
-    return null;
+  if (typeof base !== "string" || !base.trim()) {
+    return sameOriginApiBaseUrl();
   }
   const trimmed = base.replace(/\/+$/, "");
   const isLoopback =

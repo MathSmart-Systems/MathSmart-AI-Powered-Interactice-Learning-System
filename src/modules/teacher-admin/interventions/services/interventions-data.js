@@ -12,12 +12,13 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { secureApiBaseUrl } from "@/modules/shared/utils/api-url";
 
 import { filtersFromQuery } from "../utils/intervention-helpers";
+import { apiBaseUrlFrom } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_PAGE_SIZE = 100;
 
 function apiBaseUrl() {
-  return secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, secureApiBaseUrl);
 }
 
 async function accessToken() {

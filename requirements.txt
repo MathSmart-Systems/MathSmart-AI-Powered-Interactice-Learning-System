@@ -1,0 +1,17 @@
+# Python dependencies for the Vercel function in api/index.py.
+#
+# A copy of backend/requirements.txt: Vercel's build cannot follow a `-r`
+# include. Change both files together; app/tests/test_vercel_entrypoint.py
+# fails if their pinned requirements differ.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+pydantic-settings==2.15.0
+email-validator==2.3.0
+
+asyncpg==0.31.0
+
+PyJWT[crypto]==2.13.0
+cryptography==50.0.1
+httpx==0.28.1

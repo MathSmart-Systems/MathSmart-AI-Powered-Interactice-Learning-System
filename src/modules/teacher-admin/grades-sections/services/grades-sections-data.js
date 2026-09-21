@@ -14,6 +14,7 @@ import {
   directoryReadError,
   normalizeBaseUrl,
 } from "./directory-transport.js";
+import { apiBaseUrlFrom } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -57,7 +58,7 @@ async function readFromApi(path, token, base) {
  * @returns {Promise<{grades: Array, sections: Array, advisers: Object, error?: string}>}
  */
 export async function readGradesSections() {
-  const base = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+  const base = apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, normalizeBaseUrl);
 
   if (!base) {
     return { grades: [], sections: [], advisers: {}, error: "unconfigured" };

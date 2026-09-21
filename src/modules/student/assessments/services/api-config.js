@@ -1,3 +1,5 @@
+import { sameOriginApiBaseUrl } from "../../../../lib/api/base-url.js";
+
 const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "";
 
 export function parseApiBaseUrl(value) {
@@ -26,7 +28,10 @@ export function parseApiBaseUrl(value) {
   }
 }
 
-export const API_BASE_URL = parseApiBaseUrl(configuredBaseUrl);
+// Unset means the API shares this deployment's origin; see src/lib/api/base-url.js.
+export const API_BASE_URL = configuredBaseUrl
+  ? parseApiBaseUrl(configuredBaseUrl)
+  : sameOriginApiBaseUrl();
 export const API_CONFIGURED = API_BASE_URL !== null;
 
 export const getApiUrl = (path) => {

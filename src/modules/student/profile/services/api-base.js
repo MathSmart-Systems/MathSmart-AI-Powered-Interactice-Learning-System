@@ -7,6 +7,8 @@
  * remain reachable over HTTP for a local API on port 8000.
  */
 
+import { sameOriginApiBaseUrl } from "../../../../lib/api/base-url.js";
+
 /**
  * The API base URL, trimmed, or `null` when unset or unsafe.
  *
@@ -14,8 +16,8 @@
  * @returns {string|null}
  */
 export function apiBaseUrl(base = process.env.NEXT_PUBLIC_API_BASE_URL) {
-  if (typeof base !== "string" || !base) {
-    return null;
+  if (typeof base !== "string" || !base.trim()) {
+    return sameOriginApiBaseUrl();
   }
   const trimmed = base.replace(/\/+$/, "");
   const isLoopback =

@@ -11,6 +11,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { sameOriginApiBaseUrl } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -31,8 +32,8 @@ export const CONTENT_LOCKED = "content_locked";
  * over HTTP for a local API on port 8000.
  */
 function apiBaseUrl(base = process.env.NEXT_PUBLIC_API_BASE_URL) {
-  if (typeof base !== "string" || !base) {
-    return null;
+  if (typeof base !== "string" || !base.trim()) {
+    return sameOriginApiBaseUrl();
   }
   const trimmed = base.replace(/\/+$/, "");
   const isLoopback =

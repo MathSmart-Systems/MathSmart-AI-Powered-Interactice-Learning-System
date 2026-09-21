@@ -15,12 +15,12 @@ import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { rosterStatus } from "../utils/roster";
+import { apiBaseUrlFrom, trimmedBaseUrl } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, trimmedBaseUrl);
 }
 
 async function getAccessToken() {

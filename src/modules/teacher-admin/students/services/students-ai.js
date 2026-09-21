@@ -19,6 +19,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { apiBaseUrlFrom, trimmedBaseUrl } from "../../../../lib/api/base-url.js";
 
 /** Matches the backend's own timeout, which is shorter than this one. */
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -27,8 +28,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
 export const UNAVAILABLE_STATUS = 503;
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, trimmedBaseUrl);
 }
 
 async function getAccessToken() {

@@ -14,8 +14,7 @@ import { createApiClient } from "./api-client.js";
  * @returns {string | null}
  */
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, trimmedBaseUrl);
 }
 
 /**
@@ -196,4 +195,5 @@ export {
   saveTeacherAvatar,
   TEACHER_AVATAR_KEY,
 } from "../utils/preferences-storage.js";
+import { apiBaseUrlFrom, trimmedBaseUrl } from "../../../../lib/api/base-url.js";
 

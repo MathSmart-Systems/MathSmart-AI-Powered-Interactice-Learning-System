@@ -12,13 +12,13 @@ import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { summaryBody } from "../utils/report-filters.js";
+import { apiBaseUrlFrom, trimmedBaseUrl } from "../../../../lib/api/base-url.js";
 
 const EXPORT_TIMEOUT_MS = 30_000;
 const SUMMARY_TIMEOUT_MS = 20_000;
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, trimmedBaseUrl);
 }
 
 async function accessToken() {

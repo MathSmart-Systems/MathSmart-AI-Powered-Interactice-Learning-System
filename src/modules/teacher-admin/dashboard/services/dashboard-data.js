@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 import { DASHBOARD_STATE } from "../utils/constants.js";
 import { buildDashboardModel } from "../utils/dashboard-model.js";
+import { apiBaseUrlFrom, trimmedBaseUrl } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_READ_ATTEMPTS = 2;
@@ -17,8 +18,7 @@ function isTransientFailure(status) {
 }
 
 function apiBaseUrl() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
-  return typeof base === "string" && base ? base.replace(/\/+$/, "") : null;
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, trimmedBaseUrl);
 }
 
 async function serverAccessToken() {

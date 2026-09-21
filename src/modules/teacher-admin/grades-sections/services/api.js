@@ -19,6 +19,7 @@ import {
   sectionCreatePayload,
   sectionPatchPayload,
 } from "./directory-transport.js";
+import { apiBaseUrlFrom } from "../../../../lib/api/base-url.js";
 
 async function getAccessToken() {
   if (!isSupabaseConfigured()) return null;
@@ -35,7 +36,7 @@ async function getAccessToken() {
 /** One authenticated request against the MathSmart API. */
 function apiRequest(method, path, body) {
   const client = createDirectoryClient({
-    baseUrl: normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL),
+    baseUrl: apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, normalizeBaseUrl),
     getAccessToken,
   });
   return client.request(method, path, body);

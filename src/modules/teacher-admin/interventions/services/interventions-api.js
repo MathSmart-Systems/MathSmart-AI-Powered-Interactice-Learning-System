@@ -16,9 +16,10 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { secureApiBaseUrl } from "@/modules/shared/utils/api-url";
 
 import { createApiClient } from "./api-client";
+import { apiBaseUrlFrom } from "../../../../lib/api/base-url.js";
 
 function apiBaseUrl() {
-  return secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, secureApiBaseUrl);
 }
 
 async function getAccessToken() {

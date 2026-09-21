@@ -14,12 +14,13 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { readAllCompetencies } from "@/modules/shared/services/competency-pagination.js";
 import { secureApiBaseUrl } from "@/modules/shared/utils/api-url.js";
+import { apiBaseUrlFrom } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Returns the configured API origin without trailing slashes. */
 function apiBaseUrl() {
-  return secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+  return apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, secureApiBaseUrl);
 }
 
 /** Reads the current teacher's access token without exposing session failures. */

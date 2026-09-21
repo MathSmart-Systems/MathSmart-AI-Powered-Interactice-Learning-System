@@ -15,6 +15,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { secureApiBaseUrl } from "@/modules/shared/utils/api-url";
+import { apiBaseUrlFrom } from "../../../../lib/api/base-url.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -46,7 +47,7 @@ async function accessToken() {
  * @returns {Promise<{caseDetail: object|null, sections: Array, error?: string}>}
  */
 export async function readInterventionCase(interventionId) {
-  const base = secureApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+  const base = apiBaseUrlFrom(process.env.NEXT_PUBLIC_API_BASE_URL, secureApiBaseUrl);
   if (!base) return { caseDetail: null, error: CASE_ERROR.UNCONFIGURED };
 
   const token = await accessToken();
