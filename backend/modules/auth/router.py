@@ -41,3 +41,16 @@ async def update_own_identity(
     if identity is None:
         raise ApiError(404, "No profile belongs to this account")
     return {"data": identity.model_dump(mode="json")}
+
+
+@router.post("/auth/me/email-change/cancel")
+async def cancel_own_email_change(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
+    """Withdraw the caller's own pending sign-in email change.
+
+    The sign-in email stays exactly as it is. The pending address and both
+    confirmation links are cleared in the database, as the caller, so a link
+    already sitting in an inbox no longer does anything. There is no body and
+    no user id: it can only ever be the caller's own change.
+    """
+    withdrawn = await connection.fetchval("select app.cancel_own_email_change()")
+    return {"data": {"cancelled": bool(withdrawn)}}

@@ -203,3 +203,11 @@ test("deep links go to real routes, not ignored query strings", () => {
   assert.equal(TEACHER_ROUTES.student("abc"), "/teacher/students/abc");
   assert.equal(TEACHER_ROUTES.learnerCases("abc"), "/teacher/interventions?student=abc");
 });
+
+test("an average the server withheld for a small cohort is marked withheld, not missing", () => {
+  const model = buildDashboardModel({
+    dashboard: { totals: { learner_count: 3, average_mastery: null, average_mastery_suppressed: true } },
+  });
+  assert.equal(model.summary.averageMastery, null);
+  assert.equal(model.summary.averageMasteryWithheld, true);
+});

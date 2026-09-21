@@ -112,6 +112,19 @@ export async function updateOwnProfile(fullName, { token = null } = {}) {
 }
 
 /**
+ * Withdraws the signed-in user's own pending sign-in email change.
+ *
+ * Done by the MathSmart API as the user, not with any Supabase key in the
+ * browser: the database clears the pending address and both confirmation
+ * links for this account only, and leaves the sign-in email as it is.
+ *
+ * @returns {Promise<object>} `data.cancelled` is false when nothing was pending
+ */
+export async function cancelEmailChange({ token = null } = {}) {
+  return client().request("/auth/me/email-change/cancel", { method: "POST", token });
+}
+
+/**
  * Updates the user's password directly through Supabase Auth.
  *
  * @param {string} newPassword
@@ -127,6 +140,49 @@ export async function updateOwnPassword(newPassword) {
     return { ok: true };
   } catch (cause) {
     return { ok: false, error: cause?.message || "Failed to update password." };
+  }
+}
+
+/**
+ * The signed-in account as Supabase Auth knows it, fetched fresh.
+ *
+ * `email` is the confirmed sign-in address. `new_email` is a change still
+ * waiting for confirmation and is never the account's email.
+ *
+ * @returns {Promise<{email: string|null, new_email: string|null}|null>}
+ */
+export async function readSignedInAccount() {
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user) return null;
+    return { email: data.user.email ?? null, new_email: data.user.new_email ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Asks Supabase to change the sign-in email.
+ *
+ * This is the browser client with the public key and the teacher's own
+ * session; nothing elevated is involved. With Secure Email Change on,
+ * Supabase sends a link to both addresses and changes nothing until both are
+ * followed. The links come back to a route that only handles this.
+ *
+ * @param {string} email - Already validated and normalised
+ * @returns {Promise<{error: object|null}>}
+ */
+export async function requestEmailChange(email) {
+  try {
+    const supabase = createClient();
+    const { error } = await supabase.auth.updateUser(
+      { email },
+      { emailRedirectTo: `${window.location.origin}/auth/email-change/confirm` },
+    );
+    return { error: error ?? null };
+  } catch {
+    return { error: { status: 0, code: "unreachable" } };
   }
 }
 

@@ -1,29 +1,24 @@
-import { readReportsData, ReportsAnalyticsView } from "@/modules/teacher-admin/reports-analytics";
+import { Suspense } from "react";
+
+import {
+  ReportsSkeleton,
+  TeacherReports,
+  readReportFilters,
+} from "@/modules/teacher-admin/reports-analytics";
 
 export const metadata = { title: "Reports and Analytics | MathSmart" };
 
-export const dynamic = "force-dynamic";
-
-const REPORTS_ERROR_MESSAGES = {
-  unconfigured: "Reports and analytics are not configured for this deployment. Contact your administrator.",
-  session: "Your session could not be verified. Sign in again and retry.",
-  unavailable: "Reports and analytics are temporarily unavailable. Please try again.",
-};
-
-function reportsErrorMessage(error) {
-  if (!error) return undefined;
-  return REPORTS_ERROR_MESSAGES[error] ?? "Could not load report data. Please try again.";
-}
-
-export default async function TeacherReportsAnalyticsPage() {
-  const { dashboard, analytics, sections, error } = await readReportsData();
+/**
+ * The boundary carries no `key`. Keying it on the filters would turn every
+ * change into a fresh boundary and replace the report with its skeleton; left
+ * unkeyed, the current report stays on screen while the next one renders.
+ */
+export default async function TeacherReportsAnalyticsPage({ searchParams }) {
+  const filters = readReportFilters(await searchParams);
 
   return (
-    <ReportsAnalyticsView
-      initialDashboard={dashboard}
-      initialAnalytics={analytics}
-      initialSections={sections}
-      initialError={reportsErrorMessage(error)}
-    />
+    <Suspense fallback={<ReportsSkeleton />}>
+      <TeacherReports filters={filters} />
+    </Suspense>
   );
 }

@@ -76,7 +76,7 @@ def ai_client(
         settings.groq_api_key = SecretStr("gsk_test")
 
     results = {
-        "from app.system_settings": groq_advisory_enabled,
+        "app.groq_advisory_enabled()": groq_advisory_enabled,
     }
     application = create_app(
         settings=settings,
@@ -288,3 +288,47 @@ def test_no_ai_response_carries_a_credential():
     body = response.text.lower()
     for forbidden in ("api_key", "apikey", "authorization", "bearer", "sb_secret"):
         assert forbidden not in body
+
+
+def _gate_request(database, *, server_enabled=True):
+    from types import SimpleNamespace
+
+    state = SimpleNamespace(
+        settings=SimpleNamespace(groq_enabled=server_enabled),
+        groq=FakeGroq(enabled=server_enabled),
+        database=database,
+    )
+    return SimpleNamespace(app=SimpleNamespace(state=state))
+
+
+def test_the_classroom_setting_is_read_as_the_caller_through_the_gateway():
+    import asyncio
+
+    from modules.ai.service import is_advisory_enabled
+    from modules.shared.testing import FakeConnection, FakeDatabase
+
+    database = FakeDatabase(FakeConnection(results={"app.groq_advisory_enabled()": True}))
+    actor = object()
+
+    assert asyncio.run(is_advisory_enabled(_gate_request(database), actor)) is True
+    assert database.actors == [actor]
+    assert not hasattr(database, "_pool")
+
+
+def test_no_caller_or_a_failed_read_is_off():
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    from modules.ai.service import is_advisory_enabled
+    from modules.shared.testing import FakeConnection, FakeDatabase
+
+    database = FakeDatabase(FakeConnection(results={"app.groq_advisory_enabled()": True}))
+    assert asyncio.run(is_advisory_enabled(_gate_request(database), None)) is False
+
+    class Broken:
+        @asynccontextmanager
+        async def actor(self, _token):
+            raise RuntimeError("database unreachable")
+            yield
+
+    assert asyncio.run(is_advisory_enabled(_gate_request(Broken()), object())) is False

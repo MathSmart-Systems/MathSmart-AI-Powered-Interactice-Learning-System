@@ -210,6 +210,17 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --                            and nothing else: one integer for the caller's
 --                            own open cases, read past a table learners may
 --                            not select from.
+--   groq_advisory_enabled    one boolean: whether the classroom setting allows
+--                            Groq, asked by advisory calls made for learners,
+--                            who may not read app.system_settings.
+--   report_question_misses   per-question answer totals for Reports, reading
+--                            practice correctness a teacher may not select
+--                            directly; totals only, teachers only.
+--   cancel_own_email_change  withdraws the caller's own pending email change
+--                            in auth, which no API role may write; the caller
+--                            only, and never the sign-in email.
+--   sync_confirmed_email     trigger on auth.users copying a confirmed sign-in
+--                            email to the profile; callable by no role.
 --   set_account_status,      role and account_status are not in the column
 --   reset_diagnostic         grant for `authenticated`, and voiding an attempt
 --                            spans three tables that must agree
@@ -243,21 +254,23 @@ select is(
    where pg_namespace.nspname = 'app'
      and pg_proc.prosecdef),
   'activity_hint,archive_intervention,attach_intervention_advice,'
-  || 'authorize_reassessment,'
+  || 'authorize_reassessment,cancel_own_email_change,'
   || 'check_activity_answer,claim_assessment_submission_idempotency,'
   || 'clear_intervention_advice,complete_assessment_submission_idempotency,'
   || 'complete_module,'
   || 'enforce_activity_attempt_unlocked,enforce_module_progress_unlocked,'
-  || 'is_active_account,may_start_reassessment,module_activity_passed,'
+  || 'groq_advisory_enabled,is_active_account,may_start_reassessment,module_activity_passed,'
   || 'module_has_required_activity,module_is_locked_for,module_is_satisfied,'
   || 'module_section_ids,'
   || 'open_intervention,own_open_intervention_count,purge_learner_audit_trail,'
   || 'record_audit_event,'
   || 'refresh_learning_path,refresh_path_after_activity_attempt,'
-  || 'refresh_path_after_insert,refresh_path_after_module_progress,reset_diagnostic,'
+  || 'refresh_path_after_insert,refresh_path_after_module_progress,'
+  || 'report_question_misses,reset_diagnostic,'
   || 'save_assessment_answers,save_module_progress,set_account_status,'
   || 'setting_integer,start_activity_attempt,start_assessment_attempt,'
-  || 'submit_activity_attempt,submit_assessment_attempt,update_intervention',
+  || 'submit_activity_attempt,submit_assessment_attempt,sync_confirmed_email,'
+  || 'update_intervention',
   'Only the reviewed functions are SECURITY DEFINER'
 );
 

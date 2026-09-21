@@ -10,6 +10,7 @@ an account's status and a voided attempt — which go through audited functions,
 and settings, which must never carry a credential or the Groq model.
 """
 
+import json
 from uuid import UUID
 
 from modules.shared.testing import (
@@ -1945,7 +1946,7 @@ def test_settings_report_sanitized_model_identifier():
     assert response.status_code == 200
     groq_data = response.json()["data"]["groq"]
     assert groq_data["model"] == "llama-3.3-70b-versatile"
-    assert groq_data["environment_enabled"] is True
+    assert groq_data["server"] == "configured"
     assert groq_data["model_is_editable"] is False
 
 
@@ -1987,7 +1988,7 @@ def test_settings_reject_out_of_bounds_values():
     # Boolean flags must be bool
     r5 = client.patch(
         "/api/v1/teacher-admin/settings",
-        json={"settings": {"features.groq_enabled": "yes"}},
+        json={"settings": {"features.groq_advisory": "yes"}},
         headers=ADVISER_HEADERS,
     )
     assert r5.status_code == 422
@@ -3835,3 +3836,147 @@ def test_an_assessment_row_names_a_draft_competency_behind_its_questions():
     row = response.json()["data"][0]
     assert row["is_ready"] is False
     assert row["readiness_reason"] == "draft_competency"
+
+
+# ---------------------------------------------------------------------------
+# The Groq classroom setting
+# ---------------------------------------------------------------------------
+
+
+def _settings_client(connection, *, server_groq_enabled=False, model=None):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from modules.shared.testing import (
+        FakeDatabase,
+        FakeSessionGateway,
+        FakeVerifier,
+        fake_settings,
+    )
+
+    settings = fake_settings()
+    settings.groq_enabled = server_groq_enabled
+    settings.groq_model = model
+    app = create_app(
+        settings=settings,
+        token_verifier=FakeVerifier(),
+        database=FakeDatabase(connection),
+        session_gateway=FakeSessionGateway(),
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _stored(key, value):
+    return {"setting_key": key, "setting_value": value, "updated_at": None}
+
+
+def test_groq_is_off_when_nothing_has_been_stored():
+    client = _settings_client(admin_connection(), server_groq_enabled=True, model="m")
+
+    groq = client.get("/api/v1/teacher-admin/settings", headers=ADVISER_HEADERS).json()[
+        "data"
+    ]["groq"]
+
+    assert groq["classroom_enabled"] is False
+    assert groq["server"] == "configured"
+    assert groq["status"] == "disabled"
+    assert groq["enabled"] is False
+
+
+def test_groq_status_separates_the_server_from_the_classroom_setting():
+    connection = admin_connection(
+        **{"from app.system_settings": [SETTING_ROW, _stored("features.groq_advisory", True)]}
+    )
+
+    on = _settings_client(connection, server_groq_enabled=True, model="m")
+    groq = on.get("/api/v1/teacher-admin/settings", headers=ADVISER_HEADERS).json()["data"][
+        "groq"
+    ]
+    assert (groq["server"], groq["classroom_enabled"], groq["status"]) == (
+        "configured",
+        True,
+        "enabled",
+    )
+
+    off = _settings_client(connection, server_groq_enabled=False)
+    groq = off.get("/api/v1/teacher-admin/settings", headers=ADVISER_HEADERS).json()["data"][
+        "groq"
+    ]
+    assert (groq["server"], groq["classroom_enabled"], groq["status"]) == (
+        "not_configured",
+        True,
+        "unavailable",
+    )
+    assert groq["model"] is None
+
+
+def test_an_older_stored_key_still_counts_but_can_no_longer_be_written():
+    connection = admin_connection(
+        **{"from app.system_settings": [_stored("features.groq_enabled", True)]}
+    )
+    client = _settings_client(connection, server_groq_enabled=True, model="m")
+
+    groq = client.get("/api/v1/teacher-admin/settings", headers=ADVISER_HEADERS).json()[
+        "data"
+    ]["groq"]
+    assert groq["classroom_enabled"] is True
+
+    for legacy in ("features.groq_enabled", "features.groq_feedback_enabled"):
+        response = client.patch(
+            "/api/v1/teacher-admin/settings",
+            json={"settings": {legacy: False}},
+            headers=ADVISER_HEADERS,
+        )
+        assert response.status_code == 422
+
+
+def test_a_settings_change_audits_the_value_before_and_after():
+    connection = admin_connection(
+        **{"from app.system_settings": [SETTING_ROW, _stored("features.groq_advisory", False)]}
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"features.groq_advisory": True}},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["updated"] == ["features.groq_advisory"]
+    audited = [args for query, args in connection.calls if "app.record_audit_event" in query]
+    assert len(audited) == 1
+    details = json.loads(audited[0][-1])
+    assert details["changes"] == [
+        {"key": "features.groq_advisory", "from": False, "to": True}
+    ]
+
+
+def test_an_unchanged_setting_is_neither_written_nor_audited():
+    connection = admin_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"thresholds.activity_pass_percentage": 75}},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["updated"] == []
+    assert not [q for q, _ in connection.calls if "insert into app.system_settings" in q]
+    assert not [q for q, _ in connection.calls if "app.record_audit_event" in q]
+
+
+def test_a_learner_can_neither_read_nor_change_settings():
+    client = build_client(admin_connection())
+
+    read = client.get("/api/v1/teacher-admin/settings", headers=LEARNER_HEADERS)
+    write = client.patch(
+        "/api/v1/teacher-admin/settings",
+        json={"settings": {"features.groq_advisory": True}},
+        headers=LEARNER_HEADERS,
+    )
+
+    assert read.status_code == 403
+    assert write.status_code == 403

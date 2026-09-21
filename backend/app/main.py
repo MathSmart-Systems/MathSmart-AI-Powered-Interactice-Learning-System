@@ -37,6 +37,7 @@ from modules.shared.db import Database
 from modules.students.router import router as students_router
 from modules.teacher_admin.admin_router import router as teacher_admin_admin_router
 from modules.teacher_admin.reporting_router import router as teacher_admin_reporting_router
+from modules.teacher_admin.reports_router import router as teacher_admin_reports_router
 
 API_PREFIX = "/api/v1"
 
@@ -119,7 +120,9 @@ def create_app(
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
-        expose_headers=["X-Request-Id"],
+        # Content-Disposition carries the export's timestamped filename, which
+        # the browser can only read if it is exposed.
+        expose_headers=["X-Request-Id", "Content-Disposition"],
     )
     install_error_handlers(application)
 
@@ -137,6 +140,7 @@ def create_app(
     application.include_router(progress_router, prefix=API_PREFIX)
     application.include_router(interventions_router, prefix=API_PREFIX)
     application.include_router(teacher_admin_reporting_router, prefix=API_PREFIX)
+    application.include_router(teacher_admin_reports_router, prefix=API_PREFIX)
     application.include_router(teacher_admin_admin_router, prefix=API_PREFIX)
     application.include_router(ai_router, prefix=API_PREFIX)
 

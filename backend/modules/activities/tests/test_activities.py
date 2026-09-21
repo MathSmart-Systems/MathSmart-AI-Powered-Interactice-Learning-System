@@ -123,7 +123,7 @@ AUTHORED_HINT = "Check the signs before multiplying the magnitudes."
 
 # The statement `_is_groq_feature_enabled` runs to read the database feature
 # flag, as a fragment the fake connection can key on.
-GROQ_FLAG = "from app.system_settings"
+GROQ_FLAG = "app.groq_advisory_enabled()"
 
 HISTORY_ROW = {
     **ATTEMPT_ROW,

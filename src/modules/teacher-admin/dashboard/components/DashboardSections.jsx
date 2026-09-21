@@ -77,8 +77,10 @@ export function ClassSummary({ summary, selectedSection }) {
     },
     {
       label: "Class mastery",
-      value: show(summary.averageMastery, "%"),
-      detail: "Average of current competency scores",
+      value: summary.averageMasteryWithheld ? "Hidden" : show(summary.averageMastery, "%"),
+      detail: summary.averageMasteryWithheld
+        ? "Shown once 5 or more learners have scores"
+        : "Average of learners' current scores",
     },
   ];
 

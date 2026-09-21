@@ -1735,29 +1735,23 @@ async def read_settings(
     model. The Groq API key and the selected model are `.env` values that the
     database has no column for and this response has no field for.
     """
-    stored = {
-        row["setting_key"]: (
-            json.loads(row["setting_value"])
-            if isinstance(row["setting_value"], str)
-            else row["setting_value"]
-        )
-        for row in await repository.settings(connection)
-    }
+    stored = await _stored_settings(connection)
     effective = {**SETTING_DEFAULTS, **stored}
 
     app_settings = getattr(request.app.state, "settings", None)
-    env_groq_enabled = bool(getattr(app_settings, "groq_enabled", False))
+    server_configured = bool(getattr(app_settings, "groq_enabled", False))
     groq_model = getattr(app_settings, "groq_model", None)
-    sanitized_model = str(groq_model).strip() if groq_model else None
-    policy_enabled = bool(
-        effective.get(
-            "features.groq_advisory",
-            effective.get(
-                "features.groq_enabled",
-                effective.get("features.groq_feedback_enabled", False),
-            ),
-        )
-    )
+    # The model is shown only while the server actually uses one; a name left
+    # in the environment of a server with Groq switched off describes nothing.
+    sanitized_model = str(groq_model).strip() if server_configured and groq_model else None
+    classroom_enabled = _classroom_groq(stored)
+
+    if not server_configured:
+        status = "unavailable"
+    elif classroom_enabled:
+        status = "enabled"
+    else:
+        status = "disabled"
 
     return {
         "data": {
@@ -1774,20 +1768,47 @@ async def read_settings(
                 for key, value in effective.items()
                 if key.startswith("notifications.")
             },
-            "features": {
-                key.split(".", 1)[1]: value
-                for key, value in effective.items()
-                if key.startswith("features.")
-            },
+            "features": {"groq_advisory": classroom_enabled},
             "groq": {
-                "enabled": policy_enabled and env_groq_enabled,
+                # "configured" means the server has Groq switched on, which the
+                # config refuses to allow without a key and a model. It says
+                # nothing about the key itself.
+                "server": "configured" if server_configured else "not_configured",
+                "classroom_enabled": classroom_enabled,
+                "status": status,
+                "enabled": status == "enabled",
                 "model": sanitized_model,
                 "model_is_editable": False,
-                "model_source": "server environment",
-                "environment_enabled": env_groq_enabled,
-                "policy_enabled": policy_enabled,
             },
         }
+    }
+
+
+#: The Groq classroom setting, and the older keys still read after it so a
+#: database that stored only one of them keeps its value. Nothing writes those
+#: any more; `app.groq_advisory_enabled()` reads them in the same order.
+GROQ_SETTING_KEYS = (
+    "features.groq_advisory",
+    "features.groq_enabled",
+    "features.groq_feedback_enabled",
+)
+
+
+def _classroom_groq(stored: dict[str, Any]) -> bool:
+    for key in GROQ_SETTING_KEYS:
+        if key in stored:
+            return stored[key] is True
+    return False
+
+
+async def _stored_settings(connection: Any) -> dict[str, Any]:
+    return {
+        row["setting_key"]: (
+            json.loads(row["setting_value"])
+            if isinstance(row["setting_value"], str)
+            else row["setting_value"]
+        )
+        for row in await repository.settings(connection)
     }
 
 
@@ -1802,21 +1823,38 @@ async def update_settings(
     """Update validated configuration.
 
     The namespaces are checked before the write and again by the database, and
-    the stored value is rejected there if it looks like a credential.
+    the stored value is rejected there if it looks like a credential. Only a
+    value that actually changes is written, and the audit record carries each
+    change as before and after, so the history reads as what happened rather
+    than as which fields a form happened to send.
     """
-    for key, value in body.settings.items():
+    stored = await _stored_settings(connection)
+    effective = {**SETTING_DEFAULTS, **stored}
+    effective["features.groq_advisory"] = _classroom_groq(stored)
+
+    changes = [
+        {"key": key, "from": effective.get(key), "to": value}
+        for key, value in sorted(body.settings.items())
+        if effective.get(key) != value
+    ]
+    for change in changes:
         await repository.upsert_setting(
-            connection, key=key, value=json.dumps(value), updated_by=actor.user_id
+            connection,
+            key=change["key"],
+            value=json.dumps(change["to"]),
+            updated_by=actor.user_id,
         )
-    await repository.record_audit_event(
-        connection,
-        action="settings.updated",
-        target_type="system_settings",
-        target_id=None,
-        request_id=current_request_id(),
-        details={"updated": sorted(body.settings), "updated_keys": sorted(body.settings)},
-    )
-    return {"data": {"updated": sorted(body.settings)}}
+    updated = [change["key"] for change in changes]
+    if changes:
+        await repository.record_audit_event(
+            connection,
+            action="settings.updated",
+            target_type="system_settings",
+            target_id=None,
+            request_id=current_request_id(),
+            details={"updated_keys": updated, "changes": changes},
+        )
+    return {"data": {"updated": updated}}
 
 
 @router.get("/teacher-admin/audit-events")

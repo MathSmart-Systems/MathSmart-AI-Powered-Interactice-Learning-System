@@ -2,21 +2,13 @@
 
 import React from "react";
 import {
-  Bot,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   History,
-  Info,
   Loader2,
   RefreshCw,
   RotateCcw,
-  ShieldAlert,
-  ShieldCheck,
   Sliders,
-  Sparkles,
-  Target,
-  TriangleAlert,
 } from "lucide-react";
 
 import {
@@ -26,21 +18,8 @@ import {
   MIN_INTERVENTION_ATTEMPTS,
   MIN_PASSING_THRESHOLD,
 } from "../utils/constants.js";
-
-function formatSettingKey(key) {
-  switch (key) {
-    case "thresholds.activity_pass_percentage":
-      return "Default Activity Pass Threshold";
-    case "intervention.unsuccessful_attempts":
-      return "Intervention Alert Trigger";
-    case "features.groq_advisory":
-    case "features.groq_enabled":
-    case "features.groq_feedback_enabled":
-      return "AI Student Hints";
-    default:
-      return key.replace(/^[a-z_]+\./, "").replace(/_/g, " ");
-  }
-}
+import { describeSettingsAudit } from "../utils/groq-status.js";
+import { GroqSettingPanel } from "./GroqSettingPanel.jsx";
 
 function formatAuditTime(isoString) {
   if (!isoString) return "Recently";
@@ -65,17 +44,12 @@ export function ClassroomRulesTab({
   setPassingThreshold,
   autoInterventionAttempts,
   setAutoInterventionAttempts,
-  groqFeatureEnabled,
-  setGroqFeatureEnabled,
-  groqEnvEnabled,
-  groqModel,
+  groq,
+  savingGroq,
+  onGroqChange,
   fieldErrors,
   setFieldErrors,
   saving,
-  saveError,
-  saveSuccess,
-  notice,
-  setNotice,
   onSubmit,
   onRestoreDefaults,
   isAuditLogOpen,
@@ -86,80 +60,7 @@ export function ClassroomRulesTab({
   onRefreshAuditEvents,
 }) {
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
-      {/* Quick Visual Guide */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="p-4 rounded-xl border border-border bg-card shadow-xs flex items-start gap-3 transition-colors">
-          <Target className="size-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="space-y-0.5">
-            <span className="text-xs font-semibold text-foreground block">Activities Baseline</span>
-            <span className="text-xs text-muted-foreground leading-snug block">
-              Pre-fills new activities with <strong>{passingThreshold}% pass threshold</strong>.
-            </span>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border bg-card shadow-xs flex items-start gap-3 transition-colors">
-          <TriangleAlert className="size-4 text-destructive shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="space-y-0.5">
-            <span className="text-xs font-semibold text-foreground block">Interventions Desk</span>
-            <span className="text-xs text-muted-foreground leading-snug block">
-              Alerts you when a student fails <strong>{autoInterventionAttempts} times</strong>.
-            </span>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border bg-card shadow-xs flex items-start gap-3 transition-colors">
-          <Sparkles className="size-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="space-y-0.5">
-            <span className="text-xs font-semibold text-foreground block">AI Assistant</span>
-            <span className="text-xs text-muted-foreground leading-snug block">
-              Helps students with friendly hints when they get stuck.
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Notifications / Alerts */}
-      {saveError && (
-        <div
-          role="alert"
-          className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center gap-2"
-        >
-          <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
-          <span>{saveError}</span>
-        </div>
-      )}
-
-      {notice && (
-        <div
-          role="status"
-          className="p-4 rounded-lg bg-muted/60 border border-border text-foreground text-xs font-medium flex items-center justify-between animate-in fade-in duration-200"
-        >
-          <div className="flex items-center gap-2">
-            <Info className="size-4 text-primary shrink-0" aria-hidden="true" />
-            <span>{notice}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            className="text-primary hover:underline text-xs font-medium cursor-pointer ml-3"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {saveSuccess && (
-        <div
-          role="status"
-          className="p-4 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-medium flex items-center gap-2 animate-in fade-in duration-200"
-        >
-          <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
-          <span>Changes saved successfully! Your classroom settings are now active.</span>
-        </div>
-      )}
-
+    <div className="space-y-6">
       <form onSubmit={onSubmit} className="space-y-6">
         {/* Section 1: Passing Scores & Interventions */}
         <div className="bg-card p-6 sm:p-8 rounded-xl border border-border shadow-xs space-y-6 transition-colors">
@@ -303,81 +204,6 @@ export function ClassroomRulesTab({
           </div>
         </div>
 
-        {/* Section 2: AI Teaching Assistant */}
-        <div className="bg-card p-6 sm:p-8 rounded-xl border border-border shadow-xs space-y-5 transition-colors">
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <div className="flex items-center gap-2">
-              <Bot className="size-5 text-primary" aria-hidden="true" />
-              <div>
-                <h2 className="text-xl font-semibold text-foreground font-display tracking-tight">
-                  AI Teaching Assistant (Groq)
-                </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Controls automated hints and encouragement for students.
-                </p>
-              </div>
-            </div>
-            <span
-              className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                groqEnvEnabled
-                  ? "bg-primary/10 text-primary border border-primary/20"
-                  : "bg-muted text-muted-foreground border border-border"
-              }`}
-            >
-              {groqEnvEnabled ? "● AI Connected" : "○ AI Off"}
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-lg bg-muted/40 border border-border flex items-start gap-2.5">
-            <ShieldCheck className="size-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
-            <div className="text-xs text-muted-foreground leading-relaxed">
-              <strong className="text-foreground">100% Guaranteed Math Accuracy:</strong> The AI is <u>never</u> allowed to grade answers or calculate student scores. All math is scored by strict computer formulas. The AI only writes helpful, encouraging words.
-            </div>
-          </div>
-
-          <label
-            htmlFor={FIELD_IDS.GROQ_TOGGLE}
-            className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/40 transition-colors cursor-pointer"
-          >
-            <div className="space-y-0.5 pr-4">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-foreground">
-                  Show AI Hints & Feedback to Students
-                </span>
-                <span
-                  className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                    groqFeatureEnabled
-                      ? "bg-primary/10 text-primary border border-primary/20"
-                      : "bg-muted text-muted-foreground border border-border"
-                  }`}
-                >
-                  {groqFeatureEnabled ? "Turned ON" : "Turned OFF"}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {groqFeatureEnabled
-                  ? "When a student answers wrong, the AI gives them gentle hints to help them learn without giving away the answer."
-                  : "AI hints are paused. Students will only see standard pre-written textbook tips."}
-              </p>
-            </div>
-            <input
-              id={FIELD_IDS.GROQ_TOGGLE}
-              type="checkbox"
-              checked={groqFeatureEnabled}
-              disabled={saving}
-              onChange={(e) => setGroqFeatureEnabled(e.target.checked)}
-              className="rounded accent-primary border-border size-5 cursor-pointer shrink-0 disabled:opacity-50"
-            />
-          </label>
-
-          <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border">
-            <span className="text-xs text-muted-foreground">Configured AI Model:</span>
-            <span className="font-mono-math text-xs font-semibold text-foreground bg-muted/60 px-2.5 py-1 rounded-md border border-border">
-              {groqModel || "Server environment (.env)"}
-            </span>
-          </div>
-        </div>
-
         {/* Action Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
           <p className="text-xs text-muted-foreground">
@@ -414,6 +240,8 @@ export function ClassroomRulesTab({
         </div>
       </form>
 
+      <GroqSettingPanel groq={groq} saving={savingGroq} onChange={onGroqChange} />
+
       {/* Section 4: Recent Changes History */}
       <div className="bg-card rounded-xl border border-border shadow-xs overflow-hidden transition-colors">
         <button
@@ -436,7 +264,7 @@ export function ClassroomRulesTab({
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                See recent adjustments made to your classroom passing criteria and settings.
+                The last five changes to these settings.
               </p>
             </div>
           </div>
@@ -489,52 +317,31 @@ export function ClassroomRulesTab({
 
             {!auditLoading && !auditError && auditEvents && auditEvents.length === 0 && (
               <div className="py-6 text-center text-xs text-muted-foreground bg-card rounded-lg border border-border p-4">
-                No settings changes recorded yet. Future updates will be logged here with time and author details.
+                No settings changes recorded yet.
               </div>
             )}
 
             {!auditLoading && !auditError && auditEvents && auditEvents.length > 0 && (
               <div className="space-y-2.5">
                 {auditEvents.map((evt) => {
-                  const updatedKeys = evt.details?.updated_keys || [];
+                  const lines = describeSettingsAudit(evt.details);
                   return (
                     <div
                       key={evt.id}
-                      className="p-3.5 rounded-lg bg-card border border-border shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                      className="p-3.5 rounded-lg bg-card border border-border shadow-2xs space-y-1 text-xs"
                     >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-foreground">
-                            {evt.actor_role === "teacher_admin"
-                              ? "Teacher (Administrator)"
-                              : evt.actor_role || "Teacher"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">•</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatAuditTime(evt.occurred_at)}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="text-muted-foreground text-xs">Updated:</span>
-                          {updatedKeys.length > 0 ? (
-                            updatedKeys.map((k) => (
-                              <span
-                                key={k}
-                                className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-medium text-xs border border-primary/20"
-                              >
-                                {formatSettingKey(k)}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-xs">
-                              Settings Updated
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-xs font-mono-math text-muted-foreground self-start sm:self-center">
-                        {evt.id ? evt.id.slice(0, 8) : ""}
-                      </div>
+                      <p className="text-muted-foreground">
+                        {formatAuditTime(evt.occurred_at)}
+                      </p>
+                      {lines.length > 0 ? (
+                        <ul className="space-y-0.5 text-foreground">
+                          {lines.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-foreground">Settings updated</p>
+                      )}
                     </div>
                   );
                 })}

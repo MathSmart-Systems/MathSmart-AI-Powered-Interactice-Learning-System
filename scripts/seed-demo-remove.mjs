@@ -16,7 +16,14 @@
 
 import * as nextEnv from "@next/env";
 
-import { DEMO_LEARNER, DEMO_MARK, assertLocalTargets, callApi, signIn } from "./demo-data.mjs";
+import {
+  DEMO_CLASSMATES,
+  DEMO_LEARNER,
+  DEMO_MARK,
+  assertLocalTargets,
+  callApi,
+  signIn,
+} from "./demo-data.mjs";
 
 const { loadEnvConfig } = nextEnv.default ?? nextEnv;
 loadEnvConfig(process.cwd());
@@ -98,16 +105,16 @@ async function remove(token, resource, id, label, failures) {
   }
 }
 
-async function removeLearner(token, failures) {
+async function removeLearner(token, failures, spec = DEMO_LEARNER, label = "the demo learner") {
   // `status=all`: a learner dropped by an earlier run is no longer on the
   // enrolled roster, and leaving them unfound would strand every record that
   // still points at them.
   const { data } = await callApi(env, token, "/students?page_size=100&status=all");
   // Matched on the learner id rather than the address: the roster does not
   // carry an email, and the learner id is the value this seed sets itself.
-  const learner = (data ?? []).find((row) => row.learner_id === DEMO_LEARNER.learnerId);
+  const learner = (data ?? []).find((row) => row.learner_id === spec.learnerId);
   if (!learner) {
-    say("  no demo learner to remove");
+    say(`  no ${label.replace(/^the /, "")} to remove`);
     return;
   }
 
@@ -126,11 +133,11 @@ async function removeLearner(token, failures) {
   try {
     await callApi(env, token, `/students/${id}/purge`, {
       method: "POST",
-      body: { learner_id: DEMO_LEARNER.learnerId, acknowledged: true },
+      body: { learner_id: spec.learnerId, acknowledged: true },
     });
-    say("  the demo learner, with their attempts and learning path");
+    say(`  ${label}, with their attempts and learning path`);
   } catch (error) {
-    failures.push(`the demo learner: ${error.message}`);
+    failures.push(`${label}: ${error.message}`);
   }
 }
 
@@ -151,6 +158,9 @@ async function main() {
   const failures = [];
 
   await removeLearner(token, failures);
+  for (const classmate of DEMO_CLASSMATES) {
+    await removeLearner(token, failures, classmate, `classmate ${classmate.learnerId}`);
+  }
 
   // The demo competencies, found first: a demo question is one that belongs to
   // one of them. Marking a question would mean putting "DEMO" in front of a

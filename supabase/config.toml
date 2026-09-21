@@ -163,7 +163,15 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# The email-change confirmation link returns to the app it was requested from:
+# the dev server on 3000 and the Playwright build on 3100, by either host name.
+additional_redirect_urls = [
+  "https://127.0.0.1:3000",
+  "http://127.0.0.1:3000/**",
+  "http://localhost:3000/**",
+  "http://127.0.0.1:3100/**",
+  "http://localhost:3100/**",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -200,7 +208,9 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+# Raised locally so the email-change browser tests are not rate limited; every
+# message lands in the local Mailpit, never in a real inbox.
+email_sent = 100
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -221,14 +231,21 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Allow/disallow new user signups via email to your project.
-# MathSmart accounts are administrator-provisioned; public registration is not supported.
-enable_signup = false
+# Enables the email provider itself, which password sign-in and the secure
+# email change both need. Public registration stays closed through
+# `[auth] enable_signup = false` above, which is the setting that refuses a
+# self-service sign-up; this one only decides whether email is a usable
+# credential at all.
+enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+# On, and not only for sign-up: with it off, Auth auto-confirms, and that
+# silently turns `double_confirm_changes` off too (supabase/auth#2600), so one
+# link would finish an email change. Accounts are provisioned already
+# confirmed, so nobody is asked to confirm anything at sign-in.
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.

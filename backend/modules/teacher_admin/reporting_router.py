@@ -20,8 +20,9 @@ from fastapi import APIRouter, Query, Response
 
 from app.dependencies import ActorDb, SensitiveActor, TeacherAdmin
 from middleware.request_context import current_request_id
+from modules.teacher_admin import report_repository, service
 from modules.teacher_admin import reporting_repository as repository
-from modules.teacher_admin import service
+from modules.teacher_admin.reports_router import MonitoringStatus
 
 router = APIRouter(tags=["teacher-admin"])
 
@@ -174,7 +175,16 @@ async def read_dashboard(
                 "needs_support_count": totals["needs_support_count"] or 0,
                 "improving_count": totals["improving_count"] or 0,
                 "mastered_count": totals["mastered_count"] or 0,
-                "average_mastery": _number(totals["average_mastery"]),
+                # Withheld, like every other average, when it would describe
+                # fewer than five learners.
+                "average_mastery": (
+                    None
+                    if service.suppressed(totals["learners_with_scores"])
+                    else _number(totals["average_mastery"])
+                ),
+                "average_mastery_suppressed": service.suppressed(
+                    totals["learners_with_scores"]
+                ),
                 "open_intervention_count": totals["open_intervention_count"] or 0,
                 "published_competency_count": totals["published_competency_count"] or 0,
                 "scored_attempt_count": totals["scored_attempt_count"] or 0,
@@ -342,7 +352,11 @@ async def read_analytics(
         "data": {
             "cohort": {
                 "learner_count": totals["learner_count"] or 0,
-                "average_mastery": _number(totals["average_mastery"]),
+                "average_mastery": (
+                    None
+                    if service.suppressed(totals["learners_with_scores"])
+                    else _number(totals["average_mastery"])
+                ),
                 "open_intervention_count": totals["open_intervention_count"] or 0,
             },
             "competencies": [_competency(row) for row in competency_rows],
@@ -367,6 +381,7 @@ async def export_progress_csv(
     connection: ActorDb,
     grade_id: Annotated[UUID | None, Query()] = None,
     section_id: Annotated[UUID | None, Query()] = None,
+    status: Annotated[MonitoringStatus | None, Query()] = None,
 ) -> Response:
     """Export the selected cohort summary.
 
@@ -374,13 +389,12 @@ async def export_progress_csv(
     with no email address and no account identifier. Every cell is neutralised,
     the filename is timestamped, and the export is audited.
     """
-    rows = await repository.learners(
+    # The same cohort, and the same per-learner averages, as the report on
+    # screen: active learners in the chosen section and status.
+    rows = await report_repository.export_rows(
         connection,
-        grade_id=grade_id,
-        section_id=section_id,
-        at_risk_only=False,
+        {"grade_id": grade_id, "section_id": section_id, "status": status},
         limit=EXPORT_LIMIT,
-        offset=0,
     )
 
     body = service.to_csv(
@@ -413,6 +427,7 @@ async def export_progress_csv(
             {
                 "grade_id": str(grade_id) if grade_id else None,
                 "section_id": str(section_id) if section_id else None,
+                "status": status,
                 "row_count": len(rows),
             }
         ),

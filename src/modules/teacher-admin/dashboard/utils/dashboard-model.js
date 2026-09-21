@@ -173,6 +173,9 @@ export function buildDashboardModel({ dashboard = null, sections = [], selectedS
       diagnosticInProgress: count(diagnostic.in_progress),
       diagnosticNotStarted: count(diagnostic.not_started),
       averageMastery: percent(totals.average_mastery),
+      // Withheld by the server when fewer than five learners have scores. Not
+      // missing: the page says why instead of showing a dash.
+      averageMasteryWithheld: totals.average_mastery_suppressed === true,
       needsSupport: count(totals.needs_support_count),
     },
     interventions: {

@@ -26,8 +26,17 @@ _DASHBOARD_SQL = """
 with scoped_learners as (
   select student_profiles.student_id, student_profiles.monitoring_status
   from app.student_profiles
-  where ($1::uuid is null or student_profiles.grade_id = $1)
+  join app.user_profiles on user_profiles.user_id = student_profiles.user_id
+  where user_profiles.account_status = 'active'
+    and ($1::uuid is null or student_profiles.grade_id = $1)
     and ($2::uuid is null or student_profiles.section_id = $2)
+),
+learner_averages as (
+  select competency_progress.student_id,
+         avg(competency_progress.current_score) as current_average
+  from app.competency_progress
+  join scoped_learners on scoped_learners.student_id = competency_progress.student_id
+  group by competency_progress.student_id
 )
 select
   (select count(*) from scoped_learners) as learner_count,
@@ -40,11 +49,12 @@ select
     where scoped_learners.monitoring_status = 'improving') as improving_count,
   (select count(*) from scoped_learners
     where scoped_learners.monitoring_status = 'mastered') as mastered_count,
-  (select round(avg(competency_progress.current_score), 2)
-     from app.competency_progress
-     join scoped_learners
-       on scoped_learners.student_id = competency_progress.student_id)
+  -- Over learners, not over progress rows, so a learner with many
+  -- competencies does not outweigh one with few. Reports use the same.
+  (select round(avg(learner_averages.current_average), 2) from learner_averages)
     as average_mastery,
+  (select count(*) from learner_averages
+    where learner_averages.current_average is not null) as learners_with_scores,
   (select count(*)
      from app.interventions
      join scoped_learners on scoped_learners.student_id = interventions.student_id
@@ -75,7 +85,9 @@ _DASHBOARD_BREAKDOWN_SQL = """
 with scoped_learners as (
   select student_profiles.student_id, student_profiles.diagnostic_status
   from app.student_profiles
-  where ($1::uuid is null or student_profiles.grade_id = $1)
+  join app.user_profiles on user_profiles.user_id = student_profiles.user_id
+  where user_profiles.account_status = 'active'
+    and ($1::uuid is null or student_profiles.grade_id = $1)
     and ($2::uuid is null or student_profiles.section_id = $2)
 )
 select
@@ -112,7 +124,8 @@ with scoped_learners as (
          user_profiles.full_name
   from app.student_profiles
   join app.user_profiles on user_profiles.user_id = student_profiles.user_id
-  where ($1::uuid is null or student_profiles.grade_id = $1)
+  where user_profiles.account_status = 'active'
+    and ($1::uuid is null or student_profiles.grade_id = $1)
     and ($2::uuid is null or student_profiles.section_id = $2)
 ),
 activity as (
@@ -197,8 +210,10 @@ select
 from app.student_performance_summary
 join app.student_profiles
   on student_profiles.student_id = student_performance_summary.student_id
+join app.user_profiles on user_profiles.user_id = student_profiles.user_id
 left join app.sections on sections.section_id = student_performance_summary.section_id
-where ($1::uuid is null or student_performance_summary.grade_id = $1)
+where user_profiles.account_status = 'active'
+  and ($1::uuid is null or student_performance_summary.grade_id = $1)
   and ($2::uuid is null or student_performance_summary.section_id = $2)
   and (
     not $3::boolean
@@ -239,10 +254,12 @@ select
 from app.competencies
 left join app.competency_progress
   on competency_progress.competency_id = competencies.competency_id
-  and ($2::uuid is null or competency_progress.student_id in (
+  and competency_progress.student_id in (
         select student_profiles.student_id
         from app.student_profiles
-        where student_profiles.section_id = $2))
+        join app.user_profiles on user_profiles.user_id = student_profiles.user_id
+        where user_profiles.account_status = 'active'
+          and ($2::uuid is null or student_profiles.section_id = $2))
 where ($1::uuid is null or competencies.grade_id = $1)
   -- A draft is not taught yet and an archived competency no longer is, so a
   -- class summary that lists them describes a curriculum nobody is following.

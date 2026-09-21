@@ -43,6 +43,31 @@ export const DEMO_LEARNER = Object.freeze({
   learnerId: "DEMO-LRN-0001",
 });
 
+/**
+ * The demo learner's class.
+ *
+ * Reports withhold an average drawn from fewer than five learners, because a
+ * figure about three people is a figure about each of them. A demonstration
+ * with one learner therefore shows every average as withheld. These
+ * classmates sit the same diagnostic through the same routes, with fixed but
+ * different answers, so the class reports show real, deterministic numbers.
+ * Their learner ids carry the demo mark and the removal takes them away too.
+ */
+export const DEMO_SECTION = "DEMO · Sampaguita";
+
+export const DEMO_CLASSMATES = Object.freeze(
+  [
+    ["Ben Ramos", "demo.classmate.1@example.com"],
+    ["Carla Villanueva", "demo.classmate.2@example.com"],
+    ["Dino Santos", "demo.classmate.3@example.com"],
+    ["Ella Mercado", "demo.classmate.4@example.com"],
+    ["Fe Bautista", "demo.classmate.5@example.com"],
+    ["Gio Navarro", "demo.classmate.6@example.com"],
+  ].map(([fullName, email], index) =>
+    Object.freeze({ fullName, email, learnerId: `DEMO-LRN-${String(index + 2).padStart(4, "0")}` }),
+  ),
+);
+
 /** Hosts that mean "this machine". */
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"]);
 

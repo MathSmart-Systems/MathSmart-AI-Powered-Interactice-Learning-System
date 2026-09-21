@@ -4,20 +4,19 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Building2,
   Camera,
-  CheckCircle2,
   GraduationCap,
   KeyRound,
   Loader2,
   Lock,
   Mail,
   Save,
-  ShieldAlert,
   ShieldCheck,
   Trash2,
   User,
 } from "lucide-react";
 
 import { FIELD_IDS, PRESET_AVATARS } from "../utils/constants.js";
+import { SignInEmailCard } from "./SignInEmailCard.jsx";
 import {
   loadTeacherAvatar,
   saveTeacherAvatar,
@@ -28,12 +27,12 @@ import {
 export function ProfileAccountTab({
   profile,
   onProfileUpdated,
-  userEmail,
+  account,
+  onAccountRead,
+  onToast,
 }) {
   // Photo State
   const [avatar, setAvatar] = useState(() => loadTeacherAvatar());
-  const [photoSuccess, setPhotoSuccess] = useState(false);
-  const [photoError, setPhotoError] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -45,28 +44,22 @@ export function ProfileAccountTab({
   // Name Edit State
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [savingName, setSavingName] = useState(false);
-  const [nameSuccess, setNameSuccess] = useState(false);
-  const [nameError, setNameError] = useState(null);
 
   // Password Change State
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
-  const [passwordError, setPasswordError] = useState(null);
 
   const handleSaveName = async (e) => {
     e.preventDefault();
-    setNameError(null);
-    setNameSuccess(false);
 
     const trimmed = fullName.trim();
     if (trimmed.length < 2) {
-      setNameError("Display name must be at least 2 characters long.");
+      onToast({ tone: "error", message: "Display name must be at least 2 characters long." });
       return;
     }
     if (trimmed.length > 120) {
-      setNameError("Display name cannot exceed 120 characters.");
+      onToast({ tone: "error", message: "Display name cannot exceed 120 characters." });
       return;
     }
 
@@ -75,30 +68,25 @@ export function ProfileAccountTab({
     setSavingName(false);
 
     if (!result.ok) {
-      setNameError(result.error || "Failed to update display name.");
+      onToast({ tone: "error", message: "Your name could not be saved. Try again." });
       return;
     }
 
-    setNameSuccess(true);
+    onToast({ tone: "success", message: "Name saved." });
     if (onProfileUpdated && result.data) {
       onProfileUpdated(result.data);
     }
-    setTimeout(() => {
-      setNameSuccess(false);
-    }, 4000);
   };
 
   const handleSavePassword = async (e) => {
     e.preventDefault();
-    setPasswordError(null);
-    setPasswordSuccess(false);
 
     if (newPassword.length < 8) {
-      setPasswordError("New password must be at least 8 characters long.");
+      onToast({ tone: "error", message: "Use at least 8 characters for the new password." });
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError("Passwords do not match. Please re-enter.");
+      onToast({ tone: "error", message: "The two passwords do not match." });
       return;
     }
 
@@ -107,16 +95,13 @@ export function ProfileAccountTab({
     setSavingPassword(false);
 
     if (!result.ok) {
-      setPasswordError(result.error || "Failed to update password. Please try again.");
+      onToast({ tone: "error", message: "Your password could not be changed. Try again." });
       return;
     }
 
-    setPasswordSuccess(true);
+    onToast({ tone: "success", message: "Password changed. Use it the next time you sign in." });
     setNewPassword("");
     setConfirmPassword("");
-    setTimeout(() => {
-      setPasswordSuccess(false);
-    }, 5000);
   };
 
   const handleFileChange = (e) => {
@@ -127,16 +112,15 @@ export function ProfileAccountTab({
     e.target.value = "";
 
     if (!file.type.startsWith("image/")) {
-      setPhotoError("Please select a valid image file (PNG, JPG, WebP).");
+      onToast({ tone: "error", message: "Choose a PNG, JPG or WebP image." });
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setPhotoError("Image size exceeds 5MB limit. Please choose a smaller file.");
+      onToast({ tone: "error", message: "Choose an image smaller than 5 MB." });
       return;
     }
 
-    setPhotoError(null);
     const reader = new FileReader();
     reader.onload = (loadEvent) => {
       const img = new Image();
@@ -163,8 +147,7 @@ export function ProfileAccountTab({
 
         saveTeacherAvatar(resizedDataUrl);
         setAvatar(resizedDataUrl);
-        setPhotoSuccess(true);
-        setTimeout(() => setPhotoSuccess(false), 3000);
+        onToast({ tone: "success", message: "Profile photo updated." });
       };
       img.src = loadEvent.target.result;
     };
@@ -174,21 +157,17 @@ export function ProfileAccountTab({
   const handleRemovePhoto = () => {
     saveTeacherAvatar(null);
     setAvatar(null);
-    setPhotoSuccess(true);
-    setPhotoError(null);
-    setTimeout(() => setPhotoSuccess(false), 3000);
+    onToast({ tone: "success", message: "Profile photo removed." });
   };
 
   const handleSelectPresetAvatar = (presetSvg) => {
     saveTeacherAvatar(presetSvg);
     setAvatar(presetSvg);
-    setPhotoSuccess(true);
-    setPhotoError(null);
-    setTimeout(() => setPhotoSuccess(false), 3000);
+    onToast({ tone: "success", message: "Profile photo updated." });
   };
 
   const displayName = profile?.full_name || fullName || "Not available";
-  const displayEmail = profile?.email || userEmail || "Not available";
+  const displayEmail = account?.current || profile?.email || "—";
   const schoolName = profile?.school_name || "Not assigned";
   const divisionName = profile?.division_name || "Not assigned";
   const employeeId = profile?.employee_id || "Not assigned";
@@ -303,46 +282,10 @@ export function ProfileAccountTab({
             </div>
           </div>
 
-          {photoSuccess && (
-            <div
-              role="status"
-              className="p-2.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-medium flex items-center gap-2 animate-in fade-in duration-150"
-            >
-              <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>Profile photo updated successfully!</span>
-            </div>
-          )}
 
-          {photoError && (
-            <div
-              role="alert"
-              className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center gap-2 animate-in fade-in duration-150"
-            >
-              <ShieldAlert className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>{photoError}</span>
-            </div>
-          )}
         </div>
 
-        {nameSuccess && (
-          <div
-            role="status"
-            className="p-3.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-medium flex items-center gap-2"
-          >
-            <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
-            <span>Profile name updated successfully!</span>
-          </div>
-        )}
 
-        {nameError && (
-          <div
-            role="alert"
-            className="p-3.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center gap-2"
-          >
-            <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
-            <span>{nameError}</span>
-          </div>
-        )}
 
         <form onSubmit={handleSaveName} className="space-y-4">
           <div className="max-w-md space-y-1.5">
@@ -455,10 +398,12 @@ export function ProfileAccountTab({
         <div className="p-3 rounded-lg bg-muted/40 border border-border text-xs text-muted-foreground flex items-start gap-2">
           <ShieldCheck className="size-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
           <span>
-            Institutional school assignments and official emails are managed through your DepEd School Directory to protect student privacy and account integrity.
+            Your school, division and employee ID are set by your school administrator.
           </span>
         </div>
       </div>
+
+      <SignInEmailCard account={account} onAccountRead={onAccountRead} onToast={onToast} />
 
       {/* 3. Account Password & Security */}
       <div className="bg-card p-6 sm:p-8 rounded-xl border border-border shadow-xs space-y-5 transition-colors">
@@ -472,25 +417,7 @@ export function ProfileAccountTab({
           </div>
         </div>
 
-        {passwordSuccess && (
-          <div
-            role="status"
-            className="p-3.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-medium flex items-center gap-2 animate-in fade-in duration-200"
-          >
-            <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
-            <span>Password updated successfully! You can use your new password next time you sign in.</span>
-          </div>
-        )}
 
-        {passwordError && (
-          <div
-            role="alert"
-            className="p-3.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center gap-2"
-          >
-            <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
-            <span>{passwordError}</span>
-          </div>
-        )}
 
         <form onSubmit={handleSavePassword} className="space-y-4 max-w-md">
           <div className="space-y-1.5">

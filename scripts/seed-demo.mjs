@@ -17,7 +17,9 @@ import * as nextEnv from "@next/env";
 
 import {
   COMPETENCIES,
+  DEMO_CLASSMATES,
   DEMO_LEARNER,
+  DEMO_SECTION,
   DEMO_MARK,
   DEMO_NOTE,
   MODULES,
@@ -429,6 +431,95 @@ async function ensureEvidence(assessmentIds, activityIds, moduleIds) {
   }
 }
 
+/** The demo class, made once and reused. */
+async function ensureSection(token) {
+  const { data } = await callApi(env, token, "/teacher-admin/sections?page_size=100");
+  const already = (data ?? []).find((row) => row.name === DEMO_SECTION);
+  if (already) return already.id ?? already.section_id;
+  const created = await callApi(env, token, "/teacher-admin/sections", {
+    method: "POST",
+    body: { name: DEMO_SECTION },
+  });
+  return created.data.id ?? created.data.section_id;
+}
+
+/**
+ * One classmate: enrolled in the demo class, able to sign in locally, and with
+ * the diagnostic sat once. `pattern` decides which answers are right, so the
+ * class has a spread of results and the same results every run. A wrong
+ * answer is always the last choice, which gives the most-missed questions a
+ * common wrong answer to show.
+ */
+async function ensureClassmate(token, grade, sectionId, classmate, pattern, assessmentIds) {
+  const { data } = await callApi(env, token, "/students?page_size=100&status=all");
+  const already = (data ?? []).find((row) => row.learner_id === classmate.learnerId);
+  if (!already) {
+    await callApi(env, token, "/students", {
+      method: "POST",
+      headers: { "Idempotency-Key": `demo-seed-${classmate.learnerId}` },
+      body: {
+        email: classmate.email,
+        full_name: classmate.fullName,
+        learner_id: classmate.learnerId,
+        grade_id: grade,
+        section_id: sectionId,
+      },
+    });
+  }
+
+  const users = await callAuthAdmin(
+    env,
+    `/admin/users?page=1&per_page=200&filter=${encodeURIComponent(classmate.email)}`,
+  );
+  const account = (users.users ?? []).find((user) => user.email === classmate.email);
+  if (!account) throw new Error(`${classmate.learnerId} was enrolled but has no Auth account.`);
+  await callAuthAdmin(env, `/admin/users/${account.id}`, {
+    method: "PUT",
+    body: { password: LEARNER_PASSWORD, email_confirm: true },
+  });
+
+  const learnerToken = await signIn(env, classmate.email, LEARNER_PASSWORD);
+  const papers = await callApi(env, learnerToken, "/assessments?status=published&page_size=100");
+  const diagnostic = (papers.data ?? []).find((row) => row.id === assessmentIds.diagnostic);
+  if (!diagnostic || diagnostic.availability !== "available") return false;
+
+  const attempt = await callApi(env, learnerToken, `/assessments/${assessmentIds.diagnostic}/attempts`, {
+    method: "POST",
+    body: {},
+  });
+  const answers = (attempt.data.questions ?? []).map((question, index) => ({
+    question_id: question.id,
+    answer: pattern(index) ? question.choices?.[0]?.key : question.choices?.at(-1)?.key,
+  }));
+  await callApi(env, learnerToken, `/assessment-attempts/${attempt.data.attempt_id}/submit`, {
+    method: "POST",
+    headers: { "Idempotency-Key": `demo-seed-diagnostic-${attempt.data.attempt_id}` },
+    body: { answers },
+  });
+  return true;
+}
+
+/** Fixed answer patterns: from nearly all right to mostly wrong. */
+const CLASSMATE_PATTERNS = [
+  () => true,
+  (index) => index !== 2,
+  (index) => index % 2 === 0,
+  (index) => index < 2,
+  (index) => index === 0,
+  () => false,
+];
+
+async function ensureClass(token, grade, assessmentIds) {
+  const sectionId = await ensureSection(token);
+  let sat = 0;
+  for (const [index, classmate] of DEMO_CLASSMATES.entries()) {
+    if (await ensureClassmate(token, grade, sectionId, classmate, CLASSMATE_PATTERNS[index], assessmentIds)) {
+      sat += 1;
+    }
+  }
+  say(`  ${DEMO_CLASSMATES.length} classmates in ${DEMO_SECTION}${sat ? `, ${sat} sat the diagnostic` : ""}`);
+}
+
 async function main() {
   assertLocalTargets(env);
 
@@ -460,6 +551,7 @@ async function main() {
   say(`  the demo learner, enrolled in Grade 6`);
 
   await ensureEvidence(assessmentIds, activityIds, moduleIds);
+  await ensureClass(token, grade, assessmentIds);
 
   say("");
   say("Done. Sign in at http://localhost:3000/login as:");

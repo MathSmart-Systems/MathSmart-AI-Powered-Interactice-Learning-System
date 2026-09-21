@@ -87,3 +87,45 @@ def test_auth_me_patch_rejects_extra_forbidden_fields():
         headers=ADVISER_HEADERS,
     )
     assert response.status_code == 422
+
+
+CANCEL = "app.cancel_own_email_change()"
+
+
+def test_a_pending_email_change_is_withdrawn_as_the_caller():
+    connection = auth_connection(**{CANCEL: True})
+    client = build_client(connection)
+
+    response = client.post("/api/v1/auth/me/email-change/cancel", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"data": {"cancelled": True}}
+    # One statement, no arguments: there is no one else it could be aimed at.
+    (args,) = [a for q, a in connection.calls if CANCEL in q]
+    assert args == ()
+
+
+def test_nothing_pending_is_answered_plainly():
+    client = build_client(auth_connection(**{CANCEL: False}))
+
+    response = client.post("/api/v1/auth/me/email-change/cancel", headers=ADVISER_HEADERS)
+
+    assert response.json() == {"data": {"cancelled": False}}
+
+
+def test_the_cancel_route_takes_no_body_that_names_a_user():
+    client = build_client(auth_connection(**{CANCEL: True}))
+
+    response = client.post(
+        "/api/v1/auth/me/email-change/cancel",
+        json={"user_id": "00000000-0000-4000-8000-000000000000"},
+        headers=ADVISER_HEADERS,
+    )
+
+    # The body is ignored entirely; the caller's own change is the only one.
+    assert response.status_code == 200
+
+
+def test_signing_in_is_required_to_cancel():
+    client = build_client(auth_connection())
+    assert client.post("/api/v1/auth/me/email-change/cancel").status_code == 401

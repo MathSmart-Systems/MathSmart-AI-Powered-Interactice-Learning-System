@@ -10,7 +10,8 @@ export const MIN_INTERVENTION_ATTEMPTS = 1;
 export const MAX_INTERVENTION_ATTEMPTS = 5;
 export const DEFAULT_INTERVENTION_ATTEMPTS = 2;
 
-export const DEFAULT_GROQ_FEATURE_ENABLED = true;
+/** Groq starts off: the server treats a missing setting as off, and so does this. */
+export const DEFAULT_GROQ_FEATURE_ENABLED = false;
 
 export const SETTINGS_TABS = Object.freeze({
   CLASSROOM: "classroom",
@@ -41,6 +42,7 @@ export const FIELD_IDS = Object.freeze({
   PASSWORD_NEW_INPUT: "teacher-settings-password-new",
   PASSWORD_CONFIRM_INPUT: "teacher-settings-password-confirm",
   PASSWORD_SUBMIT_BUTTON: "teacher-settings-password-submit-btn",
+  NEW_EMAIL_INPUT: "teacher-settings-new-email",
 
   // Display Tab
   THEME_LIGHT_BTN: "teacher-settings-theme-light-btn",

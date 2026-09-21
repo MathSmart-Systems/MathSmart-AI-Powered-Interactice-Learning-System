@@ -20,7 +20,6 @@ the documented provenance block asks for.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from uuid import UUID
 
@@ -58,8 +57,19 @@ def evidence_from(model: Any) -> dict[str, Any]:
     }
 
 
+#: The classroom setting, asked as the caller. One boolean; see the migration
+#: that defines it for why a learner may ask it and still not read the table.
+_GATE_SQL = "select app.groq_advisory_enabled()"
+
+
 async def is_advisory_enabled(request: Request, actor: Any = None) -> bool:
-    """True only when BOTH server GROQ_ENABLED and database features.groq_advisory are true."""
+    """True only when the server allows Groq AND the classroom setting is on.
+
+    The server side is `GROQ_ENABLED` plus a configured adapter. The classroom
+    side is `features.groq_advisory`, read through the one database gateway
+    under the caller's own actor context. No actor, no database, or any error
+    reading it is "off": optional advice never guesses its way into being on.
+    """
     settings = getattr(request.app.state, "settings", None)
     if not bool(getattr(settings, "groq_enabled", False)):
         return False
@@ -68,37 +78,17 @@ async def is_advisory_enabled(request: Request, actor: Any = None) -> bool:
     if adviser is None or not bool(getattr(adviser, "enabled", True)):
         return False
 
+    return await classroom_setting_enabled(request, actor)
+
+
+async def classroom_setting_enabled(request: Request, actor: Any) -> bool:
+    """The stored classroom setting alone, as the caller sees it."""
     database = getattr(request.app.state, "database", None)
-    if database is None:
+    if database is None or actor is None:
         return False
-
-    query = (
-        "select setting_value from app.system_settings "
-        "where setting_key in ('features.groq_advisory', 'features.groq_enabled') "
-        "order by case when setting_key = 'features.groq_advisory' then 1 else 2 end "
-        "limit 1"
-    )
     try:
-        val = None
-        if hasattr(database, "_pool") and database._pool is not None:
-            async with database._pool.acquire() as conn:
-                val = await conn.fetchval(query)
-        elif hasattr(database, "actor") and actor is not None:
-            async with database.actor(actor) as conn:
-                val = await conn.fetchval(query)
-        elif hasattr(database, "fetchval"):
-            val = await database.fetchval(query)
-
-        if val is None:
-            return False
-
-        if isinstance(val, str):
-            try:
-                val = json.loads(val)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        return bool(val) is True
+        async with database.actor(actor) as connection:
+            return (await connection.fetchval(_GATE_SQL)) is True
     except Exception:
         return False
 

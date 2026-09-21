@@ -29,6 +29,7 @@ STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
 # Anchors that appear in exactly one statement each. The breakdown and the
 # recent-activity statements also name `scoped_learners`, so they are matched
 # first, on anchors only they carry.
+EXPORT = "order by sections.name nulls last"
 BREAKDOWN = "as section_count"
 RECENT = "union all"
 DASHBOARD = "scoped_learners"
@@ -45,6 +46,7 @@ DASHBOARD_ROW = {
     "improving_count": 6,
     "mastered_count": 3,
     "average_mastery": 63,
+    "learners_with_scores": 40,
     "open_intervention_count": 4,
     "published_competency_count": 12,
     "scored_attempt_count": 38,
@@ -137,6 +139,7 @@ HEATMAP_ROW = {
 
 def reporting_connection(**overrides):
     results = {
+        EXPORT: [LEARNER_ROW],
         BREAKDOWN: BREAKDOWN_ROW,
         RECENT: [RECENT_ROW],
         DASHBOARD: DASHBOARD_ROW,

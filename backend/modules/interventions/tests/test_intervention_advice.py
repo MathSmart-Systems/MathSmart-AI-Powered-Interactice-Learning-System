@@ -98,7 +98,7 @@ def advisory_client(
         settings.groq_model = "a-configured-model"
         settings.groq_api_key = SecretStr("gsk_test")
 
-    connection.results.setdefault("from app.system_settings", advisory_flag)
+    connection.results.setdefault("app.groq_advisory_enabled()", advisory_flag)
 
     application = create_app(
         settings=settings,
