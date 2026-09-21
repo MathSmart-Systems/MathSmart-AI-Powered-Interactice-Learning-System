@@ -28,8 +28,17 @@ export const DEMO_NOTE = "Created by npm run seed:demo. Safe to remove.";
  * `.local` or `.test` address does not: the enrolment route validates the
  * address and refuses a special-use name outright.
  */
+/**
+ * The learner the demonstration is built around.
+ *
+ * `DEMO_LEARNER_EMAIL` points the seed at an address you already sign in
+ * with, so the demonstration appears under the account you use rather than
+ * behind a second set of credentials nobody remembers. The learner id does
+ * not change with it: it is what the removal script matches on, and it is
+ * what keeps this learner distinguishable from a real one.
+ */
 export const DEMO_LEARNER = Object.freeze({
-  email: "demo.learner@example.com",
+  email: process.env.DEMO_LEARNER_EMAIL || "demo.learner@example.com",
   fullName: "Ana Dela Cruz",
   learnerId: "DEMO-LRN-0001",
 });

@@ -3,6 +3,10 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import * as nextEnv from "@next/env";
+
+const { loadEnvConfig } = nextEnv.default ?? nextEnv;
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const backendDirectory = resolve(repositoryRoot, "backend");
 const environmentFile = resolve(repositoryRoot, ".env");
@@ -37,6 +41,13 @@ if (!existsSync(environmentFile)) {
   process.exit(1);
 }
 
+// Loaded the way `next dev` loads it, rather than handed to uvicorn as a
+// single `--env-file`. `.env.local` takes precedence over `.env`, so pointing
+// the workspace at the local Supabase stack moves the web app and the API
+// together. Passing one file meant the two could be aimed at different
+// databases without anything saying so, which is the worst of both.
+const { loadedEnvFiles } = loadEnvConfig(repositoryRoot);
+
 const api = spawn(
   pythonExecutable,
   [
@@ -45,8 +56,6 @@ const api = spawn(
     "app.main:app",
     "--app-dir",
     backendDirectory,
-    "--env-file",
-    environmentFile,
     "--reload",
     "--reload-dir",
     backendDirectory,
@@ -59,6 +68,12 @@ const api = spawn(
     stdio: "inherit",
     windowsHide: true,
   },
+);
+
+// Named, not valued: which files were read decides which database the API
+// talks to, and that is worth seeing at a glance on every start.
+console.log(
+  `MathSmart API environment: ${loadedEnvFiles.map((file) => file.path).join(", ") || "none"}`,
 );
 
 let shuttingDown = false;

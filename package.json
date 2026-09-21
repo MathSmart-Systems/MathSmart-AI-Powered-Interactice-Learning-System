@@ -19,7 +19,8 @@
     "db:advisors": "supabase db advisors --local --type all --fail-on error",
     "db:test": "supabase test db",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "seed:demo:remove": "node scripts/seed-demo-remove.mjs"
+    "seed:demo:remove": "node scripts/seed-demo-remove.mjs",
+    "env:local": "node scripts/write-local-env.mjs"
   },
   "dependencies": {
     "@supabase/server": "^1.5.3",

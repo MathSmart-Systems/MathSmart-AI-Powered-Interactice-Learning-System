@@ -42,8 +42,15 @@ const env = process.env;
  * Taken from the environment when one is supplied so a demonstrator can choose
  * it, and otherwise a fixed local-only value. It is never printed: the script
  * tells you the address to sign in with and says where to find the password.
+ *
+ * When the demonstration is being built around an address you already sign in
+ * with, `E2E_STUDENT_PASSWORD` is preferred over the built-in default, so that
+ * running the seed does not quietly change the password of an account you use.
  */
-const LEARNER_PASSWORD = env.DEMO_STUDENT_PASSWORD ?? "MathSmartDemo!2026";
+const LEARNER_PASSWORD =
+  env.DEMO_STUDENT_PASSWORD ??
+  (env.DEMO_LEARNER_EMAIL && env.E2E_STUDENT_PASSWORD) ??
+  "MathSmartDemo!2026";
 
 function say(message) {
   process.stdout.write(`${message}\n`);
@@ -456,8 +463,18 @@ async function main() {
 
   say("");
   say("Done. Sign in at http://localhost:3000/login as:");
-  say(`  ${DEMO_LEARNER.email}`);
-  say("  password: set from DEMO_STUDENT_PASSWORD, or the script's built-in local default.");
+
+  // An address supplied through the environment is not echoed back: it came
+  // from a file whose values this script does not print, and whoever set it
+  // already knows what they set.
+  if (env.DEMO_LEARNER_EMAIL) {
+    say("  the learner named by DEMO_LEARNER_EMAIL");
+    say("  password: unchanged — the one already set for that account.");
+  } else {
+    say(`  ${DEMO_LEARNER.email}`);
+    say("  password: set from DEMO_STUDENT_PASSWORD, or the script's built-in local default.");
+  }
+
   say("");
   say("Remove it all again with: npm run seed:demo:remove");
 }

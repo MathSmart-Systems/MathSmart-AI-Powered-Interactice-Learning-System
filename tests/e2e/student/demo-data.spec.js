@@ -26,8 +26,16 @@ const { describe, beforeEach } = test;
 /** The mark every seeded record carries, and nothing a teacher wrote does. */
 const DEMO = "DEMO";
 
-/** The learner `npm run seed:demo` enrols, and whose evidence this reads. */
-const DEMO_LEARNER_EMAIL = "demo.learner@example.com";
+/**
+ * The learner `npm run seed:demo` enrols, and whose evidence this reads.
+ *
+ * `DEMO_LEARNER_EMAIL` follows the same variable the seed takes, so a
+ * demonstration built around an address you already sign in with is checked
+ * against that address rather than skipped.
+ */
+const DEMO_LEARNER_EMAIL = (
+  process.env.DEMO_LEARNER_EMAIL || "demo.learner@example.com"
+).toLowerCase();
 
 /**
  * Whether the suite is signed in as the demonstration learner.
