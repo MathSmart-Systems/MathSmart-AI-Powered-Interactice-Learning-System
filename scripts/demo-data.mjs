@@ -53,14 +53,33 @@ export function isLoopbackUrl(value) {
   }
 }
 
+/** The name of the one variable that permits a hosted target. */
+export const HOSTED_OPT_IN = "DEMO_ALLOW_HOSTED";
+
+/** How a hosted address reads in a warning, without inventing certainty. */
+function describeTarget(value) {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return "an address this could not read";
+  }
+}
+
 /**
- * Refuses to run anywhere but the local stack.
+ * Refuses to run anywhere but the local stack, unless told otherwise.
  *
- * Seeding a hosted project would put invented children into a real school's
- * records. The check names the offending target rather than failing vaguely,
- * and it runs before a single request is made.
+ * Seeding a hosted project puts invented children into a real school's
+ * records, so the default is to refuse. The check names the offending target
+ * rather than failing vaguely, and it runs before a single request is made.
+ *
+ * `DEMO_ALLOW_HOSTED=1` lifts the refusal. It is deliberately a separate
+ * variable rather than a flag on the command, so it cannot be reached by
+ * habit or by a stale shell history entry, and the script says loudly where
+ * it is about to write before it writes anything. Everything it creates
+ * still carries the demo mark, and `npm run seed:demo:remove` still takes
+ * away only what carries it.
  */
-export function assertLocalTargets(env) {
+export function assertLocalTargets(env, { say } = {}) {
   const targets = [
     ["Supabase", env.NEXT_PUBLIC_SUPABASE_URL],
     ["API", env.NEXT_PUBLIC_API_BASE_URL],
@@ -73,10 +92,32 @@ export function assertLocalTargets(env) {
     .map(([name, value]) => (value ? `${name} is not a local address` : `${name} is not configured`))
     .join("; ");
 
-  throw new Error(
-    `Refusing to seed: ${names}. This script writes learners and attempts, and will only ` +
-      "do that against the Supabase stack on this machine (npm run db:start).",
-  );
+  if (env[HOSTED_OPT_IN] !== "1") {
+    throw new Error(
+      `Refusing to seed: ${names}. This script writes learners and attempts, and will only ` +
+        "do that against the Supabase stack on this machine (npm run db:start). " +
+        `If a hosted target is genuinely what you want, set ${HOSTED_OPT_IN}=1 and run it again.`,
+    );
+  }
+
+  // A missing address is never permitted, whatever the opt-in says: "write
+  // nowhere in particular" is not a target anybody chose.
+  const unset = remote.filter(([, value]) => !value);
+  if (unset.length > 0) {
+    throw new Error(
+      `Refusing to seed: ${unset.map(([name]) => name).join(" and ")} is not configured. ` +
+        `${HOSTED_OPT_IN} permits a hosted target, not an unknown one.`,
+    );
+  }
+
+  const report = say ?? ((message) => process.stdout.write(`${message}
+`));
+  report("");
+  report(`!! ${HOSTED_OPT_IN}=1 — writing to a target that is NOT this machine:`);
+  for (const [name, value] of remote) report(`     ${name}: ${describeTarget(value)}`);
+  report("   Everything created carries the demo mark and is removable with");
+  report("   npm run seed:demo:remove.");
+  report("");
 }
 
 /** One authenticated call against the MathSmart API. */
