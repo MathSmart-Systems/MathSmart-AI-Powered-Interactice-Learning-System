@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Clock, Lock, Shapes, Star } from "lucide-react";
+import { Clock, Lock, Shapes, Star, Wrench } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,19 @@ import {
 } from "@/components/ui/card";
 
 import { ACTIVITIES_STATE, readActivityList } from "../services/activities-data.js";
+import { activityGate } from "../utils/activities-model.js";
 import { formatBestScore, formatMinutes, formatPoints } from "../utils/format.js";
 import { ActivitiesNoProfile, ActivitiesServiceError } from "./ActivitiesUnavailable.jsx";
 
 export { StudentActivitiesSkeleton } from "./StudentActivitiesSkeleton.jsx";
+
+/**
+ * A glyph per closed state, so "you cannot start this" never rests on a
+ * dimmed button alone. The two reasons are deliberately different pictures:
+ * a padlock is something that opens with time, a spanner is someone still
+ * working on it.
+ */
+const GATE_ICON = Object.freeze({ locked: Lock, not_ready: Wrench });
 
 /**
  * The learner's own practice activities catalogue.
@@ -62,13 +71,18 @@ export async function StudentActivities() {
       <ul className="flex flex-col gap-4">
         {items.map((activity) => {
           const href = `/student/activities/${activity.activityId}`;
-          const locked = activity.pathStatus === "locked";
-          const verb = locked ? null : activity.status.verb;
+          // One answer for both reasons a card cannot be started: the path has
+          // not opened it, or the API says a start request would be refused.
+          // Anything the gate closes gets the same treatment, so a learner
+          // meets one recognisable shape rather than two inventions.
+          const gate = activityGate(activity);
+          const GateIcon = gate ? GATE_ICON[gate.kind] : null;
+          const verb = gate ? null : activity.status.verb;
 
           return (
             <li key={activity.activityId}>
               <Card
-                className={locked ? "opacity-80" : undefined}
+                className={gate ? "opacity-80" : undefined}
               >
                 <CardHeader className="gap-2">
                   <div className="flex flex-wrap items-center gap-3">
@@ -120,19 +134,54 @@ export async function StudentActivities() {
                   )}
                 </CardContent>
 
-                <CardFooter className="flex items-center justify-between gap-3 border-t border-border pt-6">
+                {/*
+                  Wrapping, because the status badge and a full-size action
+                  button do not both fit on one line at 320px: without it the
+                  button was squeezed until its label broke mid-word.
+                */}
+                <CardFooter className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-6">
                   <Badge variant="outline" className="font-normal">
-                    {locked && <Lock aria-hidden="true" className="mr-1 size-3" />}
-                    {activity.status.label}
+                    {GateIcon && <GateIcon aria-hidden="true" className="mr-1 size-3" />}
+                    {gate ? gate.label : activity.status.label}
                   </Badge>
                   {verb ? (
                     <Button asChild size="lg">
                       <Link href={href}>{verb}</Link>
                     </Button>
                   ) : (
-                    <Button asChild size="lg" variant="outline" disabled>
-                      Opens later
+                    // No `asChild` here. It hands the child straight to Radix's
+                    // Slot, which needs a single element and was given a bare
+                    // string — so every render of a locked card threw "Slot
+                    // failed to slot onto its children" and took the whole page
+                    // with it. Nothing was ever locked before the learning path
+                    // started moving, which is why it had never been seen.
+                    //
+                    // `aria-disabled` rather than `disabled`, so the reason
+                    // stays reachable by keyboard instead of the card being
+                    // skipped over in silence.
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="outline"
+                      aria-disabled="true"
+                      className="cursor-not-allowed opacity-70"
+                    >
+                      {GateIcon && <GateIcon aria-hidden="true" className="size-4" />}
+                      {gate?.label}
+                      <span className="sr-only">: {activity.title}</span>
                     </Button>
+                  )}
+                  {/*
+                    The reason, on its own line, for whichever gate closed the
+                    card. `basis-full` rather than a third item in the row: at
+                    320px a sentence beside the badge and the button squeezed
+                    both, and a learner who is being told they cannot start
+                    something is owed the explanation in full width.
+                  */}
+                  {gate && (
+                    <p className="basis-full text-sm leading-relaxed text-muted-foreground">
+                      {gate.hint}
+                    </p>
                   )}
                 </CardFooter>
               </Card>

@@ -70,6 +70,16 @@ export function TeacherActivitiesView() {
   const [dialog, setDialog] = useState(NO_DIALOG);
   const [confirmation, setConfirmation] = useState(null);
 
+  /**
+   * The last publication the API refused, and the reason it gave.
+   *
+   * One row at a time, because a teacher publishes one activity at a time.
+   * Unlike a confirmation it is not put on a timer: a confirmation reports
+   * something that already happened, while this is work still outstanding, and
+   * taking it away after six seconds would take the reason with it.
+   */
+  const [publishRefusal, setPublishRefusal] = useState(null);
+
   const confirmationTimer = useRef(null);
 
   const confirm = useCallback((message) => {
@@ -448,6 +458,7 @@ export function TeacherActivitiesView() {
           isLoading={isFirstLoad}
           hasError={Boolean(error)}
           hasSearchOrFilter={hasSearchOrFilter}
+          publishRefusal={publishRefusal}
           onEdit={(activity) => openDialog("form", activity)}
           onQuestions={(activity) => openDialog("questions", activity)}
           onPublish={(activity) => openDialog("publish", activity)}
@@ -526,7 +537,14 @@ export function TeacherActivitiesView() {
         activity={dialog.kind === "questions" ? dialog.activity : null}
         onSaved={(saved) => {
           const count = saved?.question_count;
+          const editedId = dialog.activity?.activity_id;
           setDialog(NO_DIALOG);
+          // The teacher has just worked on the card the refusal was about, so
+          // the refusal is stale whatever they changed. What the activity is
+          // still missing, if anything, comes back with the reload.
+          setPublishRefusal((refusal) =>
+            refusal?.activityId === editedId ? null : refusal,
+          );
           confirm(
             typeof count === "number"
               ? `“${saved?.title ?? dialog.activity?.title}” now holds ${count} ${
@@ -547,6 +565,19 @@ export function TeacherActivitiesView() {
         activity={dialog.kind === "publish" ? dialog.activity : null}
         moduleTitle={
           dialog.activity ? (moduleTitles.get(dialog.activity.module_id) ?? null) : null
+        }
+        onRefused={(message) =>
+          setPublishRefusal((refusal) => {
+            const publishedId = dialog.activity?.activity_id;
+            if (message) {
+              return { activityId: publishedId, message };
+            }
+            // A publication that succeeded clears only its own card's refusal.
+            // Clearing whatever was there would let publishing a second
+            // activity quietly retire the warning still standing against the
+            // first.
+            return refusal?.activityId === publishedId ? null : refusal;
+          })
         }
         onPublished={(published) => {
           setDialog(NO_DIALOG);

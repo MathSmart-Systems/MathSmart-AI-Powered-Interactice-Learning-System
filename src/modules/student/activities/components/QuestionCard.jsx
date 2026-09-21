@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Lightbulb, XCircle } from "lucide-react";
+import { CheckCircle2, Lightbulb, Sparkles, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,13 +16,19 @@ const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
  * The checked state comes from the deterministic answer check: a correct
  * selection tints pine green with a checkmark, a wrong one marking-pen red with
  * a cross — each with the verdict written out below in the feedback panel.
+ *
+ * `hint` is the hint a teacher authored. `aiHint` is an optional rephrasing of
+ * that same hint, shown under its own label and never in its place, so a
+ * learner can always tell which words came from their teacher.
  */
 export function QuestionCard({
   question,
   value = "",
   check = null,
   hint = null,
+  aiHint = null,
   hintState = "idle",
+  hintError = null,
   checking = false,
   onSelectOption,
   onChangeValue,
@@ -135,9 +141,26 @@ export function QuestionCard({
           {hintState === "loading" ? "Finding a hint…" : hint ? "Hint" : "Need a hint?"}
         </Button>
 
+        {/*
+          A learner who asked for help and got an error needs to know what to do
+          next, not that something went wrong. Both of these say what happened
+          in one short sentence and then give a next step that works: the hint
+          is optional, and the question can still be answered and checked
+          without it.
+        */}
         {hintState === "error" && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            The hint could not be loaded just now. Keep going and come back to it.
+          <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
+            {hintError ?? "The hint did not arrive."} Tap “Need a hint?” to ask
+            again. You can also answer the question and press “Check answer” —
+            you can try as many times as you need.
+          </p>
+        )}
+
+        {hintState === "none" && (
+          <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
+            There is no hint written for this question. Read it again slowly,
+            write the answer you think is right, then check it — a wrong answer
+            comes with an explanation you can use.
           </p>
         )}
 
@@ -145,6 +168,28 @@ export function QuestionCard({
           <div className="mt-3 flex items-start gap-2.5 border border-border bg-secondary/50 px-4 py-3">
             <Lightbulb aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <p className="text-sm leading-relaxed text-foreground">{hint}</p>
+          </div>
+        )}
+
+        {/*
+          The same hint in other words. It sits outside the hint's own panel, in
+          a dashed outline and under its own label, so that the difference from
+          the authored hint is carried by the wording and the shape rather than
+          by a tint a learner could miss.
+        */}
+        {hint && aiHint && (
+          <div className="mt-2 flex items-start gap-2.5 border border-dashed border-border bg-background px-4 py-3">
+            <Sparkles aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Optional AI help
+              </p>
+              <p className="text-sm leading-relaxed text-foreground">{aiHint}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Another way of saying the hint above. It is a suggestion, not a
+                grade, and it changes nothing about your answer.
+              </p>
+            </div>
           </div>
         )}
       </div>

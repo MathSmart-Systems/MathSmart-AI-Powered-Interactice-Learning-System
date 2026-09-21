@@ -46,7 +46,7 @@ export function DiagnosticIntro({
               ? "Authorized reassessment"
               : "Entry diagnostic"}
           </Badge>
-          <CardTitle className="text-xl font-semibold">
+          <CardTitle as="h2" className="text-xl font-semibold">
             {assessment?.title ?? `${total} question mathematics diagnostic`}
           </CardTitle>
           <CardDescription className="max-w-prose leading-relaxed">
@@ -88,9 +88,11 @@ export function DiagnosticIntro({
           </dl>
 
           <div className="flex flex-col gap-4">
-            <h2 className="text-sm font-semibold text-foreground">
+            {/* h3, not h2: this sits inside the card whose title is now the
+                h2, and a sibling here would claim to be its equal. */}
+            <h3 className="text-sm font-semibold text-foreground">
               Before you begin
-            </h2>
+            </h3>
             <ol className="flex flex-col gap-4">
               {[
                 "Read every question fully. Some items look familiar but ask for something different.",

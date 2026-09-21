@@ -1,4 +1,7 @@
+import { Suspense } from "react";
+
 import {
+  AssessmentPlayerSkeleton,
   DiagnosticView,
   parseAttemptQuery,
 } from "@/modules/student/assessments";
@@ -10,9 +13,11 @@ export default async function StudentDiagnosticPage({ searchParams }) {
   const attemptQuery = parseAttemptQuery(params?.attempt);
 
   return (
-    <DiagnosticView
-      requestedAttemptId={attemptQuery.attemptId}
-      invalidAttemptLink={attemptQuery.invalid}
-    />
+    <Suspense fallback={<AssessmentPlayerSkeleton />}>
+      <DiagnosticView
+        requestedAttemptId={attemptQuery.attemptId}
+        invalidAttemptLink={attemptQuery.invalid}
+      />
+    </Suspense>
   );
 }

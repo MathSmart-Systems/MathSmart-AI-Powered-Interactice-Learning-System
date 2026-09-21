@@ -425,3 +425,124 @@ async def test_a_spent_grant_cannot_be_used_again(database, seeded):
                 await repository.start_attempt(connection, seeded["assessment_id"])
     finally:
         await owner.close()
+
+
+# ---------------------------------------------------------------------------
+# Catalogue readiness
+# ---------------------------------------------------------------------------
+# `is_ready` and the `not_ready` availability are worked out in the catalogue
+# statement, so they are only worth proving against the real policies. A
+# learner cannot see a question whose competency is a draft at all — that is
+# `questions_select` — and the whole risk in this column is that the same
+# invisibility makes a broken paper look complete.
+
+
+async def _hide_the_competency(owner, seeded) -> None:
+    """Return the competency behind every question to a draft."""
+    await owner.execute(
+        "update app.competencies set status = 'draft' where competency_id = $1",
+        seeded["competency_id"],
+    )
+
+
+async def _restore_the_competency(owner, seeded) -> None:
+    await owner.execute(
+        "update app.competencies set status = 'published' where competency_id = $1",
+        seeded["competency_id"],
+    )
+
+
+async def test_a_complete_published_paper_reports_itself_ready(database, seeded):
+    async with database.actor(token_for(LEARNER)) as connection:
+        row = await repository.assessment(
+            connection, user_id=LEARNER, assessment_id=seeded["assessment_id"]
+        )
+
+    assert row["is_ready"] is True
+    assert str(row["availability"]) == "available"
+
+
+async def test_a_paper_whose_questions_sit_under_a_draft_competency_is_not_ready(
+    database, seeded
+):
+    """The exact shape of the content that reached learners.
+
+    The assessment is published and every question in it is published. Their
+    competency is not — and `start_assessment_attempt` counts a question as
+    deliverable only when both are, so the paper opened for nobody while the
+    catalogue still offered it.
+    """
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        await _hide_the_competency(owner, seeded)
+
+        async with database.actor(token_for(LEARNER)) as connection:
+            row = await repository.assessment(
+                connection, user_id=LEARNER, assessment_id=seeded["assessment_id"]
+            )
+            with pytest.raises(asyncpg.PostgresError):
+                await repository.start_attempt(connection, seeded["assessment_id"])
+    finally:
+        await _restore_the_competency(owner, seeded)
+        await owner.close()
+
+    assert row["is_ready"] is False
+    # `not_ready` outranks `available`: the paper must not be offered as open
+    # when the start it invites would be refused.
+    assert str(row["availability"]) == "not_ready"
+
+
+async def test_a_learner_who_finished_the_paper_still_sees_it_as_completed(
+    database, seeded
+):
+    """`completed` outranks `not_ready`, which is the one exception.
+
+    A learner who has already sat the paper has a result to read. Telling them
+    it is unavailable because their teacher has since unpublished a competency
+    would take away the thing they earned, to warn them about a start they are
+    not going to make.
+    """
+    await _score_an_attempt(database, seeded)
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        await _hide_the_competency(owner, seeded)
+
+        async with database.actor(token_for(LEARNER)) as connection:
+            row = await repository.assessment(
+                connection, user_id=LEARNER, assessment_id=seeded["assessment_id"]
+            )
+    finally:
+        await _restore_the_competency(owner, seeded)
+        await owner.close()
+
+    assert row["is_ready"] is False
+    assert str(row["availability"]) == "completed"
+
+
+async def test_an_empty_paper_is_not_ready(database, seeded):
+    """Nothing to answer, and a score of zero at the end of it."""
+    owner = await asyncpg.connect(DB_URL, statement_cache_size=0)
+    try:
+        await owner.execute(
+            "delete from app.assessment_questions where assessment_id = $1",
+            seeded["assessment_id"],
+        )
+
+        async with database.actor(token_for(LEARNER)) as connection:
+            row = await repository.assessment(
+                connection, user_id=LEARNER, assessment_id=seeded["assessment_id"]
+            )
+    finally:
+        for position, question_id in enumerate(seeded["questions"], start=1):
+            await owner.execute(
+                """
+                insert into app.assessment_questions (assessment_id, question_id, position)
+                values ($1, $2, $3)
+                on conflict do nothing
+                """,
+                seeded["assessment_id"], question_id, position,
+            )
+        await owner.close()
+
+    assert row["is_ready"] is False
+    assert str(row["availability"]) == "not_ready"

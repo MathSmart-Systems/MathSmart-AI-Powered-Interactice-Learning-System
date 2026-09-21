@@ -10,10 +10,11 @@ import {
 
 const describe = hasAccount(TEACHER_ADMIN_ACCOUNT) ? test.describe : test.describe.skip;
 
-/** Destinations that have grown their own workspace and are covered by its spec. */
-const LIVE_ROUTES = new Set(["/teacher/interventions", "/teacher/grades-sections"]);
-
-const PLACEHOLDER_ROUTES = TEACHER_ADMIN_ROUTES.filter((route) => !LIVE_ROUTES.has(route));
+/**
+ * Every Teacher/Administrator destination now has a workspace of its own, each
+ * covered by its own specification. The list of placeholders is empty, and
+ * what is worth asserting is that it stays empty.
+ */
 
 describe("teacher/administrator workspace", () => {
   test.beforeEach(async ({ page }) => {
@@ -31,11 +32,11 @@ describe("teacher/administrator workspace", () => {
     await expect(links).toHaveText(TEACHER_ADMIN_NAV_LABELS);
   });
 
-  test("every destination opens its own UI-in-progress page", async ({ page }) => {
-    for (const route of PLACEHOLDER_ROUTES) {
+  test("no destination is still a placeholder", async ({ page }) => {
+    for (const route of TEACHER_ADMIN_ROUTES) {
       await page.goto(route);
       await expect(page).toHaveURL(new RegExp(`${route}$`));
-      await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
     }
   });
 

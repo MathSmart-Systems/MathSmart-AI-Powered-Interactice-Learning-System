@@ -687,11 +687,23 @@ async def list_activities(
 
     # The count decides whether a row can be published at all, so a listing
     # that omitted it would have to disable publication everywhere or guess.
-    counts = await repository.activity_question_counts(
+    #
+    # `is_ready` is the other half of that. A row saying "published" told the
+    # teacher nothing about whether a learner could open it, so an activity
+    # published with no questions, or holding a question under a draft
+    # competency, sat in the workspace looking live while every learner who
+    # tried it was refused. `readiness_reason` says which of those it is,
+    # because a boolean sends the teacher looking. All three come from one
+    # statement, so the listing cannot pair a count with somebody else's
+    # readiness.
+    setup = await repository.activity_setup_status(
         connection, [UUID(row["activity_id"]) for row in envelope["data"]]
     )
     for row in envelope["data"]:
-        row["question_count"] = counts.get(UUID(row["activity_id"]), 0)
+        status_row = setup.get(UUID(row["activity_id"]), repository.MISSING_SETUP)
+        row["question_count"] = status_row.question_count
+        row["is_ready"] = status_row.is_ready
+        row["readiness_reason"] = status_row.reason
     return envelope
 
 
@@ -720,6 +732,67 @@ async def read_activity_draft(
     return payload
 
 
+async def _activity_readiness(connection: Any, activity_id: UUID) -> Any:
+    """Everything an activity's publication depends on, read in one statement."""
+    readiness = await repository.activity_publication_readiness(connection, activity_id)
+    if readiness is None:
+        raise ApiError(404, "No activity was found")
+    return readiness
+
+
+def _refuse_unready_activity(readiness: Any) -> None:
+    """Refuse an activity that is not safe to put in front of a learner.
+
+    One implementation for two routes, because there were two ways to reach
+    `published` and only one of them checked anything. `POST .../publish` asked
+    all of these questions; `PATCH .../{id}` took `status: "published"` as an
+    ordinary column write and asked none — so the entire check below was one
+    request away from being skipped, and activities with no questions at all
+    reached learners that way.
+
+    Six conditions, and the refusal names the one that failed: the activity is
+    a draft, it holds at least one question, every one of those questions is
+    published, every one of *their* competencies is published, and its module
+    and that module's competency are published too. The last two are what
+    `activities_select` requires before a learner can see it at all; the rest
+    are what `app.start_activity_attempt` requires before it will deliver it.
+    """
+    if readiness["activity_status"] != "draft":
+        raise ApiError(
+            422, "Only a draft activity can be published", code="activity_not_publishable"
+        )
+    if readiness["question_total"] < 1:
+        raise ApiError(
+            422,
+            "An activity needs at least one question before it can be published",
+            code="activity_not_publishable",
+        )
+    if readiness["unpublished_total"] > 0:
+        raise ApiError(
+            422,
+            "Every question in the activity must be published first",
+            code="activity_not_publishable",
+        )
+    if readiness["unpublished_competency_total"] > 0:
+        raise ApiError(
+            422,
+            "Every competency behind the activity's questions must be published first",
+            code="activity_not_publishable",
+        )
+    if readiness["module_status"] != "published":
+        raise ApiError(
+            422,
+            "Publish the learning module before publishing its activity",
+            code="activity_not_publishable",
+        )
+    if readiness["competency_status"] != "published":
+        raise ApiError(
+            422,
+            "Publish the competency before publishing this activity",
+            code="activity_not_publishable",
+        )
+
+
 @router.patch("/teacher-admin/activities/{activity_id}")
 async def update_activity(
     _actor: TeacherAdmin,
@@ -728,8 +801,29 @@ async def update_activity(
     activity_id: UUID,
     body: ActivityChanges,
 ) -> dict[str, Any]:
-    """Partially update an activity's metadata, threshold, or publication status."""
-    return await _update(connection, ACTIVITIES, activity_id, body)
+    """Partially update an activity's metadata, threshold, or publication status.
+
+    A change that would move the activity to `published` meets exactly the
+    checks `POST .../publish` applies, because it is the same decision reached
+    by a different verb. It used to meet none of them: `status` was an ordinary
+    column here, so a teacher whose publish had been refused could send the
+    same value through the edit form and the activity went live empty.
+
+    An activity that is already published is left alone: the request is not
+    moving it anywhere, and refusing a title change because the activity has a
+    draft question in it would make the edit form unusable for the correction
+    the teacher is trying to make.
+    """
+    values = _values(body)
+    if values.get("status") == PublicationStatus.PUBLISHED:
+        readiness = await _activity_readiness(connection, activity_id)
+        if readiness["activity_status"] != "published":
+            _refuse_unready_activity(readiness)
+
+    row = await repository.update(connection, ACTIVITIES, activity_id, values)
+    if row is None:
+        raise ApiError(404, "No record was found")
+    return {"data": _row(row, ACTIVITIES)}
 
 
 @router.get("/teacher-admin/activities/{activity_id}/references")
@@ -817,44 +911,12 @@ async def publish_activity(
     submission zero, and fed that zero into the competency progress that opens
     an intervention.
 
-    So all four conditions are checked, and the refusal names the one that
-    failed: the activity is a draft, it holds at least one question, every one
-    of those questions is published, and its module and that module's
-    competency are published too — which is what `activities_select` requires
-    before a learner can see it at all.
+    The conditions are in `_refuse_unready_activity`, which `PATCH
+    .../{activity_id}` runs too: publishing by editing the status field used to
+    be the way round every one of them.
     """
-    readiness = await repository.activity_publication_readiness(connection, activity_id)
-    if readiness is None:
-        raise ApiError(404, "No activity was found")
-
-    if readiness["activity_status"] != "draft":
-        raise ApiError(
-            422, "Only a draft activity can be published", code="activity_not_publishable"
-        )
-    if readiness["question_total"] < 1:
-        raise ApiError(
-            422,
-            "An activity needs at least one question before it can be published",
-            code="activity_not_publishable",
-        )
-    if readiness["unpublished_total"] > 0:
-        raise ApiError(
-            422,
-            "Every question in the activity must be published first",
-            code="activity_not_publishable",
-        )
-    if readiness["module_status"] != "published":
-        raise ApiError(
-            422,
-            "Publish the learning module before publishing its activity",
-            code="activity_not_publishable",
-        )
-    if readiness["competency_status"] != "published":
-        raise ApiError(
-            422,
-            "Publish the competency before publishing this activity",
-            code="activity_not_publishable",
-        )
+    readiness = await _activity_readiness(connection, activity_id)
+    _refuse_unready_activity(readiness)
 
     row = await repository.update(connection, ACTIVITIES, activity_id, {"status": "published"})
     if row is None:
@@ -1039,19 +1101,29 @@ async def list_assessment_drafts(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    """Assessments, each row carrying how many questions it holds.
+    """Assessments, each row carrying how many questions it holds and whether
+    a learner could actually open it.
 
     The count decides whether a row can be published at all, so a listing that
-    omitted it would have to disable publication everywhere or guess.
+    omitted it would have to disable publication everywhere or guess. `is_ready`
+    is the other half: a row saying "published" told the teacher nothing about
+    what was inside it, so a paper published empty, or holding a question under
+    a draft competency, looked live in the workspace while every learner who
+    opened it was refused by `app.start_assessment_attempt`.
+    `readiness_reason` names which of those it is, because "not ready" on its
+    own sends the teacher searching for the difference.
     """
     envelope = await _list(
         connection, ASSESSMENTS, search, page, page_size, status.value if status else None
     )
-    counts = await repository.assessment_question_counts(
+    setup = await repository.assessment_setup_status(
         connection, [UUID(row["assessment_id"]) for row in envelope["data"]]
     )
     for row in envelope["data"]:
-        row["question_count"] = counts.get(UUID(row["assessment_id"]), 0)
+        status_row = setup.get(UUID(row["assessment_id"]), repository.MISSING_SETUP)
+        row["question_count"] = status_row.question_count
+        row["is_ready"] = status_row.is_ready
+        row["readiness_reason"] = status_row.reason
 
     states = await repository.assessment_status_counts(connection, search=search)
     envelope["meta"]["status_counts"] = _status_counts(states)
@@ -1093,6 +1165,62 @@ async def read_assessment_draft(
     return payload
 
 
+async def _assessment_readiness(connection: Any, assessment_id: UUID) -> Any:
+    """Everything an assessment's publication depends on, in one statement."""
+    readiness = await repository.assessment_publication_readiness(connection, assessment_id)
+    if readiness is None:
+        raise ApiError(404, "No assessment was found")
+    return readiness
+
+
+def _refuse_unready_assessment(readiness: Any) -> None:
+    """Refuse an assessment that is not safe to sit.
+
+    One implementation for two routes, for the same reason the activity rules
+    are: `POST .../publish` asked these questions and `PATCH .../{id}` asked
+    none, so sending `status: "published"` through the edit form published
+    anything at all.
+
+    An empty assessment would hand a learner nothing to answer and then score
+    them zero. A question that is still a draft, a question whose competency is
+    still a draft, or a grade that is no longer active would reach the learner
+    just as broken — and the competency is the one that used to be checked
+    nowhere: `app.start_assessment_attempt` counts a question as deliverable
+    only when the question *and* its competency are published, so a paper that
+    passed publication here still refused to open.
+    """
+    if readiness["assessment_status"] != "draft":
+        raise ApiError(
+            422,
+            "Only a draft assessment can be published",
+            code="assessment_not_publishable",
+        )
+    if readiness["question_total"] < 1:
+        raise ApiError(
+            422,
+            "An assessment needs at least one question before it can be published",
+            code="assessment_not_publishable",
+        )
+    if readiness["unpublished_total"] > 0:
+        raise ApiError(
+            422,
+            "Every question in the assessment must be published first",
+            code="assessment_not_publishable",
+        )
+    if readiness["unpublished_competency_total"] > 0:
+        raise ApiError(
+            422,
+            "Every competency behind the assessment's questions must be published first",
+            code="assessment_not_publishable",
+        )
+    if not readiness["grade_is_active"]:
+        raise ApiError(
+            422,
+            "The assessment's grade level is not active",
+            code="assessment_not_publishable",
+        )
+
+
 @router.patch("/teacher-admin/assessments/{assessment_id}")
 async def update_assessment(
     _actor: TeacherAdmin,
@@ -1101,7 +1229,27 @@ async def update_assessment(
     assessment_id: UUID,
     body: AssessmentChanges,
 ) -> dict[str, Any]:
-    return await _update(connection, ASSESSMENTS, assessment_id, body)
+    """Change an assessment, including its publication state.
+
+    A change that would move it to `published` meets exactly the checks
+    `POST .../publish` applies, because it is the same decision reached by a
+    different verb. It used to meet none of them, which is how a paper whose
+    question sat under a draft competency went live.
+
+    An assessment that is already published is left alone: the request is not
+    moving it anywhere, and a teacher correcting its title should not be
+    refused over what is inside it.
+    """
+    values = _values(body)
+    if values.get("status") == PublicationStatus.PUBLISHED:
+        readiness = await _assessment_readiness(connection, assessment_id)
+        if readiness["assessment_status"] != "published":
+            _refuse_unready_assessment(readiness)
+
+    row = await repository.update(connection, ASSESSMENTS, assessment_id, values)
+    if row is None:
+        raise ApiError(404, "No record was found")
+    return {"data": _row(row, ASSESSMENTS)}
 
 
 @router.delete("/teacher-admin/assessments/{assessment_id}", status_code=204)
@@ -1169,40 +1317,12 @@ async def publish_assessment(
 ) -> dict[str, Any]:
     """Publish an assessment, once it is safe to deliver.
 
-    An empty assessment would hand a learner nothing to answer and then score
-    them zero. A question that is still a draft, or a grade that is no longer
-    active, would reach the learner just as broken. So publication is refused
-    until all three hold, and the refusal names the one that failed.
+    The conditions are in `_refuse_unready_assessment`, which
+    `PATCH .../{assessment_id}` runs too: publishing by editing the status
+    field used to be the way round every one of them.
     """
-    readiness = await repository.assessment_publication_readiness(connection, assessment_id)
-    if readiness is None:
-        raise ApiError(404, "No assessment was found")
-
-    if readiness["assessment_status"] != "draft":
-        raise ApiError(
-            422,
-            "Only a draft assessment can be published",
-            code="assessment_not_publishable",
-        )
-
-    if readiness["question_total"] < 1:
-        raise ApiError(
-            422,
-            "An assessment needs at least one question before it can be published",
-            code="assessment_not_publishable",
-        )
-    if readiness["unpublished_total"] > 0:
-        raise ApiError(
-            422,
-            "Every question in the assessment must be published first",
-            code="assessment_not_publishable",
-        )
-    if not readiness["grade_is_active"]:
-        raise ApiError(
-            422,
-            "The assessment's grade level is not active",
-            code="assessment_not_publishable",
-        )
+    readiness = await _assessment_readiness(connection, assessment_id)
+    _refuse_unready_assessment(readiness)
 
     row = await repository.update(
         connection, ASSESSMENTS, assessment_id, {"status": "published"}

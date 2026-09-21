@@ -507,15 +507,69 @@ where assessment_questions.assessment_id = $1
 order by assessment_questions.position
 """  # noqa: S608
 
-#: Membership sizes for a page of assessments, in one round trip. A listing
-#: needs the count per row to show whether an assessment can be published.
+#: Membership sizes and delivery readiness for a page of assessments, in one
+#: round trip. A listing needs the count per row to show whether an assessment
+#: can be published, and the readiness to show whether one that says
+#: "published" would actually open for a learner.
+#:
+#: The workspace showed a published assessment as live whatever was inside it,
+#: so an empty paper, or one holding a draft question or a question under a
+#: draft competency, was indistinguishable from a working one until a learner
+#: hit `app.start_assessment_attempt` and was refused. `is_ready` is that
+#: function's own condition, stated per row.
+#:
+#: Driven from `app.assessments` rather than from the membership, so an
+#: assessment with nothing in it still comes back — as the unready row it is,
+#: rather than as a row the caller has to guess the meaning of its absence for.
+#: The joins onto the membership are outer for the same reason.
+#: `readiness_reason` names the one thing to fix, because a boolean cannot. A
+#: row that says only "not ready" sends the teacher looking through the
+#: membership, the bank and the competencies to find out which of them it meant.
+#: The counts are gathered in the inner query and read twice in the outer one,
+#: which is the whole reason for the nesting: an alias in a select list is not
+#: available to its neighbours, and repeating three aggregates in a CASE would
+#: leave two places for the same rule to drift.
+#:
+#: It is null when nothing is missing, which is not the same claim as
+#: `is_ready`. A draft assessment that is complete has no missing dependency —
+#: the only thing left is the decision to publish it, which `status` already
+#: reports — so it reads as ready-to-publish rather than as broken.
 _MEMBERSHIP_COUNTS_SQL = """
 select
-  assessment_questions.assessment_id,
-  count(*) as question_total
-from app.assessment_questions
-where assessment_questions.assessment_id = any($1::uuid[])
-group by assessment_questions.assessment_id
+  setup.assessment_id,
+  setup.question_total,
+  (
+    setup.published
+    and setup.question_total > 0
+    and setup.unpublished_question_total = 0
+    and setup.unpublished_competency_total = 0
+  ) as is_ready,
+  (case
+     when setup.question_total = 0 then 'no_questions'
+     when setup.unpublished_question_total > 0 then 'draft_question'
+     when setup.unpublished_competency_total > 0 then 'draft_competency'
+   end) as readiness_reason
+from (
+  select
+    assessments.assessment_id,
+    assessments.status = 'published'::app.publication_status as published,
+    count(assessment_questions.question_id)::integer as question_total,
+    count(*) filter (
+      where assessment_questions.question_id is not null
+        and questions.status is distinct from 'published'::app.publication_status
+    )::integer as unpublished_question_total,
+    count(*) filter (
+      where assessment_questions.question_id is not null
+        and competencies.status is distinct from 'published'::app.publication_status
+    )::integer as unpublished_competency_total
+  from app.assessments
+  left join app.assessment_questions
+    on assessment_questions.assessment_id = assessments.assessment_id
+  left join app.questions on questions.question_id = assessment_questions.question_id
+  left join app.competencies on competencies.competency_id = questions.competency_id
+  where assessments.assessment_id = any($1::uuid[])
+  group by assessments.assessment_id, assessments.status
+) as setup
 """
 
 #: Attempts a learner has open on an assessment.
@@ -535,6 +589,14 @@ where assessment_attempts.assessment_id = $1
 #: one that failed. An unpublished question, or an inactive grade, would reach a
 #: learner as a broken assessment. duration_minutes needs no check here: the
 #: table constrains it to 1..480 and forbids null.
+#:
+#: `unpublished_competency_total` counts the questions whose *competency* is not
+#: published, which is a different failure from an unpublished question and used
+#: to be nobody's check. `app.start_assessment_attempt` requires both — it
+#: counts a question as deliverable only when the question and its competency
+#: are published — so an assessment whose question sat under a draft competency
+#: passed publication here and then refused to open for the learner, with
+#: nothing on the teacher's side saying why.
 _PUBLICATION_READINESS_SQL = """
 select
   assessments.status as assessment_status,
@@ -550,7 +612,15 @@ select
     join app.questions using (question_id)
     where assessment_questions.assessment_id = assessments.assessment_id
       and questions.status <> 'published'
-  ) as unpublished_total
+  ) as unpublished_total,
+  (
+    select count(*)
+    from app.assessment_questions
+    join app.questions using (question_id)
+    join app.competencies using (competency_id)
+    where assessment_questions.assessment_id = assessments.assessment_id
+      and competencies.status <> 'published'
+  ) as unpublished_competency_total
 from app.assessments
 join app.grade_levels using (grade_id)
 where assessments.assessment_id = $1
@@ -589,15 +659,68 @@ where activity_questions.activity_id = $1
 order by activity_questions.position
 """  # noqa: S608
 
-#: Membership sizes for a page of activities, in one round trip. A listing
-#: needs the count per row to show whether an activity can be published.
+#: Membership sizes and delivery readiness for a page of activities, in one
+#: round trip. A listing needs the count per row to show whether an activity
+#: can be published, and the readiness to show whether one that says
+#: "published" would actually open for a learner.
+#:
+#: The same reading as `_MEMBERSHIP_COUNTS_SQL`, with the two conditions an
+#: activity has that a paper does not: its module and that module's competency
+#: must be published as well, which is what `activities_select` requires before
+#: a learner can see it at all. `question_competencies` is the competency each
+#: question belongs to, which is a different row from the module's.
+#: `draft_module` covers the module's own competency as well as the module. A
+#: module whose competency is a draft cannot be published and is hidden from
+#: learners by `learning_modules_select` either way, so the place the teacher
+#: has to go is the module — naming the competency instead would send them to
+#: the wrong screen.
 _ACTIVITY_MEMBERSHIP_COUNTS_SQL = """
 select
-  activity_questions.activity_id,
-  count(*) as question_total
-from app.activity_questions
-where activity_questions.activity_id = any($1::uuid[])
-group by activity_questions.activity_id
+  setup.activity_id,
+  setup.question_total,
+  (
+    setup.published
+    and setup.module_published
+    and setup.question_total > 0
+    and setup.unpublished_question_total = 0
+    and setup.unpublished_competency_total = 0
+  ) as is_ready,
+  (case
+     when setup.question_total = 0 then 'no_questions'
+     when setup.unpublished_question_total > 0 then 'draft_question'
+     when setup.unpublished_competency_total > 0 then 'draft_competency'
+     when not setup.module_published then 'draft_module'
+   end) as readiness_reason
+from (
+  select
+    activities.activity_id,
+    activities.status = 'published'::app.publication_status as published,
+    (
+      learning_modules.status = 'published'::app.publication_status
+      and competencies.status = 'published'::app.publication_status
+    ) as module_published,
+    count(activity_questions.question_id)::integer as question_total,
+    count(*) filter (
+      where activity_questions.question_id is not null
+        and questions.status is distinct from 'published'::app.publication_status
+    )::integer as unpublished_question_total,
+    count(*) filter (
+      where activity_questions.question_id is not null
+        and question_competencies.status
+            is distinct from 'published'::app.publication_status
+    )::integer as unpublished_competency_total
+  from app.activities
+  join app.learning_modules on learning_modules.module_id = activities.module_id
+  join app.competencies on competencies.competency_id = learning_modules.competency_id
+  left join app.activity_questions
+    on activity_questions.activity_id = activities.activity_id
+  left join app.questions on questions.question_id = activity_questions.question_id
+  left join app.competencies as question_competencies
+    on question_competencies.competency_id = questions.competency_id
+  where activities.activity_id = any($1::uuid[])
+  group by
+    activities.activity_id, activities.status, learning_modules.status, competencies.status
+) as setup
 """
 
 #: Whether an activity has an attempt somebody is part-way through.
@@ -618,6 +741,14 @@ where activity_attempts.activity_id = $1
 #: module's competency are published too — `activities_select` says so — and an
 #: activity with no questions, or with a draft one in it, would be delivered
 #: empty or short.
+#:
+#: `competency_status` is the *module's* competency, which is not the competency
+#: a question belongs to: a question may be authored under any competency, so an
+#: activity whose module is published can still hold a question whose own
+#: competency is a draft. `app.start_activity_attempt` counts a question as
+#: deliverable only when the question and that question's competency are both
+#: published, so `unpublished_competency_total` is the condition that was missing
+#: between this check and the one the learner actually meets.
 _ACTIVITY_PUBLICATION_READINESS_SQL = """
 select
   activities.status as activity_status,
@@ -634,7 +765,16 @@ select
     join app.questions using (question_id)
     where activity_questions.activity_id = activities.activity_id
       and questions.status <> 'published'
-  ) as unpublished_total
+  ) as unpublished_total,
+  (
+    select count(*)
+    from app.activity_questions
+    join app.questions using (question_id)
+    join app.competencies as question_competencies
+      on question_competencies.competency_id = questions.competency_id
+    where activity_questions.activity_id = activities.activity_id
+      and question_competencies.status <> 'published'
+  ) as unpublished_competency_total
 from app.activities
 join app.learning_modules using (module_id)
 join app.competencies using (competency_id)
@@ -1220,14 +1360,49 @@ async def assessment_question_ids(
     return [row["question_id"] for row in rows]
 
 
-async def assessment_question_counts(
+@dataclass(frozen=True)
+class SetupStatus:
+    """What a workspace row can say about whether a record would deliver.
+
+    Three answers rather than one, because a teacher looking at "not ready"
+    still has to find out which of the membership, the question bank, the
+    competencies or the module it meant.
+    """
+
+    question_count: int
+    is_ready: bool
+    #: The one missing dependency to name, or None when nothing is missing.
+    #: None is not the same claim as `is_ready`: a complete draft has nothing
+    #: missing and is simply not published yet, which `status` already says.
+    reason: str | None
+
+
+#: What a record with no row of its own is: nothing in it, and nothing to
+#: deliver. Only reachable for an identifier that has since been removed, since
+#: both statements are driven from the table the page was read from.
+MISSING_SETUP = SetupStatus(question_count=0, is_ready=False, reason="no_questions")
+
+
+def _setup_status(row: Any) -> SetupStatus:
+    return SetupStatus(
+        question_count=int(row["question_total"] or 0),
+        is_ready=bool(row["is_ready"]),
+        reason=row["readiness_reason"],
+    )
+
+
+async def assessment_setup_status(
     connection: ActorConnection, assessment_ids: list[UUID]
-) -> dict[UUID, int]:
-    """Membership sizes for a page of assessments. Absent means zero."""
+) -> dict[UUID, SetupStatus]:
+    """Membership size, delivery readiness and the reason, per assessment.
+
+    Keyed by assessment so a caller pairs the answers with the row they belong
+    to rather than with the one next to it.
+    """
     if not assessment_ids:
         return {}
     rows = await connection.fetch(_MEMBERSHIP_COUNTS_SQL, assessment_ids)
-    return {row["assessment_id"]: row["question_total"] for row in rows}
+    return {row["assessment_id"]: _setup_status(row) for row in rows}
 
 
 async def assessment_publication_readiness(
@@ -1266,14 +1441,19 @@ async def assessment_membership_questions(
     return await connection.fetch(_ASSESSMENT_MEMBERSHIP_QUESTIONS_SQL, assessment_id)
 
 
-async def activity_question_counts(
+async def activity_setup_status(
     connection: ActorConnection, activity_ids: list[UUID]
-) -> dict[UUID, int]:
-    """Membership sizes for a page of activities. Absent means zero."""
+) -> dict[UUID, SetupStatus]:
+    """Membership size, delivery readiness and the reason, per activity.
+
+    The same shape and the same reading as `assessment_setup_status`, with the
+    one reason an activity can have that a paper cannot: a module that is still
+    a draft.
+    """
     if not activity_ids:
         return {}
     rows = await connection.fetch(_ACTIVITY_MEMBERSHIP_COUNTS_SQL, activity_ids)
-    return {row["activity_id"]: row["question_total"] for row in rows}
+    return {row["activity_id"]: _setup_status(row) for row in rows}
 
 
 async def activity_open_attempts(connection: ActorConnection, activity_id: UUID) -> int:

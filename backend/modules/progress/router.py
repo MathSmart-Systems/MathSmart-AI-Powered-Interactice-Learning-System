@@ -8,6 +8,12 @@ own row.
 
 Growth is `current - diagnostic`. The recommended next action is the first
 available item of the learner's own path. Neither consults Groq.
+
+The counts a learner is shown are pairs, and each pair is drawn from one set:
+mastery is counted against the competencies published for their grade, and
+module completion against the modules their own path assigns. The mastered
+figure stays the database's — `app.mastery_band_for` decides a band, and this
+module only reports how many rows it landed on.
 """
 
 from __future__ import annotations
@@ -45,6 +51,18 @@ def _growth(current: Any, diagnostic: Any) -> float | None:
 
 
 def _next_action(path_rows: list[Any]) -> dict[str, Any]:
+    """Where the learner goes next, named by `type` so no client has to read the label.
+
+    The three types are the three states a path can be in, and each names a
+    different destination: an open module, a finished path, or no path at all.
+    A client that routed on the label instead would send a learner who has
+    finished everything to the same screen as a learner who has not started.
+
+    A non-empty path with nothing open can only mean every item is finished.
+    `app.refresh_learning_path` opens the lowest-priority unfinished item
+    whenever the ones before it are done, so "nothing available" and "something
+    left to do" cannot both be true.
+    """
     for row in path_rows:
         if str(row["status"]) in {"available", "in_progress"}:
             return {
@@ -52,7 +70,20 @@ def _next_action(path_rows: list[Any]) -> dict[str, Any]:
                 "resource_id": str(row["module_id"]),
                 "label": f"Continue {row['module_title']}",
             }
-    return {"type": "dashboard", "resource_id": None, "label": "Return to Dashboard"}
+    if path_rows:
+        return {
+            "type": "path_complete",
+            "resource_id": None,
+            "label": "You have finished every module in your learning path",
+        }
+    # The diagnostic is the only thing that writes a learning path, so a learner
+    # without one has nothing to continue and is not being sent somewhere
+    # arbitrary — they are being sent to the step that builds their path.
+    return {
+        "type": "diagnostic",
+        "resource_id": None,
+        "label": "Take your diagnostic assessment to build your learning path",
+    }
 
 
 async def _progress_for(connection: Any, student_id: UUID) -> dict[str, Any]:
@@ -63,7 +94,8 @@ async def _progress_for(connection: Any, student_id: UUID) -> dict[str, Any]:
     competency_rows = await repository.competencies(connection, student_id)
     path_rows = await repository.path(connection, student_id)
     trajectory_rows = await repository.trajectory(connection, student_id)
-    total_modules = await repository.published_module_total(connection)
+    total_competencies = await repository.published_competency_total(connection, student_id)
+    total_modules, modules_completed = await repository.path_module_totals(connection, student_id)
 
     by_competency: dict[str, list[TrajectoryPoint]] = {}
     for row in trajectory_rows:
@@ -78,8 +110,12 @@ async def _progress_for(connection: Any, student_id: UUID) -> dict[str, Any]:
         overall_mastery=_number(summary["current_average"]),
         diagnostic_score=_number(summary["diagnostic_average"]),
         growth=_growth(summary["current_average"], summary["diagnostic_average"]),
-        modules_completed_count=summary["modules_completed"] or 0,
+        modules_completed_count=modules_completed,
         total_modules_count=total_modules,
+        competencies_mastered_count=summary["competencies_mastered"] or 0,
+        total_competencies_count=total_competencies,
+        scored_attempt_count=summary["scored_attempt_count"] or 0,
+        worst_unsuccessful_attempts=summary["worst_unsuccessful_attempts"] or 0,
         active_intervention_count=summary["open_intervention_count"] or 0,
         monitoring_status=(
             str(summary["monitoring_status"]) if summary["monitoring_status"] else None

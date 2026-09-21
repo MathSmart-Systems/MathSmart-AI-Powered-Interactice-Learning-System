@@ -41,6 +41,22 @@ class AssessmentSummary(BaseModel):
     attempt_count: int = 0
     latest_attempt_id: UUID | None = None
     latest_status: str | None = None
+    #: Whether starting this paper would actually succeed — it is published, it
+    #: holds at least one question, and every one of those questions and their
+    #: competencies is published. Those are `app.start_assessment_attempt`'s own
+    #: conditions, so a client that reads this is reading the same rule the
+    #: start would apply. It describes the paper, not the caller.
+    is_ready: bool = False
+    #: Whether this caller may open the paper, decided by the database rather
+    #: than inferred by a client from `latest_status`. One of `available`,
+    #: `in_progress`, `reassessment`, `completed` or `not_ready`. `not_ready`
+    #: wins over the first three whenever `is_ready` is false, because a paper
+    #: nobody can start must not be offered as open; `completed` still wins,
+    #: because a learner who has already sat it has a result to read either way.
+    #: A Teacher/Administrator reading the catalogue has no attempts of their
+    #: own, so they see `available` throughout on a ready paper; it describes
+    #: the caller, not the paper.
+    availability: str | None = None
 
 
 class DeliveredQuestion(BaseModel):
@@ -122,6 +138,27 @@ class AttemptReport(BaseModel):
     competency_results: list[CompetencyResult] = []
     recommended_learning_path: list[PathItem] = []
     next_action: dict[str, str] | None = None
+
+
+class ReviewedQuestion(BaseModel):
+    """One question of a closed attempt, with the verdict already recorded.
+
+    Note what is still missing. There is no correct answer and no answer key,
+    because the column that holds them is not granted to this connection and
+    never will be. A learner is shown what they were asked and what they
+    answered, and told whether it was right — which is what a review is for.
+    Being shown the answer instead is what a retake is for.
+    """
+
+    question_id: UUID
+    position: int
+    competency_id: UUID | None = None
+    competency_name: str | None = None
+    text: str | None = None
+    question_type: str | None = None
+    choices: list[Any] = []
+    submitted_answer: Any = None
+    is_correct: bool | None = None
 
 
 class AttemptSummary(BaseModel):

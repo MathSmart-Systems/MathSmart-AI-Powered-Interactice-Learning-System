@@ -6,16 +6,20 @@ connection cannot read, and the learner's own records are SELECT-only for them.
 
 `ai_feedback` and `ai_hint` are the only advisory fields in the module. They are
 null unless Groq answered, and no score, band, pass decision or intervention
-depends on them.
+depends on them. `ai_hint` is wording placed beside the authored hint, never
+instead of it, so a learner whose Groq call is off, slow or refused reads
+exactly the hint their teacher wrote.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response
+import asyncpg
+from fastapi import APIRouter, Query, Request, Response
 
 from app.dependencies import ActorDb, CurrentActor, TeacherAdmin
 from middleware.auth import MathSmartRole
@@ -34,7 +38,29 @@ from modules.activities.schemas import (
     HintRequest,
     SubmitActivityRequest,
 )
+
+# The one gate that decides whether Groq may be asked anything, imported rather
+# than restated. A Teacher/Administrator who turns `features.groq_advisory` off
+# means it off everywhere, and a second copy of that rule here would be a second
+# thing to keep true.
+from modules.ai.router import _is_groq_feature_enabled
 from modules.competencies.schemas import PublicationStatus
+
+# Practice belongs to a module, and a module the learner's path has not opened
+# yet does not offer its practice either. `app.activity_attempts` refuses the
+# insert with 55000 (object_not_in_prerequisite_state); the documented status
+# table names 412 for locked content, so that is what the caller is told rather
+# than a 500.
+LOCKED_MESSAGE = (
+    "This practice is not open yet. Finish the earlier lessons in your learning path first."
+)
+LOCKED_CODE = "content_locked"
+
+#: What the adapter is asked to do. Wording is the whole of it: the hint itself
+#: is authored, and Groq is given no say in what it says.
+HINT_PURPOSE = "optional hint wording"
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["activities"])
 
@@ -74,6 +100,8 @@ def _summary(row: Any) -> dict[str, Any]:
         points=row["points"],
         mastery_threshold=row["mastery_threshold"],
         status=str(row["status"]),
+        question_count=row["question_count"] or 0,
+        is_ready=bool(row["is_ready"]),
         attempt_count=row["attempt_count"] or 0,
         best_score=_percentage(row["best_score"]),
         path_status=str(row["path_status"]) if row["path_status"] else None,
@@ -91,6 +119,46 @@ def _question(row: Any) -> DeliveredQuestion:
         difficulty=str(row["difficulty"]),
         visual_aid_description=row["visual_aid_description"],
     )
+
+
+async def _advisory_hint(request: Request, *, actor: Any, authored: str | None) -> str | None:
+    """Groq's rephrasing of an authored hint, or None.
+
+    Advisory in the strict sense the module docstring means. It is returned
+    beside the authored hint rather than in place of it, it decides nothing, and
+    every way it can go wrong ends here as None rather than as a failed request.
+
+    A question with no authored hint is one of those ways. There would be
+    nothing to rephrase, and generating one anyway would leave a learner reading
+    machine text with no authored wording behind it — the fallback is the point.
+
+    Only the authored hint is sent. The answer key is not in this process at
+    all: the hint arrives from a database function that reads the key and does
+    not return it, so there is nothing here that could disclose it.
+    """
+    if not authored:
+        return None
+
+    if not await _is_groq_feature_enabled(request, actor):
+        return None
+
+    adviser = getattr(request.app.state, "groq", None)
+    if adviser is None:
+        return None
+
+    try:
+        result = await adviser.advise(
+            purpose=HINT_PURPOSE,
+            evidence={"grade": "Grade 6 mathematics", "authored_hint": authored},
+        )
+    except Exception:
+        # The adapter is written to return None rather than raise. This catch is
+        # what stops that promise from being something a learner's hint depends
+        # on: if it is ever broken, the authored hint still arrives.
+        logger.warning("Advisory hint wording failed; the authored hint is unaffected")
+        return None
+
+    return result.text if result is not None else None
 
 
 def _next_action(passed: bool) -> dict[str, str]:
@@ -176,7 +244,29 @@ async def start_attempt(
     """
     _only_a_learner(actor)
 
-    attempt_row = await repository.start_attempt(connection, activity_id)
+    try:
+        attempt_row = await repository.start_attempt(connection, activity_id)
+    except asyncpg.ObjectNotInPrerequisiteStateError as exc:
+        raise ApiError(412, LOCKED_MESSAGE, code=LOCKED_CODE) from exc
+    except asyncpg.NoDataFoundError as exc:
+        # The activity, its module or its competency is not published. To a
+        # learner that is indistinguishable from it not existing, and saying
+        # so is better than the generic failure this used to become.
+        raise ApiError(404, "No activity was found") from exc
+    except asyncpg.AssertError as exc:
+        # The activity exists but cannot be delivered: it has no questions, or
+        # some of them are unpublished, or an attempt opened before the
+        # question snapshot existed is still sitting there. None of that is
+        # the learner's doing and none of it is a server fault, so it must not
+        # arrive as "the request could not be completed" — which is all this
+        # said before, on every one of these paths.
+        raise ApiError(
+            409,
+            "This practice is not ready yet. Ask your teacher to finish setting it up.",
+            code="activity_not_ready",
+        ) from exc
+    except asyncpg.InsufficientPrivilegeError as exc:
+        raise ApiError(403, "This action belongs to a learner") from exc
     if attempt_row is None:
         raise ApiError(404, "No activity was found")
 
@@ -224,6 +314,10 @@ async def check_answer(
         authored_feedback=row["explanation"],
         explanation=row["explanation"],
         hint_available=bool(row["hint_available"]),
+        # Null deliberately. The player asks `/ai/incorrect-answer-explanation`
+        # itself once it has this verdict, so advising here would make the
+        # verdict wait on Groq for text the learner is about to be offered
+        # anyway — and the verdict is the thing that must never wait.
         ai_feedback=None,
     )
     return {"data": check.model_dump(mode="json")}
@@ -231,18 +325,34 @@ async def check_answer(
 
 @router.post("/activity-attempts/{attempt_id}/hints")
 async def read_hint(
-    actor: CurrentActor, connection: ActorDb, attempt_id: UUID, body: HintRequest
+    actor: CurrentActor,
+    connection: ActorDb,
+    request: Request,
+    attempt_id: UUID,
+    body: HintRequest,
 ) -> dict[str, Any]:
-    """The authored hint for one question. It never discloses the answer."""
+    """The authored hint for one question, and optionally a rephrasing of it.
+
+    Neither discloses the answer. `hint` is the authored text and is what the
+    learner reads; `ai_hint` is extra wording offered beside it and is null
+    whenever Groq is disabled, silent, slow or unexpected.
+
+    The adapter is on `app.state`, so this handler takes the `Request` every
+    other Groq caller takes rather than a new injected dependency. A dependency
+    would be a second route to the same singleton, and the feature gate shared
+    with `/ai/*` needs the request regardless.
+    """
     _only_a_learner(actor)
 
     text = await repository.hint(
         connection, attempt_id=attempt_id, question_id=body.question_id
     )
     return {
-        "data": Hint(question_id=body.question_id, hint=text, ai_hint=None).model_dump(
-            mode="json"
-        )
+        "data": Hint(
+            question_id=body.question_id,
+            hint=text,
+            ai_hint=await _advisory_hint(request, actor=actor, authored=text),
+        ).model_dump(mode="json")
     }
 
 

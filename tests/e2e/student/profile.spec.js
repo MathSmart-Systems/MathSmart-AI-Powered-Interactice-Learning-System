@@ -85,6 +85,21 @@ function overflow(page) {
   );
 }
 
+/**
+ * Opens the profile and waits for it to have finished arriving.
+ *
+ * The screen streams: `goto` resolves while "Loading your profile" is still
+ * on it, and a measurement or a file drop taken at that moment lands on the
+ * fallback rather than the page. It only shows against a cold server, which
+ * is why it reads as an intermittent failure rather than a broken test.
+ */
+async function openProfile(page) {
+  await page.goto("/student/profile");
+  await expect(
+    page.getByRole("heading", { name: "Student Profile & Learning Record", level: 1 }),
+  ).toBeVisible({ timeout: 25_000 });
+}
+
 describe("student profile", () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page, STUDENT_ACCOUNT);
@@ -94,7 +109,7 @@ describe("student profile", () => {
   // ─── What the page says ──────────────────────────────────────────
 
   test("the profile opens as its own page", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await expect(
       page.getByRole("heading", { name: "Student Profile & Learning Record" }),
@@ -103,7 +118,7 @@ describe("student profile", () => {
   });
 
   test("the enrolment facts are labelled, not left bare", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
     const main = page.getByRole("main");
 
     for (const label of ["Grade", "Section", "School"]) {
@@ -114,7 +129,7 @@ describe("student profile", () => {
   });
 
   test("an unset enrolment value reads as words, never as a blank", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
     const main = page.getByRole("main");
 
     // Every definition carries text. A learner with no section assigned sees
@@ -127,7 +142,7 @@ describe("student profile", () => {
   });
 
   test("the page never says a learner's status by colour alone", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     // Both status tiles carry a written label.
     const tiles = page.getByRole("main").locator("h3");
@@ -138,7 +153,7 @@ describe("student profile", () => {
   // ─── Editing the one field a learner owns ────────────────────────
 
   test("the name dialog opens with the learner's current name", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const heading = page.getByRole("heading", { level: 2 }).first();
     const currentName = (await heading.innerText()).trim();
@@ -150,7 +165,7 @@ describe("student profile", () => {
   });
 
   test("an abandoned draft does not come back on reopen", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const heading = page.getByRole("heading", { level: 2 }).first();
     const currentName = (await heading.innerText()).trim();
@@ -170,7 +185,7 @@ describe("student profile", () => {
 
   test("a stale failure is not re-announced on reopen", async ({ page }) => {
     await stubNameSave(page, { fails: true });
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const trigger = page.getByRole("button", { name: "Edit name", exact: true });
     await trigger.click();
@@ -192,7 +207,7 @@ describe("student profile", () => {
 
   test("a failed save keeps the dialog open and keeps what was typed", async ({ page }) => {
     await stubNameSave(page, { fails: true });
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -207,7 +222,7 @@ describe("student profile", () => {
 
   test("a failed save names the field it is about", async ({ page }) => {
     await stubNameSave(page, { fails: true });
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -225,7 +240,7 @@ describe("student profile", () => {
 
   test("a name that is too short is refused without a request", async ({ page }) => {
     const store = await stubNameSave(page);
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -239,7 +254,7 @@ describe("student profile", () => {
 
   test("a name of only spaces is refused", async ({ page }) => {
     const store = await stubNameSave(page);
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -253,7 +268,7 @@ describe("student profile", () => {
 
   test("a saved name appears on the page without a reload", async ({ page }) => {
     const store = await stubNameSave(page, { savedAs: "Saved Without Reload" });
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -270,7 +285,7 @@ describe("student profile", () => {
 
   test("the save names no field a learner may not change", async ({ page }) => {
     const store = await stubNameSave(page);
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -295,7 +310,7 @@ describe("student profile", () => {
   // ─── The profile picture ─────────────────────────────────────────
 
   test("a learner with no picture sees their initials", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const heading = page.getByRole("heading", { level: 2 }).first();
     const name = (await heading.innerText()).trim();
@@ -314,21 +329,21 @@ describe("student profile", () => {
   });
 
   test("the picture controls say what may be uploaded", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await expect(page.getByRole("button", { name: /(Add|Change) picture/ })).toBeVisible();
     await expect(page.getByText(/JPEG, PNG or WebP, up to 2 MB/)).toBeVisible();
   });
 
   test("the file input offers only the types the bucket accepts", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const input = page.locator('input[type="file"]');
     await expect(input).toHaveAttribute("accept", "image/jpeg,image/png,image/webp");
   });
 
   test("an oversized image is refused before anything is uploaded", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     // 3 MB, past the 2 MiB the bucket allows.
     await page.locator('input[type="file"]').setInputFiles({
@@ -341,7 +356,7 @@ describe("student profile", () => {
   });
 
   test("a file that is not an image is refused", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "not-a-picture.pdf",
@@ -353,7 +368,7 @@ describe("student profile", () => {
   });
 
   test("an SVG is refused, whatever it is called", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     // The type is what is checked, not the name — an SVG can carry script.
     await page.locator('input[type="file"]').setInputFiles({
@@ -368,7 +383,7 @@ describe("student profile", () => {
   // ─── Keyboard and focus ──────────────────────────────────────────
 
   test("the name dialog can be opened, completed and dismissed by keyboard", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const trigger = page.getByRole("button", { name: "Edit name", exact: true });
     await trigger.focus();
@@ -384,7 +399,7 @@ describe("student profile", () => {
   });
 
   test("the picture controls are reachable by keyboard", async ({ page }) => {
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     // The file input itself is hidden from the tab order on purpose; the
     // button in front of it is the control, so it must be focusable.
@@ -399,6 +414,8 @@ describe("student profile", () => {
 
   test("a signed-out visitor cannot open the profile", async ({ page, context }) => {
     await context.clearCookies();
+    // Plain navigation, not `openProfile`: this visitor must never reach the
+    // profile, so waiting for its heading would be waiting for the failure.
     await page.goto("/student/profile");
 
     await expect(page).toHaveURL(/\/login/);
@@ -436,7 +453,7 @@ describe("student profile", () => {
   for (const viewport of VIEWPORTS) {
     test(`the profile fits a ${viewport.name} at ${viewport.width}px`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto("/student/profile");
+      await openProfile(page);
       await expect(
         page.getByRole("heading", { name: "Student Profile & Learning Record" }),
       ).toBeVisible();
@@ -450,7 +467,7 @@ describe("student profile", () => {
 
   test("a long email cannot widen the page", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 568 });
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     // The defect this guards: an email is one unbreakable token, so without
     // `min-w-0` and `break-all` a realistic address painted through the card
@@ -467,7 +484,7 @@ describe("student profile", () => {
 
   test("the identity row is one line on a wide screen", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const picture = page.getByTestId("profile-avatar");
     const editButton = page.getByRole("button", { name: "Edit name", exact: true });
@@ -484,7 +501,7 @@ describe("student profile", () => {
 
   test("the identity row stacks on a phone", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto("/student/profile");
+    await openProfile(page);
 
     const picture = page.getByTestId("profile-avatar");
     const editButton = page.getByRole("button", { name: "Edit name", exact: true });

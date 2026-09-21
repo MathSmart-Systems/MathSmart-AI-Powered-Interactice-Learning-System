@@ -30,6 +30,60 @@ export function pathStatus(value) {
   return PATH_STATUS[value] ?? { label: "Ready to start", verb: "Open", hint: null };
 }
 
+/**
+ * What a card says about an activity the API reports as not startable.
+ *
+ * `is_ready` is the API's own answer to "would starting this work?", computed
+ * beside the refusal the start route raises, so the card and the server cannot
+ * disagree. Three published activities had no questions at all, and every one
+ * of them offered a learner a Start button that could only end in a 409. The
+ * wording names the teacher deliberately: a child who presses something that
+ * fails assumes they broke it, and nothing here is their doing.
+ */
+export const NOT_READY_STATUS = Object.freeze({
+  label: "Not ready yet",
+  hint: "Your teacher is still adding the questions. It will open here as soon as they finish, and you have not missed anything.",
+});
+
+/**
+ * Why an activity cannot be started, or `null` when it can.
+ *
+ * Both reasons close the card, so neither can produce a false invitation, and
+ * the order between them is about which sentence helps more. "Opens later"
+ * comes first because a learner can act on it — finish the earlier lessons —
+ * whereas a locked activity that is also unfinished may well have its
+ * questions by the time the path reaches it.
+ *
+ * @param {{pathStatus: string|null, isReady: boolean}} activity a row from `buildActivityList`
+ * @returns {{kind: string, label: string, hint: string}|null}
+ */
+export function activityGate(activity) {
+  if (!activity) return null;
+
+  if (activity.pathStatus === "locked") {
+    return { kind: "locked", ...PATH_STATUS.locked };
+  }
+  if (activity.isReady === false) {
+    return { kind: "not_ready", ...NOT_READY_STATUS };
+  }
+  return null;
+}
+
+/**
+ * Whether the API says this activity could actually be started.
+ *
+ * `is_ready` is trusted whenever it is present. A payload from before the
+ * field existed falls back to the question count, and a payload carrying
+ * neither is treated as ready — the start route still refuses what it must,
+ * and hiding every card behind a field an older build never sent would be a
+ * worse failure than the one being fixed.
+ */
+function readsAsReady(entry) {
+  if (typeof entry.is_ready === "boolean") return entry.is_ready;
+  if (typeof entry.question_count === "number") return entry.question_count > 0;
+  return true;
+}
+
 /** `app.mastery_band` written out for a Grade 6 learner. */
 export const MASTERY_BAND = Object.freeze({
   Mastered: Object.freeze({ label: "Mastered", fill: 3 }),
@@ -86,6 +140,9 @@ export function buildActivityList(items) {
         masteryThreshold: entry.mastery_threshold ?? null,
         pathStatus: entry.path_status ?? null,
         status: statusFor,
+        questionCount:
+          typeof entry.question_count === "number" ? entry.question_count : null,
+        isReady: readsAsReady(entry),
         attemptCount: entry.attempt_count ?? 0,
         bestScore:
           typeof entry.best_score === "number" ? entry.best_score : null,
@@ -114,6 +171,12 @@ export function toQuestionView(detail) {
     points: detail.points ?? null,
     masteryThreshold: detail.mastery_threshold ?? null,
     pathStatus: detail.path_status ?? null,
+    // Carried through to the player so a learner who arrived by a stale link
+    // is told the activity is unfinished before an attempt is requested for
+    // it, rather than after the start route has refused one.
+    questionCount:
+      typeof detail.question_count === "number" ? detail.question_count : null,
+    isReady: readsAsReady(detail),
     questions: questions.map((question, index) => ({
       id: String(question.id),
       competencyId: question.competency_id ? String(question.competency_id) : null,
@@ -172,4 +235,49 @@ export function toOutcomeView(outcome) {
     interventionCreated: outcome.intervention_created === true,
     nextAction: outcome.next_action ?? null,
   };
+}
+/** The kinds of refusal the player has its own screen for. */
+export const REFUSAL = Object.freeze({
+  NOT_READY: "not_ready",
+  LOCKED: "locked",
+  MISSING: "missing",
+  FAULT: "fault",
+});
+
+/**
+ * Which refusal an API failure is, so the player can show it as itself.
+ *
+ * The backend already answers these precisely — 409 `activity_not_ready` for
+ * a published activity with no deliverable questions, 412 `content_locked`
+ * for one the learning path has not opened, 404 for one that is not there —
+ * and every one of them used to land on the same red "Activity unavailable"
+ * panel, which reads as a fault and invites a retry that cannot help. Three
+ * of the four are ordinary answers rather than breakages, and are marked as
+ * notices so the marking-pen red is kept for something actually wrong.
+ *
+ * The code is preferred over the status because it is the narrower statement;
+ * the status is the fallback for a body that never parsed.
+ *
+ * @param {{status: number|null, code: string|null}} failure
+ * @returns {{kind: string, title: string, isFault: boolean}}
+ */
+export function startRefusal({ status = null, code = null } = {}) {
+  if (code === "activity_not_ready" || code === "empty_activity" || status === 409) {
+    return {
+      kind: REFUSAL.NOT_READY,
+      title: "This activity is not ready yet",
+      isFault: false,
+    };
+  }
+  if (code === "content_locked" || status === 412) {
+    return { kind: REFUSAL.LOCKED, title: "This activity is not open yet", isFault: false };
+  }
+  if (status === 404) {
+    return {
+      kind: REFUSAL.MISSING,
+      title: "This activity could not be found",
+      isFault: false,
+    };
+  }
+  return { kind: REFUSAL.FAULT, title: "Activity unavailable", isFault: true };
 }

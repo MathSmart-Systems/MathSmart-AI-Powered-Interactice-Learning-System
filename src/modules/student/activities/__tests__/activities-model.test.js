@@ -9,9 +9,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  activityGate,
   buildActivityList,
   masteryBand,
   pathStatus,
+  startRefusal,
+  REFUSAL,
   toAttemptView,
   toOptions,
   toOutcomeView,
@@ -200,5 +203,123 @@ describe("question type surface", () => {
       [...SUPPORTED_QUESTION_TYPES].sort(),
       ["fill_blank", "multiple_choice", "number_input"],
     );
+  });
+});
+
+describe("readiness on a catalogue row", () => {
+  const ROW = {
+    id: "a1",
+    title: "Comparing fractions",
+    path_status: "available",
+    question_count: 5,
+    is_ready: true,
+  };
+
+  it("carries the API's own readiness and question count onto the card", () => {
+    const [activity] = buildActivityList([ROW]);
+
+    assert.equal(activity.isReady, true);
+    assert.equal(activity.questionCount, 5);
+  });
+
+  it("believes is_ready over the question count", () => {
+    // A published activity can have questions and still be undeliverable, so
+    // the field that means "a start would succeed" wins over the tally.
+    const [activity] = buildActivityList([{ ...ROW, is_ready: false }]);
+
+    assert.equal(activity.isReady, false);
+  });
+
+  it("reads a published activity with no questions as not ready", () => {
+    const [activity] = buildActivityList([
+      { ...ROW, is_ready: undefined, question_count: 0 },
+    ]);
+
+    assert.equal(activity.isReady, false);
+  });
+
+  it("treats a row from before the field existed as ready", () => {
+    // Hiding every card behind a field an older payload never sent would be a
+    // worse failure than the one being fixed.
+    const [activity] = buildActivityList([
+      { id: "a2", title: "Older payload", path_status: "available" },
+    ]);
+
+    assert.equal(activity.isReady, true);
+    assert.equal(activity.questionCount, null);
+  });
+
+  it("carries readiness through to the player's own view", () => {
+    const view = toQuestionView({ id: "a1", is_ready: false, question_count: 0, questions: [] });
+
+    assert.equal(view.isReady, false);
+    assert.equal(view.questionCount, 0);
+  });
+});
+
+describe("activityGate", () => {
+  const READY = { pathStatus: "available", isReady: true };
+
+  it("lets a ready, unlocked activity through", () => {
+    assert.equal(activityGate(READY), null);
+  });
+
+  it("closes an activity the API says could not be started", () => {
+    const gate = activityGate({ ...READY, isReady: false });
+
+    assert.equal(gate.kind, "not_ready");
+    assert.equal(gate.label, "Not ready yet");
+    assert.match(gate.hint, /teacher/i);
+  });
+
+  it("never offers a not-ready activity the words of a ready one", () => {
+    assert.notEqual(activityGate({ ...READY, isReady: false }).label, "Ready to start");
+  });
+
+  it("closes a locked activity, and says so before it says anything else", () => {
+    // Both reasons close the card, so the one a learner can act on is the one
+    // they are given.
+    const gate = activityGate({ pathStatus: "locked", isReady: false });
+
+    assert.equal(gate.kind, "locked");
+    assert.equal(gate.label, "Opens later");
+  });
+});
+
+describe("startRefusal", () => {
+  it("names an unfinished activity as unfinished rather than as a fault", () => {
+    const refusal = startRefusal({ status: 409, code: "activity_not_ready" });
+
+    assert.equal(refusal.kind, REFUSAL.NOT_READY);
+    assert.equal(refusal.isFault, false);
+    assert.match(refusal.title, /not ready/i);
+  });
+
+  it("names a locked activity as locked", () => {
+    const refusal = startRefusal({ status: 412, code: "content_locked" });
+
+    assert.equal(refusal.kind, REFUSAL.LOCKED);
+    assert.equal(refusal.isFault, false);
+  });
+
+  it("names a missing activity as missing", () => {
+    assert.equal(startRefusal({ status: 404 }).kind, REFUSAL.MISSING);
+  });
+
+  it("reads the code when a status is all that is odd", () => {
+    // The code is the narrower statement, so it wins where the two disagree.
+    assert.equal(startRefusal({ status: 500, code: "content_locked" }).kind, REFUSAL.LOCKED);
+  });
+
+  it("keeps the marking-pen red for something that genuinely broke", () => {
+    const refusal = startRefusal({ status: 500, code: null });
+
+    assert.equal(refusal.kind, REFUSAL.FAULT);
+    assert.equal(refusal.isFault, true);
+  });
+
+  it("treats a failure it knows nothing about as a fault", () => {
+    assert.equal(startRefusal({}).isFault, true);
+    assert.equal(startRefusal().isFault, true);
   });
 });

@@ -42,7 +42,24 @@ _CATALOGUE_COLUMNS = """
    join app.student_profiles
      on student_profiles.student_id = learning_path_items.student_id
    where learning_path_items.module_id = activities.module_id
-     and student_profiles.user_id = $1) as path_status
+     and student_profiles.user_id = $1) as path_status,
+  membership.question_count,
+  -- Whether starting this activity would actually succeed, answered here
+  -- rather than guessed from `status` by every client that lists it.
+  --
+  -- A published activity with nothing in it, or holding a question whose
+  -- competency is still a draft, looks live in the catalogue and then refuses
+  -- `start_activity_attempt` with "The activity has no complete published
+  -- question set" — a learner opened it, waited, and was told the practice was
+  -- not ready. The conditions below are that function's conditions, so the
+  -- catalogue and the start cannot disagree about what is deliverable.
+  (
+    activities.status = 'published'::app.publication_status
+    and learning_modules.status = 'published'::app.publication_status
+    and competencies.status = 'published'::app.publication_status
+    and membership.question_count > 0
+    and membership.deliverable_count = membership.question_count
+  ) as is_ready
 """
 
 _CATALOGUE_JOINS = """
@@ -50,6 +67,34 @@ from app.activities
 join app.learning_modules on learning_modules.module_id = activities.module_id
 join app.competencies
   on competencies.competency_id = learning_modules.competency_id
+"""
+
+# How many questions the activity holds, and how many of those a learner could
+# actually be given.
+#
+# The joins are outer on purpose. Under this caller's own row policies a draft
+# question, or one under a draft competency, is simply not there — so an inner
+# join would drop the membership row from both counts, the two would agree, and
+# an activity nobody can start would report itself ready. Keeping the row with a
+# null question is what makes the shortfall visible.
+#
+# `competencies` is already joined above as the *module's* competency, which is
+# a different row from the competency a question belongs to; the alias keeps the
+# two apart.
+_CATALOGUE_MEMBERSHIP_JOIN = """
+left join lateral (
+  select
+    count(*)::integer as question_count,
+    count(*) filter (
+      where questions.status = 'published'::app.publication_status
+        and question_competencies.status = 'published'::app.publication_status
+    )::integer as deliverable_count
+  from app.activity_questions
+  left join app.questions on questions.question_id = activity_questions.question_id
+  left join app.competencies as question_competencies
+    on question_competencies.competency_id = questions.competency_id
+  where activity_questions.activity_id = activities.activity_id
+) as membership on true
 """
 
 # The list carries the caller's own attempt columns, so $1 is the user id and
@@ -75,11 +120,15 @@ where ($1::uuid is null or activities.module_id = $1)
 _LIST_SQL = f"""
 select {_CATALOGUE_COLUMNS}
 {_CATALOGUE_JOINS}
+{_CATALOGUE_MEMBERSHIP_JOIN}
 {_LIST_FILTERS}
 order by activities.title
 limit $6 offset $7
 """
 
+# The count carries no catalogue columns, so it carries no membership join
+# either: it answers how many activities match, and readiness is a property of
+# each row rather than of the result set.
 _LIST_COUNT_SQL = f"""
 select count(*) as total
 {_CATALOGUE_JOINS}
@@ -89,6 +138,7 @@ select count(*) as total
 _DETAIL_SQL = f"""
 select {_CATALOGUE_COLUMNS}
 {_CATALOGUE_JOINS}
+{_CATALOGUE_MEMBERSHIP_JOIN}
 where activities.activity_id = $2
 """
 

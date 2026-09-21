@@ -103,7 +103,8 @@ select is(
 select is(
   (select submitted.overall_score
    from app.submit_assessment_attempt(
-     (select attempt_id from app.assessment_attempts),
+     (select attempt_id from app.assessment_attempts
+   where assessment_attempts.student_id = '5d000000-0000-4000-8000-000000000001'),
      '[{"question_id": "ed000000-0000-4000-8000-000000000001", "answer": "5"}]'::jsonb
    ) as submitted),
   0.00::numeric(5,2),
@@ -192,8 +193,17 @@ select is(
   'The latest diagnostic attempt is voided'
 );
 
+-- Scoped to this file's own learner.
+--
+-- These assertions read `app.activity_attempts` with no predicate, which is
+-- only correct while the table holds exactly one row — true on the database CI
+-- resets before each run, and false on a workstation that has a learner in it.
+-- The subquery then raises "more than one row returned by a subquery used as
+-- an expression" and the file reports an error rather than a result.
+
 select is(
-  (select assessment_attempts.voided_by from app.assessment_attempts),
+  (select assessment_attempts.voided_by from app.assessment_attempts
+   where assessment_attempts.student_id = '5d000000-0000-4000-8000-000000000001'),
   '4d000000-0000-4000-8000-000000000001'::uuid,
   'The void records the educator who did it, resolved from auth.uid()'
 );

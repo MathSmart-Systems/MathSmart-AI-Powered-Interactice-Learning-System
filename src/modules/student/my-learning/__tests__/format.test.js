@@ -10,10 +10,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  completionSentence,
   formatMinutes,
   formatPercent,
   progressLabel,
+  readingLabel,
   toNumber,
 } from "../utils/format.js";
 
@@ -62,18 +62,24 @@ describe("formatPercent", () => {
   });
 });
 
-describe("completionSentence", () => {
-  it("finishes a complete lesson plainly", () => {
-    assert.equal(completionSentence({ percent: 100, isComplete: true }), "You have finished this lesson.");
+describe("readingLabel", () => {
+  it("reports reading as reading and never as completion", () => {
+    assert.equal(readingLabel(42), "42% read");
+    assert.equal(readingLabel(100), "All read");
   });
 
-  it("refuses to print a fake zero for a lesson never started", () => {
-    assert.equal(completionSentence({ percent: 0, isComplete: false }), "You have not started this lesson yet.");
-    assert.equal(completionSentence({ percent: null, isComplete: false }), "You have not started this lesson yet.");
+  it("refuses to print a fake zero for a lesson never opened", () => {
+    assert.equal(readingLabel(0), "Not read yet");
+    assert.equal(readingLabel(null), "Not read yet");
+    assert.equal(readingLabel(undefined), "Not read yet");
   });
 
-  it("reports a real number once work exists", () => {
-    assert.equal(completionSentence({ percent: 42, isComplete: false }), "42% of this lesson is complete.");
+  it("never says a lesson is finished, whatever the number", () => {
+    for (const percent of [0, 1, 50, 99, 100]) {
+      const label = readingLabel(percent);
+      assert.equal(label.toLowerCase().includes("finish"), false);
+      assert.equal(label.toLowerCase().includes("complete"), false);
+    }
   });
 });
 

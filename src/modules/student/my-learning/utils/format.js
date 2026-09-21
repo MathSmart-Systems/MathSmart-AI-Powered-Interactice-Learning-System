@@ -34,22 +34,27 @@ export function formatPercent(value) {
 }
 
 /**
- * How a learner's place in a module reads as a sentence.
+ * How much of a lesson a learner has read, in words about reading.
  *
- * The completion percentage is the backend's number; the words around it are
- * ours. A module that has not been started has no number at all, because "0%"
- * would pretend a value that was never given.
+ * This used to be `completionSentence`, and it said "42% of this lesson is
+ * complete". Since completion became a passed activity rather than a read page,
+ * that sentence claimed something the database no longer agrees with: a learner
+ * who had read every word of a lesson they had not yet practised was told the
+ * lesson was 100% complete and then found the next one still shut.
+ *
+ * The number is still the backend's; only the noun changed. Reading is reported
+ * as reading, and the reader says separately what finishes the lesson. A lesson
+ * never opened still has no number at all, because "0% read" would pretend a
+ * value nobody recorded.
  */
-export function completionSentence({ percent, isComplete }) {
-  if (isComplete) {
-    return "You have finished this lesson.";
+export function readingLabel(percent) {
+  if (percent === null || percent === undefined || percent === 0) {
+    return "Not read yet";
   }
-
-  if (percent === null || percent === 0) {
-    return "You have not started this lesson yet.";
+  if (percent >= 100) {
+    return "All read";
   }
-
-  return `${percent}% of this lesson is complete.`;
+  return `${percent}% read`;
 }
 
 /** Shortest honest words for a row: "Finished", "Not started", "42% done". */

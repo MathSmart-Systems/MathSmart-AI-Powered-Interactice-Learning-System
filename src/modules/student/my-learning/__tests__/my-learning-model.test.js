@@ -15,6 +15,7 @@ import {
   activityRoute,
   buildModuleReaderModel,
   buildMyLearningModel,
+  isLockedModule,
   moduleRoute,
   MY_LEARNING_ROUTE,
 } from "../utils/my-learning-model.js";
@@ -134,13 +135,15 @@ describe("buildMyLearningModel", () => {
     assert.equal(model.browse[0].cta, "Open this module");
   });
 
-  it("reads a finished browse module as reviewable", () => {
+  it("reads a fully read browse module as read, not as finished", () => {
+    // "Finished" would be a claim about mastery. Off the path there is no
+    // activity result to make it with, so the row reports the reading.
     const model = buildMyLearningModel({
       modules: [catalogueItem({ module_id: MODULE_B, is_complete: true })],
       pathItems: [],
     });
     assert.equal(model.browse[0].statusValue, "completed");
-    assert.equal(model.browse[0].pathStatus.label, "Finished");
+    assert.equal(model.browse[0].pathStatus.label, "All read");
     assert.equal(model.browse[0].cta, "Review this module");
   });
 
@@ -157,6 +160,62 @@ describe("buildMyLearningModel", () => {
     });
     assert.equal(model.browse[0].statusValue, "locked");
     assert.equal(model.browse[0].completionPercentage, 100);
+  });
+
+  it("names the first unfinished lesson above a locked path row", () => {
+    const MODULE_C = "3f1b6f0a-1f2d-4f0b-9a5a-6b7c8d9e0f11";
+    const model = buildMyLearningModel({
+      modules: [
+        catalogueItem({ module_id: MODULE_A, is_complete: true, completion_percentage: 100 }),
+        catalogueItem({ module_id: MODULE_B, title: "Fraction Addition", is_complete: false }),
+        catalogueItem({ module_id: MODULE_C, title: "Decimal Places", is_complete: false }),
+      ],
+      pathItems: [
+        pathItem({ priority: 1, status: "completed", module: { id: MODULE_A, title: "Integer Sign Rules" } }),
+        pathItem({ priority: 2, status: "in_progress", module: { id: MODULE_B, title: "Fraction Addition" } }),
+        pathItem({ priority: 3, status: "locked", module: { id: MODULE_C, title: "Decimal Places" } }),
+      ],
+    });
+
+    assert.equal(model.path[0].isLocked, false);
+    assert.equal(model.path[1].isLocked, false);
+    assert.equal(model.path[1].pathStatus.label, "In progress");
+    assert.equal(model.path[2].isLocked, true);
+    assert.equal(model.path[2].blockedByTitle, "Fraction Addition");
+  });
+
+  it("skips over finished lessons when naming what would open a locked row", () => {
+    const model = buildMyLearningModel({
+      modules: [
+        catalogueItem({ module_id: MODULE_A, is_complete: true, completion_percentage: 100 }),
+        catalogueItem({ module_id: MODULE_B, title: "Fraction Addition", is_complete: false }),
+      ],
+      pathItems: [
+        pathItem({ priority: 1, status: "completed", module: { id: MODULE_A, title: "Integer Sign Rules" } }),
+        pathItem({ priority: 2, status: "locked", module: { id: MODULE_B, title: "Fraction Addition" } }),
+      ],
+    });
+
+    assert.equal(model.path[1].isLocked, true);
+    assert.equal(model.path[1].blockedByTitle, null);
+  });
+
+  it("never locks a path row the learner has already finished", () => {
+    const model = buildMyLearningModel({
+      modules: [catalogueItem({ module_id: MODULE_A, is_complete: true })],
+      pathItems: [pathItem({ status: "locked" })],
+    });
+    assert.equal(model.path[0].isLocked, false);
+    assert.equal(model.path[0].blockedByTitle, null);
+  });
+
+  it("locks a browse row without naming a lesson it cannot see", () => {
+    const model = buildMyLearningModel({
+      modules: [catalogueItem({ module_id: MODULE_B, path_status: "locked" })],
+      pathItems: [],
+    });
+    assert.equal(model.browse[0].isLocked, true);
+    assert.equal(model.browse[0].blockedByTitle, null);
   });
 
   it("reports an empty catalogue before anything else", () => {
@@ -272,5 +331,32 @@ describe("buildModuleReaderModel", () => {
     assert.equal(model.exampleCount, 0);
     assert.equal(model.sections.length, 0);
     assert.equal(model.progress.percent, 0);
+  });
+});
+
+describe("isLockedModule", () => {
+  it("shuts a lesson the learner's path has not opened", () => {
+    assert.equal(isLockedModule({ pathStatus: "locked", progress: { isComplete: false } }), true);
+  });
+
+  it("lets a learner back into a locked lesson they already finished", () => {
+    assert.equal(isLockedModule({ pathStatus: "locked", progress: { isComplete: true } }), false);
+  });
+
+  it("leaves every other lesson open, including one off the path", () => {
+    assert.equal(isLockedModule({ pathStatus: "in_progress", progress: { isComplete: false } }), false);
+    assert.equal(isLockedModule({ pathStatus: null, progress: { isComplete: false } }), false);
+    assert.equal(isLockedModule({}), false);
+  });
+
+  it("reads a real reader model built from the API shape", () => {
+    const locked = buildModuleReaderModel({
+      id: MODULE_B,
+      title: "Decimal Places",
+      path_status: "locked",
+      section_ids: ["objective"],
+      progress: { completion_percentage: 0, is_complete: false, completed_section_ids: [] },
+    });
+    assert.equal(isLockedModule(locked), true);
   });
 });

@@ -9,7 +9,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { catalogueStatus, MODULE_STATUS, pathItemStatus } from "../utils/status.js";
+import {
+  catalogueStatus,
+  isLockedStatus,
+  MODULE_STATUS,
+  pathItemStatus,
+} from "../utils/status.js";
 
 describe("MODULE_STATUS", () => {
   it("freezes the four statuses a path item can hold", () => {
@@ -32,8 +37,24 @@ describe("pathItemStatus", () => {
 });
 
 describe("catalogueStatus", () => {
-  it("lets completion speak louder than the path status", () => {
-    assert.deepEqual(catalogueStatus({ pathStatus: "available", isComplete: true }), MODULE_STATUS.completed);
+  it("believes the path item over the reading record", () => {
+    // Reading every section is no longer finishing: completion needs a passed
+    // activity, and the path item is the value that knows whether there was
+    // one. A row that said "Finished" because the learner had read it would
+    // hand back exactly the self-certification the path took away.
+    assert.deepEqual(
+      catalogueStatus({ pathStatus: "available", isComplete: true }),
+      MODULE_STATUS.available,
+    );
+  });
+
+  it("says what it actually knows about a lesson off the path", () => {
+    // No path item to ask, so reading is the only evidence there is — and it
+    // is reported as reading rather than as completion.
+    assert.deepEqual(catalogueStatus({ pathStatus: null, isComplete: true }), {
+      label: "All read",
+      verb: "Review",
+    });
   });
 
   it("keeps the path status when the module is not finished", () => {
@@ -42,5 +63,22 @@ describe("catalogueStatus", () => {
 
   it("reads a module off the path as ready to open", () => {
     assert.deepEqual(catalogueStatus({ pathStatus: null, isComplete: false }), { label: "Ready to start", verb: "Open" });
+  });
+});
+
+describe("isLockedStatus", () => {
+  it("treats only a locked, unfinished row as shut", () => {
+    assert.equal(isLockedStatus({ statusValue: "locked", isComplete: false }), true);
+  });
+
+  it("never shuts a learner out of a lesson they have already finished", () => {
+    assert.equal(isLockedStatus({ statusValue: "locked", isComplete: true }), false);
+  });
+
+  it("leaves every other status open", () => {
+    assert.equal(isLockedStatus({ statusValue: "available", isComplete: false }), false);
+    assert.equal(isLockedStatus({ statusValue: "in_progress", isComplete: false }), false);
+    assert.equal(isLockedStatus({ statusValue: "completed", isComplete: true }), false);
+    assert.equal(isLockedStatus({ statusValue: null, isComplete: false }), false);
   });
 });

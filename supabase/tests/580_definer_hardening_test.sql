@@ -472,6 +472,23 @@ values
    '{"id":"ee000000-0000-4000-8000-000000000003","prompt":"What is 2 + 2?","question_type":"number_input","options":[]}'::jsonb,
    '4'::jsonb);
 
+-- The learner's path now gates practice: an activity whose module is still
+-- locked cannot be attempted at all. This file is about the definer hardening
+-- of the activity functions rather than about progression, so give the learner
+-- the one prerequisite the path asks for — the first item finished — and let
+-- the refresh open what follows. Written against whichever module the
+-- diagnostic ranked first, because that depends on the scores above.
+insert into app.student_module_progress
+  (student_id, module_id, completion_percentage, is_complete,
+   completed_section_ids, started_at, completed_at)
+select
+  items.student_id, items.module_id, 100.00, true,
+  to_jsonb(app.module_section_ids(items.module_id)), now(), now()
+from app.learning_path_items as items
+where items.student_id = '5e000000-0000-4000-8000-000000000001'
+  and items.priority = 1
+on conflict (student_id, module_id) do nothing;
+
 -- The activity attempt carries its frozen question set, exactly as the
 -- assessment attempt above does. An attempt without one is refused now: there
 -- would be nothing saying what the learner was asked, so nothing that could be

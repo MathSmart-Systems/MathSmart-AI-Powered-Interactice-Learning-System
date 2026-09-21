@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, Lock, RefreshCw, SearchX, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePreservedScroll } from "@/modules/shared/hooks/usePreservedScroll";
 
 import {
   AssessmentError,
   QUESTION_TYPE,
+  loadAssessmentPreview,
   loadDiagnostic,
   loadDiagnosticResult,
   saveDiagnosticAnswers,
@@ -34,12 +36,23 @@ import {
   writeDraft,
 } from "./utils/reconciliation";
 
+import { REFUSAL, startRefusal } from "./utils/catalogue";
+
+import { AssessmentPlayerSkeleton } from "./components/AssessmentPlayerSkeleton";
 import { DiagnosticIntro } from "./components/DiagnosticIntro";
 import { DiagnosticPlayer } from "./components/DiagnosticPlayer";
 import { DiagnosticResultsView } from "./components/DiagnosticResultsView";
 
 const COMPLETED_ATTEMPT_STATUSES = new Set(["scored"]);
 const PENDING_ATTEMPT_STATUSES = new Set(["submitted"]);
+
+/** A picture per refusal, so the tone is never the only thing carrying it. */
+const REFUSAL_ICON = Object.freeze({
+  [REFUSAL.NOT_READY]: Wrench,
+  [REFUSAL.LOCKED]: Lock,
+  [REFUSAL.MISSING]: SearchX,
+  [REFUSAL.FAULT]: AlertCircle,
+});
 
 function CenteredNotice({ icon: Icon, title, children, tone = "muted" }) {
   return (
@@ -57,12 +70,21 @@ function CenteredNotice({ icon: Icon, title, children, tone = "muted" }) {
 }
 
 /**
- * The Grade 6 entry diagnostic: intro, timed question walk, and gap report.
+ * Sitting an assessment: intro, timed question walk, and report.
+ *
+ * Named for the diagnostic because that is the only paper it could once play.
+ * `/student/assessments/[assessmentId]` redirected everything here, so a unit
+ * quiz was unreachable however many a teacher published. It now plays whichever
+ * paper it is given: with an `assessmentId` it loads that one, and without one
+ * it finds the learner's own grade diagnostic exactly as before. Every state
+ * below is the same state it has always had — the diagnostic is simply no
+ * longer the only thing that can be in it.
  *
  * Scoring lives entirely on the server. This view sends answers and renders the
  * competency results that come back; it never sees an answer key.
  */
 export function DiagnosticView({
+  assessmentId = null,
   requestedAttemptId = null,
   invalidAttemptLink = false,
 }) {
@@ -76,6 +98,14 @@ export function DiagnosticView({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  // Which refusal the failed load was, kept beside its sentence. A paper with
+  // no questions, one this learner may not sit and one that is not there are
+  // three different answers, and only the status and code can tell them apart.
+  const [loadRefusal, setLoadRefusal] = useState(null);
+  // Bumped to ask the load effect to run again. A full document reload threw
+  // away the whole page to recover from one failed request, which re-showed
+  // the loading state and sent the reader back to the top.
+  const [reloadToken, setReloadToken] = useState(0);
   const [submitError, setSubmitError] = useState(null);
   const [saveError, setSaveError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -88,6 +118,8 @@ export function DiagnosticView({
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const scrollAnchor = useRef(null);
+  const reportRegion = useRef(null);
+  const preserveScroll = usePreservedScroll();
   const finalSubmitTrigger = useRef(null);
   const dialogInitialFocus = useRef(null);
   const reviewQuestionAfterClose = useRef(false);
@@ -103,6 +135,19 @@ export function DiagnosticView({
   // One key per attempt, reused across retries: a resend after a dropped
   // connection must not score the attempt twice.
   const idempotencyKey = useRef(null);
+
+  /**
+   * Records a failed load as the kind of thing it actually was.
+   *
+   * The service already phrases its refusals for a learner, so the message is
+   * the server's; only the heading, the glyph and the colour are decided here,
+   * and none of them may claim a fault the server did not report.
+   */
+  const recordFailure = useCallback((error, fallbackText) => {
+    const known = error instanceof AssessmentError;
+    setLoadError(known ? error.message : fallbackText);
+    setLoadRefusal(startRefusal(known ? { status: error.status, code: error.code } : {}));
+  }, []);
 
   const hydrateAttempt = useCallback((data) => {
     const limitSeconds = data.time_limit_minutes * 60;
@@ -143,11 +188,25 @@ export function DiagnosticView({
           setResult(requested);
           setScreen("report");
         })
-      : loadDiagnostic().then(async (preview) => {
+      : (assessmentId
+          ? loadAssessmentPreview(assessmentId)
+          : loadDiagnostic()
+        ).then(async (preview) => {
         if (cancelled) return;
         setAssessment(preview);
         setTotal(preview.total_questions);
         setTimeLimitSeconds(preview.time_limit_minutes * 60);
+
+        // The API's own answer to whether a start request would succeed,
+        // asked before the intro offers one. A learner who typed this URL or
+        // followed a link saved before the paper lost a question is told what
+        // is wrong here, rather than pressing Begin and collecting a 409.
+        if (preview.is_ready === false) {
+          throw new AssessmentError(
+            "This assessment is not ready yet. Ask your teacher to finish setting it up.",
+            { status: 409, code: "assessment_not_ready" },
+          );
+        }
 
         if (preview.diagnostic_status === "in_progress") {
           if (!preview.latest_attempt_id || preview.latest_status !== "in_progress") {
@@ -193,11 +252,7 @@ export function DiagnosticView({
     load
       .catch((error) => {
         if (cancelled) return;
-        setLoadError(
-          error instanceof AssessmentError
-            ? error.message
-            : "We could not load your assessment. Please try again.",
-        );
+        recordFailure(error, "We could not load your assessment. Please try again.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -206,7 +261,29 @@ export function DiagnosticView({
     return () => {
       cancelled = true;
     };
-  }, [hydrateAttempt, invalidAttemptLink, requestedAttemptId]);
+  }, [
+    assessmentId,
+    hydrateAttempt,
+    invalidAttemptLink,
+    recordFailure,
+    reloadToken,
+    requestedAttemptId,
+  ]);
+
+  useEffect(() => {
+    if (screen !== "report") return;
+    // preventScroll, because the place is kept by the handler that caused the
+    // change. Focusing without it would scroll the region into view and undo
+    // exactly what was preserved.
+    reportRegion.current?.focus({ preventScroll: true });
+  }, [screen]);
+
+  const retryLoad = useCallback(() => {
+    setLoadError(null);
+    setLoadRefusal(null);
+    setLoading(true);
+    setReloadToken((token) => token + 1);
+  }, []);
 
   const current = questions[index] ?? null;
   const answeredCount = questions.filter((question) => hasAnswer(answers[question.id])).length;
@@ -399,6 +476,7 @@ export function DiagnosticView({
 
     setStarting(true);
     setLoadError(null);
+    setLoadRefusal(null);
     try {
       const data = await startDiagnostic(assessment.assessment_id);
       setIndex(0);
@@ -409,18 +487,41 @@ export function DiagnosticView({
       setResult(null);
       hydrateAttempt(data);
     } catch (error) {
-      setLoadError(
-        error instanceof AssessmentError
-          ? error.message
-          : "We could not start your assessment. Please try again.",
-      );
+      recordFailure(error, "We could not start your assessment. Please try again.");
     } finally {
       setStarting(false);
     }
   };
 
   const selectOption = (optionKey) => {
+    preserveScroll();
     if (current) recordAnswer(current.id, optionKey);
+  };
+
+  /**
+   * Submitting, with the reader's place kept.
+   *
+   * Twice, because the render that matters lands after the await: a reading
+   * taken on the click alone is spent on the one that only turned the spinner
+   * on. The report that replaces the player is shorter than it, and without
+   * this the browser clamps the offset and a learner who was reading the last
+   * question is dropped at the top of a page they did not ask for.
+   */
+  const confirmSubmission = async () => {
+    preserveScroll();
+    try {
+      await finish(false);
+    } finally {
+      preserveScroll();
+    }
+  };
+
+  // A setter rather than a toggle: the review is a dialog now, and Radix
+  // reports open and closed as a boolean. A toggle would flip the wrong way
+  // the moment anything asked for a state it was already in.
+  const changeReview = (next) => {
+    preserveScroll();
+    setShowReview(Boolean(next));
   };
 
   const goNext = () => {
@@ -471,26 +572,46 @@ export function DiagnosticView({
     );
   }
 
+  // The first load, and only the first load: `loading` is set when the view
+  // mounts and when a failed load is retried, and in both cases there is
+  // nothing on screen to preserve. Starting an attempt, answering, moving
+  // between questions and submitting all leave this alone.
   if (loading) {
-    return (
-      <div
-        className="flex flex-col items-center gap-4 py-16 text-center"
-        role="status"
-      >
-        <div className="size-9 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="text-sm text-muted-foreground">Loading your assessment…</p>
-      </div>
-    );
+    return <AssessmentPlayerSkeleton />;
   }
 
   if (loadError) {
+    // A paper that is not ready, one this learner may not sit and one that is
+    // not there are shown as themselves: their own heading, their own glyph,
+    // and the plain shell colour rather than the marking-pen red, which is
+    // reserved for something that actually went wrong. Every one of them used
+    // to arrive as "Something went wrong", which reads to a child as MathSmart
+    // breaking and as their own doing.
+    const refusal = loadRefusal ?? startRefusal({});
+    const Icon = REFUSAL_ICON[refusal.kind] ?? AlertCircle;
+
     return (
-      <CenteredNotice icon={AlertCircle} title="Something went wrong" tone="destructive">
+      <CenteredNotice
+        icon={Icon}
+        title={refusal.title}
+        tone={refusal.isFault ? "destructive" : "muted"}
+      >
         <p className="max-w-prose text-sm text-muted-foreground">{loadError}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>
-          <RefreshCw aria-hidden="true" />
-          Try again
-        </Button>
+        {/* Wrapping, so the two controls sit side by side on a phone rather
+            than stacking into a column of buttons. */}
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {/* Retrying something that is not there cannot help; retrying a
+              paper a teacher is in the middle of finishing can. */}
+          {refusal.kind !== REFUSAL.MISSING && (
+            <Button variant="outline" onClick={retryLoad}>
+              <RefreshCw aria-hidden="true" />
+              Try again
+            </Button>
+          )}
+          <Button asChild variant="outline">
+            <Link href="/student/assessments">Back to assessments</Link>
+          </Button>
+        </div>
       </CenteredNotice>
     );
   }
@@ -520,6 +641,7 @@ export function DiagnosticView({
 
       {screen === "test" && current && (
         <DiagnosticPlayer
+          assessmentTitle={assessment?.title}
           current={current}
           index={index}
           total={total}
@@ -542,7 +664,7 @@ export function DiagnosticView({
           onPrevious={goPrevious}
           onNext={goNext}
           onJumpTo={jumpTo}
-          onConfirmSubmit={() => finish(false)}
+          onConfirmSubmit={confirmSubmission}
           onCancelSubmit={cancelSubmission}
           onReviewQuestion={(qIndex) => jumpTo(qIndex, { focusQuestion: true })}
           scrollAnchor={scrollAnchor}
@@ -554,15 +676,15 @@ export function DiagnosticView({
       )}
 
       {screen === "report" && result && (
-        <DiagnosticResultsView
-          result={result}
-          assessmentTitle={assessment?.title}
-          autoSubmitted={autoSubmitted}
-          questions={questions}
-          answers={answers}
-          showReview={showReview}
-          onToggleReview={() => setShowReview((value) => !value)}
-        />
+        <div ref={reportRegion} tabIndex={-1} className="outline-none">
+          <DiagnosticResultsView
+            result={result}
+            assessmentTitle={assessment?.title}
+            autoSubmitted={autoSubmitted}
+            showReview={showReview}
+            onShowReviewChange={changeReview}
+          />
+        </div>
       )}
     </div>
   );

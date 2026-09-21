@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -9,7 +9,6 @@ import {
   BarChart3,
   BookOpen,
   CheckCircle2,
-  RefreshCw,
   Sparkles,
   Timer,
 } from "lucide-react";
@@ -23,24 +22,24 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { QUESTION_TYPE, getStudentFeedback } from "../services/diagnostic-service";
+import { getStudentFeedback } from "../services/diagnostic-service";
 import { buildAssessmentFeedbackContext } from "../services/diagnostic-feedback";
-import { LETTERS, hasAnswer, styleForBand } from "../utils/format";
+import { styleForBand } from "../utils/format";
+import { readInsight, writeInsight } from "../utils/insight-cache";
+
+import { AnswerReview } from "./AnswerReview";
 import { FeedbackMarkdown } from "./FeedbackMarkdown";
 
 export function DiagnosticResultsView({
   result,
   assessmentTitle = "",
   autoSubmitted = false,
-  questions = [],
-  answers = {},
   showReview = false,
-  onToggleReview,
+  onShowReviewChange,
 }) {
   const [feedback, setFeedback] = useState(null);
   const [feedbackLoading, setFeedbackLoading] = useState(true);
   const [feedbackUnavailable, setFeedbackUnavailable] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
   const [focusedCompetency, setFocusedCompetency] = useState(null);
 
   const gaps = useMemo(
@@ -51,6 +50,19 @@ export function DiagnosticResultsView({
     result?.next_action?.type === "dashboard"
       ? "/student/dashboard"
       : "/student/my-learning";
+
+  // Written once per attempt and then reused.
+  //
+  // This used to run again on every mount and on every competency a learner
+  // clicked, so the same finished paper produced different advice each time
+  // it was opened — which makes a deterministic result look unsettled. It now
+  // depends on the attempt alone, and reads back what was already written
+  // before asking for anything.
+  //
+  // The competency a learner clicks no longer shapes it either. That made the
+  // summary rewrite itself as they explored the table, which is the same
+  // unsettled feeling by another route; highlighting a row is now only that.
+  const attemptId = result?.attempt_id ?? null;
 
   useEffect(() => {
     if (!result) return undefined;
@@ -68,14 +80,24 @@ export function DiagnosticResultsView({
       totalScore: result.total_score,
       maxScore: result.max_score,
       domainScores: result.domain_scores,
-      focusedCompetency,
     });
 
-    getStudentFeedback({
-      score: result.percentage,
-      masteryBand: dominantBand,
-      displayContext: context,
-    })
+    // The remembered answer travels the same path as a fresh one, so every
+    // state change still happens in a callback. Setting state straight from
+    // the effect body is what React asks callers not to do.
+    const remembered = readInsight(attemptId);
+    const pending = remembered
+      ? Promise.resolve(remembered)
+      : getStudentFeedback({
+          score: result.percentage,
+          masteryBand: dominantBand,
+          displayContext: context,
+        }).then((res) => {
+          if (res?.feedback_text) writeInsight(attemptId, res);
+          return res;
+        });
+
+    pending
       .then((res) => {
         if (cancelled) return;
         if (res?.feedback_text) {
@@ -95,13 +117,7 @@ export function DiagnosticResultsView({
     return () => {
       cancelled = true;
     };
-  }, [result, assessmentTitle, focusedCompetency, gaps, retryCount]);
-
-  const handleRetry = useCallback(() => {
-    setFeedbackLoading(true);
-    setFeedbackUnavailable(false);
-    setRetryCount((prev) => prev + 1);
-  }, []);
+  }, [attemptId, assessmentTitle, gaps, result]);
 
   if (!result) return null;
 
@@ -155,7 +171,7 @@ export function DiagnosticResultsView({
               <Award aria-hidden="true" className="size-4" />
               Competencies assessed
             </CardDescription>
-            <CardTitle className="text-xl font-semibold">
+            <CardTitle as="h2" className="text-xl font-semibold">
               {result.domain_scores.length - gaps.length} of{" "}
               {result.domain_scores.length} mastered
             </CardTitle>
@@ -177,7 +193,7 @@ export function DiagnosticResultsView({
               <Sparkles aria-hidden="true" className="size-4" />
             </span>
             <div>
-              <CardTitle className="text-base font-semibold text-foreground">
+              <CardTitle as="h2" className="text-base font-semibold text-foreground">
                 Personalized Learning Insights
               </CardTitle>
               <CardDescription className="text-xs">
@@ -197,20 +213,6 @@ export function DiagnosticResultsView({
                 <span aria-hidden="true" className="font-bold">×</span>
               </Badge>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRetry}
-              disabled={feedbackLoading}
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-              title="Regenerate advisory feedback"
-            >
-              <RefreshCw
-                aria-hidden="true"
-                className={`mr-1 size-3 ${feedbackLoading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </Button>
             <Badge
               variant="outline"
               className="border-primary/30 bg-primary/5 text-xs font-normal text-primary"
@@ -229,46 +231,39 @@ export function DiagnosticResultsView({
               <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
               <div className="h-4 w-5/6 animate-pulse rounded bg-muted" />
               <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
-              <p className="mt-1 text-xs text-muted-foreground animate-pulse">
-                Consulting Groq AI for learning recommendations...
+              <p className="mt-1 animate-pulse text-xs text-muted-foreground">
+                Writing your summary…
               </p>
             </div>
           ) : feedback?.feedback_text ? (
             <div className="flex flex-col gap-3">
               <FeedbackMarkdown content={feedback.feedback_text} />
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5 text-[11px] text-muted-foreground">
-                <span>
-                  Advisory insight powered by Groq
-                  {feedback.model ? ` (${feedback.model})` : ""}
-                </span>
-                <span>
-                  Deterministic scoring &amp; progression are never decided by AI
-                </span>
-              </div>
+              {/* No provider name, no model identifier. Naming the vendor and
+                  its model to a Grade 6 learner tells them nothing they can
+                  act on and puts deployment configuration on a page a child
+                  reads. The panel is already headed "Personalized Learning
+                  Insights" and badged "Advisory", which is the part that
+                  matters: this is a suggestion, and the scores above are not.
+                  Sample text still says so, because a canned sentence must
+                  never pass for a real one. */}
+              {feedback.provider === "mock" ? (
+                <p className="border-t border-border/60 pt-2.5 text-[11px] text-muted-foreground">
+                  Sample text for local development — not AI output
+                </p>
+              ) : null}
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-3 py-1">
-              <p className="text-xs text-muted-foreground">
-                AI assistance is currently unavailable. Your official scores and
-                competency breakdown below are complete.
-              </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRetry}
-                className="h-7 shrink-0 px-2.5 text-xs"
-              >
-                <RefreshCw aria-hidden="true" className="mr-1.5 size-3" />
-                Retry
-              </Button>
-            </div>
+            <p className="py-1 text-xs text-muted-foreground">
+              AI assistance is currently unavailable. Your official scores and
+              competency breakdown below are complete.
+            </p>
           )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base font-semibold">
+          <CardTitle as="h2" className="text-base font-semibold">
             Performance by competency
           </CardTitle>
           <CardDescription>
@@ -359,7 +354,7 @@ export function DiagnosticResultsView({
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <CardTitle as="h2" className="flex items-center gap-2 text-base font-semibold">
             <AlertCircle aria-hidden="true" className="size-4 text-destructive" />
             Identified learning gaps
           </CardTitle>
@@ -407,15 +402,18 @@ export function DiagnosticResultsView({
               {result.next_action?.label ?? "Start recommended modules"}
             </Link>
           </Button>
-          {questions.length > 0 && (
+          {/* Offered whenever there is a closed attempt to read, not only
+              while the player still holds the questions in memory. Opening a
+              report from the history list days later used to hide this. */}
+          {result?.attempt_id && (
             <Button
               variant="outline"
               size="lg"
-              onClick={onToggleReview}
-              aria-expanded={showReview}
+              onClick={() => onShowReviewChange?.(true)}
+              aria-haspopup="dialog"
             >
               <BookOpen aria-hidden="true" />
-              {showReview ? "Hide my answers" : "Review my answers"}
+              Review my answers
             </Button>
           )}
           <Button asChild variant="ghost" size="lg" className="sm:ml-auto">
@@ -424,86 +422,12 @@ export function DiagnosticResultsView({
         </CardFooter>
       </Card>
 
-      {showReview && (
-        <div className="flex flex-col gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Answer review</h2>
-            <p className="text-xs text-muted-foreground">
-              Review your submitted responses for each question below.
-            </p>
-          </div>
-          <ol className="flex flex-col gap-4">
-            {questions.map((question) => {
-              const picked = answers[question.id];
+      <AnswerReview
+        attemptId={result?.attempt_id}
+        open={showReview}
+        onOpenChange={onShowReviewChange}
+      />
 
-              return (
-                <li key={question.id} className="border border-border bg-card p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Q{question.number} · {question.domain}
-                      </p>
-                      <p className="max-w-prose text-base leading-snug text-foreground">
-                        {question.prompt}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={hasAnswer(picked) ? "secondary" : "outline"}
-                      className={
-                        hasAnswer(picked)
-                          ? "text-xs font-normal"
-                          : "border-destructive/40 text-xs font-normal text-destructive"
-                      }
-                    >
-                      {hasAnswer(picked) ? "Answer recorded" : "Unanswered"}
-                    </Badge>
-                  </div>
-
-                  {question.type === QUESTION_TYPE.MULTIPLE_CHOICE ? (
-                    <ul className="mt-4 flex flex-col gap-2">
-                      {(question.options ?? []).map((option, optionIndex) => {
-                        const isPicked = picked === option.key;
-
-                        return (
-                          <li
-                            key={option.key}
-                            className={`flex items-center gap-3 rounded-md border px-3 py-2 text-sm ${
-                              isPicked
-                                ? "border-primary/40 bg-primary/5 text-foreground"
-                                : "border-border text-muted-foreground"
-                            }`}
-                          >
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {LETTERS[optionIndex] ?? optionIndex + 1}
-                            </span>
-                            <span className="leading-relaxed">{option.label}</span>
-                            {isPicked && (
-                              <span className="ml-auto shrink-0 text-xs font-medium text-primary">
-                                Your answer
-                              </span>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : hasAnswer(picked) ? (
-                    <p className="mt-4 rounded-md border border-primary/40 bg-primary/5 px-3 py-3 text-sm text-foreground">
-                      <span className="text-xs font-medium text-primary">Your answer</span>
-                      <span className="mt-1 block leading-relaxed">{picked || "Blank"}</span>
-                    </p>
-                  ) : null}
-
-                  {!hasAnswer(picked) && (
-                    <p className="mt-3 text-xs text-destructive">
-                      Left blank during the assessment.
-                    </p>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      )}
     </section>
   );
 }

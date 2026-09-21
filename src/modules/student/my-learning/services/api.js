@@ -15,6 +15,17 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
+ * The API's own name for "this content is not open to you yet".
+ *
+ * `backend/modules/learning_modules/router.py` answers 412 with this code when
+ * the database refuses a write against a locked module. The status alone is not
+ * enough to act on — 412 also carries `sections_incomplete`, which means
+ * something a learner can fix by reading on — so the reader branches on the
+ * code and never on the number.
+ */
+export const CONTENT_LOCKED = "content_locked";
+
+/**
  * The API base URL, trimmed, or `null` when unset or unsafe.
  * HTTPS is required outside local development; loopback hosts remain reachable
  * over HTTP for a local API on port 8000.
@@ -52,7 +63,7 @@ async function getAccessToken() {
  * percentage and completion flag from the learner's own record and returns the
  * fresh progress, which the reader shows without another round trip.
  *
- * @returns {Promise<{ok: boolean, data?: object, error?: string}>}
+ * @returns {Promise<{ok: boolean, data?: object, error?: string, code?: string}>}
  */
 export async function saveModuleProgress(moduleId, { completedSectionIds, lastSectionId }) {
   const base = apiBaseUrl();
@@ -92,7 +103,9 @@ export async function saveModuleProgress(moduleId, { completedSectionIds, lastSe
 
   if (!response.ok) {
     const message = json?.error?.message || json?.detail || `Progress save failed (${status})`;
-    return { ok: false, error: message };
+    // The code travels with the message so the reader can tell a refusal it
+    // should explain calmly from a fault it should offer to retry.
+    return { ok: false, error: message, code: json?.error?.code ?? null, status };
   }
 
   return { ok: true, data: json?.data ?? null, status };

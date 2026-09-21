@@ -13,7 +13,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-import { buildMyLearningModel, buildModuleReaderModel } from "../utils/my-learning-model";
+import {
+  buildMyLearningModel,
+  buildModuleReaderModel,
+  isLockedModule,
+} from "../utils/my-learning-model";
 import { readCataloguePages } from "./catalogue-pagination";
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -53,7 +57,7 @@ async function accessToken() {
 /**
  * One authenticated GET against the MathSmart API.
  *
- * @returns {Promise<{ok: true, data: unknown, meta: unknown} | {ok: false, status: number|null}>}
+ * @returns {Promise<{ok: true, data: unknown, meta: unknown} | {ok: false, status: number|null, code: string|null}>}
  */
 async function readFromApi(path, token, base) {
   let response;
@@ -67,18 +71,30 @@ async function readFromApi(path, token, base) {
   } catch {
     // Timed out, refused, or DNS failed: the service is unreachable, which is
     // not the same thing as the lesson being missing.
-    return { ok: false, status: null };
+    return { ok: false, status: null, code: null };
   }
 
   if (!response.ok) {
-    return { ok: false, status: response.status };
+    // The envelope names the refusal (`content_locked`, `not_found`, …) and the
+    // status alone does not: 412 covers both a locked lesson and one whose
+    // sections are merely unfinished. Reading the code here is what lets the
+    // caller choose a state instead of a generic failure. A body that will not
+    // parse is still a refusal, so the status is reported either way.
+    let code = null;
+    try {
+      const body = await response.json();
+      code = body?.error?.code ?? null;
+    } catch {
+      code = null;
+    }
+    return { ok: false, status: response.status, code };
   }
 
   try {
     const body = await response.json();
     return { ok: true, data: body?.data ?? null, meta: body?.meta ?? null };
   } catch {
-    return { ok: false, status: response.status };
+    return { ok: false, status: response.status, code: null };
   }
 }
 
@@ -154,8 +170,18 @@ export async function readMyLearning() {
 export const MODULE_STATE = Object.freeze({
   READY: "ready",
   NOT_FOUND: "not_found",
+  LOCKED: "locked",
   ERROR: "error",
 });
+
+/**
+ * The API's code for content the learner's path has not opened yet.
+ *
+ * It is the same string `backend/modules/learning_modules/router.py` sends as
+ * `LOCKED_CODE`. The status alone cannot stand in for it: 412 also carries
+ * `sections_incomplete`, which is not a refusal but an instruction to read on.
+ */
+const LOCKED_CODE = "content_locked";
 
 /**
  * Reads one module for the signed-in learner.
@@ -181,12 +207,26 @@ export async function readModule(moduleId) {
     return { state: MODULE_STATE.NOT_FOUND };
   }
 
+  if (result.status === 412 && result.code === LOCKED_CODE) {
+    return { state: MODULE_STATE.LOCKED, reason: LOCKED_CODE };
+  }
+
   if (!result.ok) {
     return { state: MODULE_STATE.ERROR, reason: "unavailable" };
   }
 
+  // A locked lesson can also arrive as an ordinary 200: reading one is not
+  // forbidden, it is recording progress against it that the database refuses.
+  // Handing that lesson to the reader would give a learner a checklist whose
+  // every tick comes back as an error, so it stops here as well.
+  const model = buildModuleReaderModel(result.data);
+
+  if (isLockedModule(model)) {
+    return { state: MODULE_STATE.LOCKED, reason: LOCKED_CODE };
+  }
+
   return {
     state: MODULE_STATE.READY,
-    model: buildModuleReaderModel(result.data),
+    model,
   };
 }

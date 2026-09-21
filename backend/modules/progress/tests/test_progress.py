@@ -29,9 +29,14 @@ ACTIVITY = UUID("fd80cc3c-4951-439c-894e-f93cbf7a23e1")
 SUMMARY = "from app.student_performance_summary"
 OWN_STUDENT = "where student_profiles.user_id = $1"
 COMPETENCIES = "from app.competency_progress"
-PATH = "from app.learning_path_items"
+# The path list, the path totals and the competency total all read
+# `app.learning_path_items` or `app.competencies`, so each fragment below names
+# a column only its own statement selects. A fragment shared by two statements
+# would hand one of them the other's rows.
+PATH = "learning_path_items.path_item_id"
 TRAJECTORY = "from app.activity_attempts"
-MODULE_TOTAL = "count(*) as total_modules"
+COMPETENCY_TOTAL = "count(*) as total_competencies"
+PATH_MODULE_TOTALS = "count(*) as total_path_modules"
 
 SUMMARY_ROW = {
     "student_id": STUDENT_ID,
@@ -72,6 +77,8 @@ PATH_ROW = {
     "competency_id": COMPETENCY,
 }
 
+PATH_TOTALS_ROW = {"total_path_modules": 4, "completed_path_modules": 1}
+
 TRAJECTORY_ROW = {
     "competency_id": COMPETENCY,
     "occurred_at": None,
@@ -89,7 +96,8 @@ def progress_connection(**overrides):
         COMPETENCIES: [COMPETENCY_ROW],
         PATH: [PATH_ROW],
         TRAJECTORY: [TRAJECTORY_ROW],
-        MODULE_TOTAL: 5,
+        COMPETENCY_TOTAL: 18,
+        PATH_MODULE_TOTALS: PATH_TOTALS_ROW,
     }
     results.update(overrides)
     return FakeConnection(results=results)
@@ -106,7 +114,7 @@ def test_a_learner_reads_their_own_progress():
     assert data["overall_mastery"] == 63
     assert data["diagnostic_score"] == 48
     assert data["modules_completed_count"] == 1
-    assert data["total_modules_count"] == 5
+    assert data["total_modules_count"] == 4
     assert data["active_intervention_count"] == 1
 
 
@@ -133,10 +141,162 @@ def test_the_recommended_next_action_is_the_first_available_path_item():
     assert "Integer Sign Rules" in action["label"]
 
 
-def test_a_learner_with_no_path_is_sent_to_the_dashboard():
+def test_a_learner_with_no_path_is_sent_to_the_diagnostic_that_would_build_one():
+    """Nothing but the diagnostic writes a path, so an empty path names that step."""
     client = build_client(progress_connection(**{PATH: []}))
 
-    assert response_action(client)["type"] == "dashboard"
+    action = response_action(client)
+    assert action["type"] == "diagnostic"
+    assert action["resource_id"] is None
+
+
+def test_a_finished_path_is_not_the_same_answer_as_an_unstarted_one():
+    """A client routes on `type`, so the two must not share one."""
+    finished = dict(PATH_ROW, status="completed")
+    client = build_client(progress_connection(**{PATH: [finished]}))
+
+    action = response_action(client)
+    assert action["type"] == "path_complete"
+    assert action["resource_id"] is None
+    unstarted = response_action(build_client(progress_connection(**{PATH: []})))
+    assert action["type"] != unstarted["type"]
+
+
+def test_the_competency_denominator_is_the_published_grade_total():
+    """Counting only attempted competencies is what produces "2 of 2 mastered"."""
+    client = build_client(progress_connection())
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    assert data["total_competencies_count"] == 18
+    assert data["competencies_mastered_count"] == 1
+    assert len(data["competencies"]) == 1
+
+
+def test_a_learner_who_has_attempted_nothing_still_has_a_grade_to_measure_against():
+    """The denominator is the curriculum, so it does not wait for a first attempt."""
+    summary = dict(SUMMARY_ROW, competencies_mastered=0, scored_attempt_count=0)
+    client = build_client(progress_connection(**{COMPETENCIES: [], SUMMARY: summary}))
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    assert data["competencies"] == []
+    assert data["competencies_mastered_count"] == 0
+    assert data["total_competencies_count"] == 18
+
+
+def test_the_competency_total_is_asked_about_this_learner():
+    """The published total is scoped by the learner's own grade, not the platform's."""
+    connection = progress_connection()
+    client = build_client(connection)
+
+    client.get("/api/v1/progress/me", headers=LEARNER_HEADERS)
+
+    _query, args = next(call for call in connection.calls if COMPETENCY_TOTAL in call[0])
+    assert args == (STUDENT_ID,)
+
+
+def test_the_module_fraction_is_counted_over_the_learners_own_path():
+    connection = progress_connection(
+        **{
+            PATH_MODULE_TOTALS: {
+                "total_path_modules": 6,
+                "completed_path_modules": 2,
+            }
+        }
+    )
+    client = build_client(connection)
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    assert data["total_modules_count"] == 6
+    assert data["modules_completed_count"] == 2
+
+    _query, args = next(call for call in connection.calls if PATH_MODULE_TOTALS in call[0])
+    assert args == (STUDENT_ID,)
+
+
+def test_a_module_finished_outside_the_path_does_not_outrun_the_path_total():
+    """The rollup counts every module the learner ever finished; the fraction may not."""
+    summary = dict(SUMMARY_ROW, modules_completed=9)
+    client = build_client(progress_connection(**{SUMMARY: summary}))
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    assert data["modules_completed_count"] == 1
+    assert data["modules_completed_count"] <= data["total_modules_count"]
+
+
+def test_a_learner_with_no_path_has_no_module_fraction_to_show():
+    client = build_client(
+        progress_connection(
+            **{
+                PATH: [],
+                PATH_MODULE_TOTALS: {"total_path_modules": 0, "completed_path_modules": 0},
+            }
+        )
+    )
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    assert data["total_modules_count"] == 0
+    assert data["modules_completed_count"] == 0
+
+
+def test_the_evidence_behind_a_monitoring_status_is_reported_with_it():
+    client = build_client(progress_connection())
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    assert data["monitoring_status"] == "needs_intervention"
+    assert data["scored_attempt_count"] == 2
+    assert data["worst_unsuccessful_attempts"] == 1
+
+
+def test_a_competency_reports_how_many_attempts_it_rests_on():
+    client = build_client(progress_connection())
+
+    competency = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"][
+        "competencies"
+    ][0]
+    assert competency["attempt_count"] == 2
+    assert competency["unsuccessful_attempts"] == 1
+
+
+def test_a_single_attempt_is_reported_as_a_single_attempt():
+    """Thin evidence stays visibly thin rather than being rounded up into a verdict."""
+    thin = dict(
+        COMPETENCY_ROW,
+        attempt_count=1,
+        unsuccessful_attempts=0,
+        diagnostic_score=None,
+        current_score=52,
+        mastery_band="Needs Improvement",
+    )
+    summary = dict(SUMMARY_ROW, scored_attempt_count=1, worst_unsuccessful_attempts=0)
+    client = build_client(progress_connection(**{COMPETENCIES: [thin], SUMMARY: summary}))
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    competency = data["competencies"][0]
+    assert competency["attempt_count"] == 1
+    assert competency["unsuccessful_attempts"] == 0
+    assert competency["growth"] is None
+    assert competency["mastery_band"] == "Needs Improvement"
+    assert data["scored_attempt_count"] == 1
+    assert data["worst_unsuccessful_attempts"] == 0
+
+
+def test_missing_evidence_counts_are_zero_rather_than_null():
+    """A dashboard divides by these, so a null would become "null of null"."""
+    summary = dict(
+        SUMMARY_ROW,
+        competencies_mastered=None,
+        scored_attempt_count=None,
+        worst_unsuccessful_attempts=None,
+    )
+    empty = dict(COMPETENCY_ROW, attempt_count=None, unsuccessful_attempts=None)
+    client = build_client(progress_connection(**{SUMMARY: summary, COMPETENCIES: [empty]}))
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+    assert data["competencies_mastered_count"] == 0
+    assert data["scored_attempt_count"] == 0
+    assert data["worst_unsuccessful_attempts"] == 0
+    assert data["competencies"][0]["attempt_count"] == 0
+    assert data["competencies"][0]["unsuccessful_attempts"] == 0
 
 
 def test_a_competency_carries_its_trajectory():

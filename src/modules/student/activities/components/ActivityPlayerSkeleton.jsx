@@ -3,8 +3,13 @@ function Block({ className }) {
 }
 
 /**
- * The player while its activity and attempt are still being read. Reserves the
- * shape of the finished screen and announces loading to screen readers.
+ * The player while its activity and attempt are still being read, and only
+ * while there is nothing to show instead — once the player has content, a
+ * reload dims it rather than replacing it with this.
+ *
+ * Reserves the shape of the finished screen and announces loading to screen
+ * readers. The sticky strip repeats the real bar's negative margins, including
+ * at `lg`, so the two do not sit at different widths as one becomes the other.
  */
 export function ActivityPlayerSkeleton() {
   return (
@@ -19,7 +24,7 @@ export function ActivityPlayerSkeleton() {
         <Block className="h-4 w-72 max-w-full" />
       </div>
 
-      <div className="sticky top-0 z-20 -mx-5 border-b border-border bg-background/95 px-5 py-4 sm:-mx-8 sm:px-8">
+      <div className="sticky top-0 z-20 -mx-5 border-b border-border bg-background/95 px-5 py-4 sm:-mx-8 sm:px-8 lg:-mx-12 lg:px-12">
         <div className="flex items-center justify-between gap-3">
           <Block className="h-4 w-36" />
           <Block className="h-6 w-28" />

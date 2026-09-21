@@ -17,6 +17,13 @@ export async function ModuleViewer({ moduleId }) {
     return <ModuleUnavailable kind="not_found" />;
   }
 
+  // A lesson the path has not opened yet is refused by the database, not by
+  // this component. Showing the reader anyway would hand a learner a checklist
+  // that cannot save, so the locked state is rendered in its place.
+  if (result.state === MODULE_STATE.LOCKED) {
+    return <ModuleUnavailable kind="locked" />;
+  }
+
   if (result.state === MODULE_STATE.ERROR) {
     return <ModuleUnavailable kind="error" retryHref={moduleRoute(moduleId)} />;
   }

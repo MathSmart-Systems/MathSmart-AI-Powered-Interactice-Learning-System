@@ -25,6 +25,8 @@ import {
   formatMasteryThreshold,
   formatPoints,
 } from "../utils/format.js";
+import { describeActivityReadiness } from "../utils/readiness.js";
+import { ActivityReadinessBadge, ActivityReadinessNote } from "./ActivityReadiness.jsx";
 import { ActivityStatusBadge } from "./ActivityStatusBadge.jsx";
 
 /** How many placeholder cards the loading grid reserves. */
@@ -180,6 +182,9 @@ function ActivityInstructions({ text }) {
  * @param {boolean} [props.isLoading] - Loading state flag
  * @param {boolean} [props.hasError] - Whether the last read failed
  * @param {boolean} [props.hasSearchOrFilter] - Whether query filters are active
+ * @param {{activityId: string, message: string}|null} [props.publishRefusal] - The
+ *   last refusal the API gave for one of these rows, so the reason outlives the
+ *   dialog the teacher dismissed
  * @param {(activity: object) => void} [props.onEdit]
  * @param {(activity: object) => void} [props.onQuestions]
  * @param {(activity: object) => void} [props.onPublish]
@@ -194,6 +199,7 @@ export function ActivityList({
   isLoading = false,
   hasError = false,
   hasSearchOrFilter = false,
+  publishRefusal = null,
   onEdit,
   onQuestions,
   onPublish,
@@ -228,6 +234,11 @@ export function ActivityList({
         const isArchived = activity.status === "archived";
         const isDraft = activity.status === "draft";
         const questionCount = activity.question_count ?? 0;
+        const readiness = describeActivityReadiness(activity);
+        const refusal =
+          publishRefusal?.activityId === activity.activity_id
+            ? publishRefusal.message
+            : null;
 
         return (
           // The primitive's own `gap-6` and `py-6` sat on top of each
@@ -243,7 +254,23 @@ export function ActivityList({
                   <BookOpen className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="truncate">{moduleTitle}</span>
                 </span>
-                <ActivityStatusBadge status={activity.status} className="shrink-0" />
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                  <ActivityStatusBadge status={activity.status} />
+                  {/*
+                    Readiness is a second badge and a line beneath, not a
+                    rewrite of the first badge. Published and ready are two
+                    separate facts: an activity that was published is being
+                    offered to learners right now, which is exactly why an
+                    unready one is worth interrupting for, so overwriting
+                    "Published" with "Not ready" would hide the urgency rather
+                    than explain it. The badge is what makes the card findable
+                    in a grid of eighteen, and a badge has no room for which
+                    dependency is missing — so the sentence that names it, and
+                    the control that fixes it, go inside the card where there
+                    is room for both.
+                  */}
+                  {readiness ? <ActivityReadinessBadge /> : null}
+                </div>
               </div>
 
               <h3 className="font-display text-base font-bold tracking-tight break-words text-foreground">
@@ -298,6 +325,28 @@ export function ActivityList({
                 <p className="border-l-[3px] border-destructive bg-destructive/5 px-3 py-2 text-xs leading-relaxed text-foreground">
                   This activity holds no questions, so it cannot be published yet.
                 </p>
+              ) : null}
+
+              {/*
+                A refusal outranks the card's own reading of readiness. The
+                server checked this activity a moment ago and named the one
+                condition that failed; `is_ready` only knows that one of them
+                did. Both lead to the same place, so the same note carries both.
+              */}
+              {refusal ? (
+                <ActivityReadinessNote
+                  headline="It could not be published"
+                  detail={refusal}
+                  title={activity.title}
+                  onFix={onQuestions ? () => onQuestions(activity) : undefined}
+                />
+              ) : readiness ? (
+                <ActivityReadinessNote
+                  headline={readiness.headline}
+                  detail={readiness.detail}
+                  title={activity.title}
+                  onFix={onQuestions ? () => onQuestions(activity) : undefined}
+                />
               ) : null}
             </CardContent>
 

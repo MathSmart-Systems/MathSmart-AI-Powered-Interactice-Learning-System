@@ -149,6 +149,14 @@ describe("teacher intervention dashboard", () => {
     const options = grade.getByRole("option");
     test.skip((await options.count()) < 2, "no grade directory to scope by");
 
+    // The same guard its siblings carry. With no cases to summarise there is
+    // no batch for the panel to describe, so it renders nothing — and this
+    // test failed where the other nine skipped, for the same empty queue.
+    test.skip(
+      (await page.getByRole("checkbox", { name: /^Select case for / }).count()) === 0,
+      "the queue is empty",
+    );
+
     await grade.selectOption({ index: 1 });
 
     const panel = page

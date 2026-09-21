@@ -94,9 +94,21 @@ select is(
 
 reset role;
 
+-- Scoped to this file's own learner.
+--
+-- These assertions read `app.activity_attempts` with no predicate, which is
+-- only correct while the table holds exactly one row — true on the database CI
+-- resets before each run, and false on a workstation that has a learner in it.
+-- The subquery then raises "more than one row returned by a subquery used as
+-- an expression" and the file reports an error rather than a result.
+
 select is(
   (select count(*)::integer from app.activity_responses
-   where activity_responses.delivered_position is not null),
+   where activity_responses.delivered_position is not null
+     and activity_responses.attempt_id in (
+     select attempt_id from app.activity_attempts
+     where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001')
+  ),
   2,
   'Each frozen row carries the place the question was delivered in'
 );
@@ -104,7 +116,11 @@ select is(
 select is(
   (select array_agg(activity_responses.question_id
                     order by activity_responses.delivered_position)
-   from app.activity_responses),
+   from app.activity_responses
+   where activity_responses.attempt_id in (
+     select attempt_id from app.activity_attempts
+     where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001')
+  ),
   array['e4000000-0000-4000-8000-000000000001',
         'e4000000-0000-4000-8000-000000000002']::uuid[],
   'The frozen order is the authored order'
@@ -181,7 +197,11 @@ where questions.question_id = 'e4000000-0000-4000-8000-000000000001';
 
 select is(
   (select count(*)::integer from app.activity_responses
-   where activity_responses.delivered_position is not null),
+   where activity_responses.delivered_position is not null
+     and activity_responses.attempt_id in (
+     select attempt_id from app.activity_attempts
+     where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001')
+  ),
   2,
   'A question added to the activity does not join an attempt already open'
 );
@@ -192,7 +212,8 @@ set local role authenticated;
 select is(
   (select checked.is_correct
    from app.check_activity_answer(
-     (select attempt_id from app.activity_attempts),
+     (select attempt_id from app.activity_attempts
+      where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001'),
      'e4000000-0000-4000-8000-000000000001',
      '"10"'::jsonb) as checked),
   true,
@@ -201,7 +222,8 @@ select is(
 
 select is(
   app.activity_hint(
-    (select attempt_id from app.activity_attempts),
+    (select attempt_id from app.activity_attempts
+      where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001'),
     'e4000000-0000-4000-8000-000000000002'),
   'Count on from six.',
   'A question archived mid-attempt still belongs to the attempt, hint and all'
@@ -209,7 +231,8 @@ select is(
 
 select throws_ok(
   $$ select app.check_activity_answer(
-       (select attempt_id from app.activity_attempts),
+       (select attempt_id from app.activity_attempts
+      where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001'),
        'e4000000-0000-4000-8000-000000000003',
        '"14"'::jsonb) $$,
   'P0002',
@@ -223,7 +246,8 @@ select throws_ok(
 select is(
   (select submitted.max_score
    from app.submit_activity_attempt(
-     (select attempt_id from app.activity_attempts),
+     (select attempt_id from app.activity_attempts
+      where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001'),
      '[{"question_id": "e4000000-0000-4000-8000-000000000002", "answer": "12"}]'::jsonb,
      60) as submitted),
   2,
@@ -233,14 +257,16 @@ select is(
 reset role;
 
 select is(
-  (select activity_attempts.raw_score from app.activity_attempts),
+  (select activity_attempts.raw_score from app.activity_attempts
+   where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001'),
   2,
   'Both frozen questions are marked correct against their own frozen keys'
 );
 
 select is(
   (select count(*)::integer from app.activity_responses
-   where activity_responses.attempt_id = (select attempt_id from app.activity_attempts)),
+   where activity_responses.attempt_id = (select attempt_id from app.activity_attempts
+      where activity_attempts.student_id = '54000000-0000-4000-8000-000000000001')),
   2,
   'Submission adds no row for a question the attempt was never given'
 );

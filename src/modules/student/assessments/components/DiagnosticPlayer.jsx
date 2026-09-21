@@ -27,6 +27,7 @@ export function DiagnosticPlayer({
   current,
   index = 0,
   total = 0,
+  assessmentTitle = "",
   secondsLeft = 0,
   lowTime = false,
   progress = 0,
@@ -59,6 +60,15 @@ export function DiagnosticPlayer({
 
   return (
     <section className="flex flex-col gap-6" ref={scrollAnchor}>
+      {/* The screen a learner spends the longest on had no heading of any
+          kind, so navigating this page by heading found nothing at all. It is
+          visually hidden because the sticky bar below already shows the title
+          and position on screen; what was missing was the structure, not the
+          words. */}
+      <h1 className="sr-only">
+        {assessmentTitle ? `${assessmentTitle}: ` : ""}question {index + 1} of {total}
+      </h1>
+
       <div className="sticky top-0 z-20 -mx-5 border-b border-border bg-background/95 px-5 pt-4 pb-4 backdrop-blur-sm sm:-mx-8 sm:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex items-baseline gap-2">
@@ -111,7 +121,7 @@ export function DiagnosticPlayer({
       <Card ref={questionCard} tabIndex={-1} className="outline-none">
         <CardHeader className="gap-3">
           <CardDescription>{current.domain}</CardDescription>
-          <CardTitle className="max-w-prose text-xl leading-snug font-medium">
+          <CardTitle as="h2" className="max-w-prose text-xl leading-snug font-medium">
             {current.prompt}
           </CardTitle>
         </CardHeader>

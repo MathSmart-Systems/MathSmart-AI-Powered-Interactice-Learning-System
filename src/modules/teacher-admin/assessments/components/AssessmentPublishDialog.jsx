@@ -24,7 +24,7 @@ import { canPublishAssessment } from "../utils/validation.js";
  * Separated from the dialog shell so that opening the dialog or switching rows
  * mounts it fresh: errors and publishing flags never leak across reopenings.
  */
-function PublishDialogContent({ assessment, onClose, onPublished }) {
+function PublishDialogContent({ assessment, onClose, onPublished, onRefused }) {
   const [isPublishing, setIsPublishing] = useState(false);
   const [error, setError] = useState(null);
 
@@ -39,10 +39,22 @@ function PublishDialogContent({ assessment, onClose, onPublished }) {
     setIsPublishing(false);
 
     if (result.ok) {
+      onRefused?.(null);
       onPublished(result.data);
       return;
     }
     setError(result.error);
+
+    // A 422 is the readiness check refusing, and its message names the one
+    // condition that failed — which is more than the listing row's `is_ready`
+    // boolean can ever say. It is shown here, where the teacher pressed
+    // Publish, and also handed to the list, because this dialog closes and the
+    // reason would otherwise close with it while the row still looks fine.
+    // Every other failure is about this attempt rather than this assessment,
+    // so it stays here.
+    if (result.status === 422) {
+      onRefused?.(result.error);
+    }
   }
 
   return (
@@ -119,8 +131,18 @@ function PublishDialogContent({ assessment, onClose, onPublished }) {
  * more than that — every question has to be published, and the grade level has
  * to be active — so its refusal is shown here rather than predicted, because
  * predicting it would mean guessing on the learner's behalf.
+ *
+ * `onRefused` carries that same refusal back to the row it came from. A
+ * teacher reads the reason, closes the dialog, and the reason used to close
+ * with it — leaving a list that still gave no sign anything was wrong.
  */
-export function AssessmentPublishDialog({ open, onOpenChange, onPublished, assessment }) {
+export function AssessmentPublishDialog({
+  open,
+  onOpenChange,
+  onPublished,
+  onRefused,
+  assessment,
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -137,6 +159,7 @@ export function AssessmentPublishDialog({ open, onOpenChange, onPublished, asses
             assessment={assessment}
             onClose={() => onOpenChange(false)}
             onPublished={onPublished}
+            onRefused={onRefused}
           />
         ) : null}
       </DialogContent>

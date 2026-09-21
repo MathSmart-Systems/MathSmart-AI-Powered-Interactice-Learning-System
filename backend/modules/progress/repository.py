@@ -7,6 +7,10 @@ there is no second code path to keep honest.
 
 The trajectory is assembled from the learner's own attempt history rather than
 stored, so it cannot drift from the records it describes.
+
+The two denominators a dashboard divides by are counted here rather than taken
+from the view, because the view answers a different question: it counts what the
+learner has done, and a fraction also needs to know how much there was to do.
 """
 
 from __future__ import annotations
@@ -114,10 +118,46 @@ where activity_attempts.student_id = $1
 order by occurred_at
 """
 
-_MODULE_TOTAL_SQL = """
-select count(*) as total_modules
-from app.learning_modules
-where learning_modules.status = 'published'
+# A learner is measured against the Grade 6 competencies their school has
+# published, not against the handful they have happened to attempt. Counting
+# `app.competency_progress` would answer "2 of 2 mastered" to a learner who has
+# opened two competencies out of twenty, which is the opposite of the truth.
+# The grade comes from the learner's own profile, so the same statement is
+# correct for a Teacher/Administrator reading someone else's record.
+_COMPETENCY_TOTAL_SQL = """
+select count(*) as total_competencies
+from app.competencies
+where competencies.status = 'published'
+  and competencies.grade_id = (
+    select student_profiles.grade_id
+    from app.student_profiles
+    where student_profiles.student_id = $1
+  )
+"""
+
+# "1 of 40 modules" is not progress a learner can act on when only four of those
+# forty were ever assigned to them. Both halves of the fraction are therefore
+# taken from the learner's own path, in one statement, so a numerator can never
+# be counted over a denominator it does not belong to.
+#
+# `settled` is the same rule `app.refresh_learning_path` applies: the progress
+# row says the module is finished, or the item was already recorded as finished
+# and is never downgraded. Reading it here rather than from
+# `app.student_performance_summary` is deliberate — that view counts every
+# module the learner has ever completed, including lessons studied outside the
+# assigned path, which would let the numerator exceed the denominator.
+_PATH_MODULE_TOTALS_SQL = """
+select
+  count(*) as total_path_modules,
+  count(*) filter (
+    where coalesce(student_module_progress.is_complete, false)
+       or learning_path_items.status = 'completed'
+  ) as completed_path_modules
+from app.learning_path_items
+left join app.student_module_progress
+  on student_module_progress.student_id = learning_path_items.student_id
+ and student_module_progress.module_id = learning_path_items.module_id
+where learning_path_items.student_id = $1
 """
 
 
@@ -141,5 +181,13 @@ async def trajectory(connection: ActorConnection, student_id: UUID) -> list[Any]
     return await connection.fetch(_TRAJECTORY_SQL, student_id)
 
 
-async def published_module_total(connection: ActorConnection) -> int:
-    return await connection.fetchval(_MODULE_TOTAL_SQL) or 0
+async def published_competency_total(connection: ActorConnection, student_id: UUID) -> int:
+    return await connection.fetchval(_COMPETENCY_TOTAL_SQL, student_id) or 0
+
+
+async def path_module_totals(connection: ActorConnection, student_id: UUID) -> tuple[int, int]:
+    """How many modules the learner's path holds, and how many of them are finished."""
+    row = await connection.fetchrow(_PATH_MODULE_TOTALS_SQL, student_id)
+    if row is None:
+        return 0, 0
+    return int(row["total_path_modules"] or 0), int(row["completed_path_modules"] or 0)

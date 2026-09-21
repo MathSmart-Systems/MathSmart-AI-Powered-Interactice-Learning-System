@@ -24,7 +24,7 @@ import { canPublishActivity } from "../utils/validation.js";
  * Mounted fresh per row, so an error or a pending flag never leaks across
  * reopenings.
  */
-function PublishDialogContent({ activity, moduleTitle, onClose, onPublished }) {
+function PublishDialogContent({ activity, moduleTitle, onClose, onPublished, onRefused }) {
   const [isPublishing, setIsPublishing] = useState(false);
   const [error, setError] = useState(null);
 
@@ -39,10 +39,22 @@ function PublishDialogContent({ activity, moduleTitle, onClose, onPublished }) {
     setIsPublishing(false);
 
     if (result.ok) {
+      onRefused?.(null);
       onPublished(result.data);
       return;
     }
     setError(result.error);
+
+    // A 422 is the readiness check refusing, and its message names the one
+    // condition that failed — which is more than the listing row's `is_ready`
+    // boolean can ever say. It is shown here, where the teacher pressed
+    // Publish, and also handed to the list, because this dialog closes and the
+    // reason would otherwise close with it while the card still looks fine.
+    // Every other failure is about this attempt rather than this activity, so
+    // it stays here.
+    if (result.status === 422) {
+      onRefused?.(result.error);
+    }
   }
 
   return (
@@ -131,11 +143,16 @@ function PublishDialogContent({ activity, moduleTitle, onClose, onPublished }) {
  * The list below states only what this page already knows. The server checks
  * more, and its refusal is shown here rather than predicted, because predicting
  * it would mean guessing on the learner's behalf.
+ *
+ * `onRefused` carries that same refusal back to the card it came from. A
+ * teacher reads the reason, closes the dialog, and the reason used to close
+ * with it — leaving a grid that still gave no sign anything was wrong.
  */
 export function ActivityPublishDialog({
   open,
   onOpenChange,
   onPublished,
+  onRefused,
   activity,
   moduleTitle = null,
 }) {
@@ -156,6 +173,7 @@ export function ActivityPublishDialog({
             moduleTitle={moduleTitle}
             onClose={() => onOpenChange(false)}
             onPublished={onPublished}
+            onRefused={onRefused}
           />
         ) : null}
       </DialogContent>

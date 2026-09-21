@@ -18,6 +18,7 @@ import {
   fallbackMessage,
   getMockFeedback,
 } from "./diagnostic-feedback.js";
+import { previewFromSummary } from "../utils/catalogue.js";
 
 export { fallbackMessage, newIdempotencyKey };
 /** `mastery_band` vocabulary from the canonical enum table. */
@@ -446,6 +447,10 @@ export async function loadDiagnostic() {
   return {
     assessment_id: diagnostic.id,
     title: diagnostic.title,
+    // The same field `previewFromSummary` carries for a named paper. Absent
+    // on a payload from before the API sent it, which reads as ready — the
+    // start route still refuses what it must.
+    is_ready: diagnostic.is_ready !== false && diagnostic.availability !== "not_ready",
     total_questions: diagnostic.total_questions ?? 0,
     time_limit_minutes: diagnostic.duration_minutes ?? 60,
     latest_attempt_id: diagnostic.latest_attempt_id ?? status?.latest_attempt_id ?? null,
@@ -455,6 +460,49 @@ export async function loadDiagnostic() {
     reassessment_reason: status?.reassessment_reason ?? null,
   };
 }
+
+/**
+ * The standing of one named assessment, for the dynamic route.
+ *
+ * `loadDiagnostic` above answers a different question — "which diagnostic is
+ * mine?" — by searching the catalogue for the learner's grade. That is right
+ * for `/student/assessments/diagnostic`, and useless for a unit quiz, which
+ * the learner has already chosen by the time they arrive.
+ *
+ * The two produce the same shape, so the player does not have to know which
+ * one it was given. The teacher's written reason for a retake is only ever
+ * attached to a diagnostic, so the standing endpoint is consulted for that
+ * alone, and a failure there costs the sentence rather than the paper.
+ */
+export async function loadAssessmentPreview(assessmentId) {
+  if (!assessmentId) {
+    throw new AssessmentError("This assessment could not be found.", { status: 404 });
+  }
+
+  const summary = await request(`/assessments/${assessmentId}`);
+  if (!summary?.id) {
+    throw new AssessmentError("This assessment could not be found.", { status: 404 });
+  }
+
+  let status = null;
+  if (summary.type === "diagnostic") {
+    try {
+      status = await request("/diagnostic-status/me");
+    } catch (error) {
+      if (!(error instanceof AssessmentError)) throw error;
+      // The reason a teacher typed is a courtesy, not a gate. Losing it must
+      // not stop a learner sitting a paper the catalogue says is open.
+      status = null;
+    }
+  }
+
+  const preview = previewFromSummary(summary, status);
+  if (!preview) {
+    throw new AssessmentError("This assessment could not be found.", { status: 404 });
+  }
+  return preview;
+}
+
 
 /** Reads a completed attempt so its report remains available after navigation/reload. */
 export async function loadDiagnosticResult(attemptId) {
@@ -588,3 +636,77 @@ export async function getStudentFeedback({
   }
 }
 
+
+/**
+ * The per-question verdicts for a closed attempt.
+ *
+ * A score on its own teaches nothing: told 6 out of 10 and shown no item, a
+ * learner has no way to know what to study. This is deliberately read from the
+ * server rather than reassembled from whatever the player still has in memory,
+ * because the report is also reachable from the history list days later, when
+ * the player holds nothing at all.
+ *
+ * What comes back is the question, the learner's own answer, and the verdict
+ * the database recorded at submission. It does not include the correct answer,
+ * and cannot: the column that holds it is not granted to the API connection.
+ */
+export async function loadAttemptReview(attemptId) {
+  if (!attemptId) {
+    throw new AssessmentError("This attempt could not be found.", { status: 404 });
+  }
+
+  if (USE_MOCK) {
+    await delay(200);
+    return [];
+  }
+
+  const data = await request(`/assessment-attempts/${attemptId}/review`);
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Advisory Groq wording for one question the learner got wrong.
+ *
+ * Calls POST /api/v1/ai/incorrect-answer-explanation, and only ever after the
+ * deterministic verdict already exists — correctness is an input to this call,
+ * never an output of it. The endpoint returns an explanation and no verdict
+ * field at all, so nothing it says can change what the learner was scored.
+ *
+ * Never throws. Groq disabled, switched off in settings, timed out, rate
+ * limited or answering with a shape we did not expect all arrive as the same
+ * 503, and all of them mean the same thing here: the learner keeps their
+ * result and loses an optional sentence.
+ */
+export async function getAnswerExplanation({
+  questionText = null,
+  submittedAnswer = null,
+  isCorrect = null,
+  competencyId = null,
+} = {}) {
+  if (!questionText) return null;
+
+  if (USE_MOCK) {
+    await delay(300);
+    return {
+      explanation:
+        "Sample explanation: check each step again and compare it with the worked example in your lesson.",
+      provider: "mock",
+      model: "mock-groq-model",
+    };
+  }
+
+  try {
+    return await request("/ai/incorrect-answer-explanation", {
+      method: "POST",
+      body: {
+        question_text: String(questionText).slice(0, 2000),
+        submitted_answer: submittedAnswer ?? null,
+        is_correct: isCorrect,
+        competency_id: competencyId ?? null,
+      },
+    });
+  } catch (error) {
+    console.warn("[MathSmart] AI answer explanation unavailable:", error?.message || error);
+    return null;
+  }
+}

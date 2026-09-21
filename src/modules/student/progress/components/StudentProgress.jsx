@@ -16,8 +16,16 @@ export async function StudentProgress() {
   }
 
   if (result.state === PROGRESS_STATE.ERROR) {
-    return <ProgressServiceError />;
+    // The transport already knows whether the session lapsed, the service was
+    // unreachable, or the answer was unusable. Dropping `reason` here is what
+    // made an expired sign-in tell the learner to check their network.
+    return <ProgressServiceError reason={result.reason} />;
   }
 
-  return <StudentProgressView model={result.model} />;
+  return (
+    <StudentProgressView
+      model={result.model}
+      pathUnavailable={result.pathUnavailable}
+    />
+  );
 }

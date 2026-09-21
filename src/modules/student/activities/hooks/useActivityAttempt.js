@@ -10,7 +10,46 @@ import {
   submitActivity,
   ActivityError,
 } from "../services/activities-api.js";
+import {
+  checksStorageKey,
+  fromStoredChecks,
+  toStoredChecks,
+} from "../utils/attempt-checks.js";
 import { completionPercent } from "../utils/format.js";
+
+/**
+ * The remembered verdicts for one attempt, or nothing.
+ *
+ * Session storage, because the memory should last exactly as long as the tab
+ * the learner is working in: a reload must keep it, and someone else opening
+ * MathSmart on the same shared classroom machine tomorrow must not inherit it.
+ * Every access is guarded — private browsing, a full quota and a blocked
+ * origin all throw — and a failure simply means the verdicts are not restored,
+ * which is where this started.
+ */
+function readStoredChecks(attemptId) {
+  const key = checksStorageKey(attemptId);
+  if (!key || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredChecks(attemptId, stored) {
+  const key = checksStorageKey(attemptId);
+  if (!key || typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // Nothing to do and nothing to tell the learner: the verdicts on screen
+    // are unaffected, only the ones a reload could have brought back.
+  }
+}
 
 export const PLAYER_STATUS = Object.freeze({
   LOADING: "loading",
@@ -31,6 +70,11 @@ const MAX_TIME_SPENT_SECONDS = 86_400;
 export function useActivityAttempt(activityId) {
   const [status, setStatus] = useState(PLAYER_STATUS.LOADING);
   const [error, setError] = useState(null);
+  // What kind of refusal it was, kept beside the sentence. The player shows a
+  // not-ready activity, a locked one and a missing one as three different
+  // things, and the message alone cannot tell them apart.
+  const [errorCode, setErrorCode] = useState(null);
+  const [errorStatus, setErrorStatus] = useState(null);
   const [activity, setActivity] = useState(null);
   const [attempt, setAttempt] = useState(null);
 
@@ -39,6 +83,7 @@ export function useActivityAttempt(activityId) {
   const [checks, setChecks] = useState({});
   const [hints, setHints] = useState({});
   const [hintState, setHintState] = useState({});
+  const [hintError, setHintError] = useState({});
   const [checking, setChecking] = useState(false);
   const [flowError, setFlowError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -51,21 +96,28 @@ export function useActivityAttempt(activityId) {
   const boot = useCallback(async () => {
     setStatus(PLAYER_STATUS.LOADING);
     setError(null);
+    setErrorCode(null);
+    setErrorStatus(null);
     setOutcome(null);
     setAnswers({});
     setChecks({});
     setHints({});
     setHintState({});
+    setHintError({});
     setCurrentIndex(0);
     startedAtRef.current = Date.now();
 
     try {
       // Detail first so a missing activity never starts an attempt.
       const detail = await loadActivityDetail(activityId);
-      if (detail.questions.length === 0) {
+      // The API's own answer to whether starting would work, checked before a
+      // start is asked for. A learner who followed a link saved before the
+      // questions were archived is told what is wrong here rather than being
+      // sent into the player to collect a 409 from the start route.
+      if (detail.isReady === false || detail.questions.length === 0) {
         throw new ActivityError(
-          "This activity does not have any questions yet. Please tell your teacher.",
-          { code: "empty_activity" },
+          "This activity is not ready yet. Ask your teacher to finish setting it up.",
+          { status: 409, code: "activity_not_ready" },
         );
       }
 
@@ -84,13 +136,21 @@ export function useActivityAttempt(activityId) {
       setActivity(detail);
       setAttempt(started);
       setAnswers((previous) => ({ ...previous, ...resumedAnswers }));
+      // And the verdicts those answers already earned, where the answer has not
+      // changed since. A resumed attempt that showed a learner their own
+      // answers with no sign of which were right made them check the same
+      // question twice to find out something they had already been told.
+      setChecks(fromStoredChecks(readStoredChecks(started.attemptId), resumedAnswers));
       setStatus(PLAYER_STATUS.READY);
     } catch (cause) {
-      const message =
-        cause instanceof ActivityError
+      const known = cause instanceof ActivityError;
+      setError(
+        known
           ? cause.message
-          : "Something went wrong while opening this activity. Please try again.";
-      setError(message);
+          : "Something went wrong while opening this activity. Please try again.",
+      );
+      setErrorCode(known ? cause.code : null);
+      setErrorStatus(known ? cause.status : null);
       setStatus(PLAYER_STATUS.ERROR);
     }
   }, [activityId]);
@@ -107,6 +167,17 @@ export function useActivityAttempt(activityId) {
       bootRef.current = null;
     };
   }, []);
+
+  /**
+   * Remember the verdicts this attempt has been given, so a reload can restore
+   * them. Only while the attempt is in play: a load in progress has cleared the
+   * verdicts on purpose, and writing that emptiness out would erase the very
+   * thing the next boot wants to read.
+   */
+  useEffect(() => {
+    if (status !== PLAYER_STATUS.READY || !attempt?.attemptId) return;
+    writeStoredChecks(attempt.attemptId, toStoredChecks(checks, answers));
+  }, [status, attempt, checks, answers]);
 
   const questions = useMemo(() => activity?.questions ?? [], [activity]);
   const currentQuestion = questions[currentIndex] ?? null;
@@ -187,18 +258,32 @@ export function useActivityAttempt(activityId) {
     if (hints[currentId]) return;
 
     setHintState((previous) => ({ ...previous, [currentId]: "loading" }));
+    setHintError((previous) => ({ ...previous, [currentId]: null }));
     try {
-      const hint = await requestHint({
+      // The authored hint and, when Groq answered, a rephrasing of it. The
+      // authored text is the hint; the advisory wording is kept beside it so
+      // the card can show one, both, or neither without either standing in for
+      // the other.
+      const { hint, aiHint } = await requestHint({
         attemptId: attempt.attemptId,
         questionId: currentId,
       });
       if (hint) {
-        setHints((previous) => ({ ...previous, [currentId]: hint }));
+        setHints((previous) => ({
+          ...previous,
+          [currentId]: { text: hint, aiText: aiHint ?? null },
+        }));
         setHintState((previous) => ({ ...previous, [currentId]: "done" }));
       } else {
         setHintState((previous) => ({ ...previous, [currentId]: "none" }));
       }
-    } catch {
+    } catch (cause) {
+      // The service already phrases its failures for a learner, so the card can
+      // say what happened before it says what to do about it.
+      setHintError((previous) => ({
+        ...previous,
+        [currentId]: cause instanceof ActivityError ? cause.message : null,
+      }));
       setHintState((previous) => ({ ...previous, [currentId]: "error" }));
     }
   }, [attempt, currentId, hints]);
@@ -252,6 +337,8 @@ export function useActivityAttempt(activityId) {
   return {
     status,
     error,
+    errorCode,
+    errorStatus,
     activity,
     attempt,
     questions,
@@ -268,6 +355,7 @@ export function useActivityAttempt(activityId) {
     outcome,
     hints,
     hintState,
+    hintError,
     selectOption,
     changeValue,
     runCheck,

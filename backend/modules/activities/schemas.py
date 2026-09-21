@@ -32,6 +32,16 @@ class ActivitySummary(BaseModel):
     points: int
     mastery_threshold: int
     status: str
+    #: How many questions the activity holds. Zero is the state that used to be
+    #: invisible: an empty activity read as ordinary practice in the catalogue
+    #: and then refused to start.
+    question_count: int = 0
+    #: Whether starting this activity would actually succeed — it is published,
+    #: its module and that module's competency are published, it holds at least
+    #: one question, and every one of those questions and their competencies is
+    #: published. Decided by the database rather than inferred from `status`,
+    #: because `status` alone says nothing about what is inside.
+    is_ready: bool = False
     attempt_count: int = 0
     best_score: float | None = None
     path_status: str | None = None

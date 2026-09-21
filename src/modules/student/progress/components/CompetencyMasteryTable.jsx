@@ -6,18 +6,32 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  CircleDashed,
   Clock,
   History,
+  TrendingUp,
 } from "lucide-react";
 
 import { FIELD_IDS } from "../utils/constants.js";
 
+/**
+ * One icon per band, and no band borrowing another's.
+ *
+ * `developing` and `unscored` both used the clock, so the two states that most
+ * need telling apart — work in progress, and no work recorded — looked
+ * identical to anyone reading the icon rather than the badge colour.
+ */
 const STATUS_ICONS = {
   mastered: CheckCircle2,
-  developing: Clock,
+  developing: TrendingUp,
   needs_support: AlertCircle,
-  unscored: Clock,
+  unscored: CircleDashed,
 };
+
+/** The id of the row a competency's history toggle reveals. */
+function trajectoryRowId(competencyId) {
+  return `progress-trajectory-${competencyId}`;
+}
 
 export function CompetencyMasteryTable({ competencies = [] }) {
   const [expandedId, setExpandedId] = useState(null);
@@ -27,11 +41,17 @@ export function CompetencyMasteryTable({ competencies = [] }) {
   };
 
   return (
-    <div className="min-w-0 bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
+    <section
+      aria-labelledby="progress-competency-heading"
+      className="min-w-0 bg-card rounded-2xl border border-border shadow-xs overflow-hidden"
+    >
       {/* Table Header Strip */}
       <div className="p-6 border-b border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-foreground font-display">
+          <h2
+            id="progress-competency-heading"
+            className="text-lg font-bold text-foreground font-display"
+          >
             Competency Mastery Data
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -83,6 +103,7 @@ export function CompetencyMasteryTable({ competencies = [] }) {
                 const isExpanded = expandedId === row.id;
                 const hasTrajectory =
                   row.trajectory && row.trajectory.length > 0;
+                const panelId = trajectoryRowId(row.id);
 
                 return (
                   <React.Fragment key={row.id}>
@@ -126,12 +147,24 @@ export function CompetencyMasteryTable({ competencies = [] }) {
                         {(() => {
                           const StatusIcon = STATUS_ICONS[row.status.variant] || Clock;
                           return (
-                            <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${row.status.colorClass}`}
-                            >
-                              <StatusIcon className="w-3 h-3 shrink-0" aria-hidden="true" />
-                              <span>{row.status.label}</span>
-                            </span>
+                            <div className="flex flex-col items-center gap-1">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${row.status.colorClass}`}
+                              >
+                                <StatusIcon className="w-3 h-3 shrink-0" aria-hidden="true" />
+                                <span>{row.status.label}</span>
+                              </span>
+                              {/*
+                                How much evidence stands behind the badge. The
+                                band itself is the database's verdict and is not
+                                recalculated here; a single fortunate attempt
+                                simply no longer looks the same as a steady run
+                                of six.
+                              */}
+                              <span className="text-[10px] text-muted-foreground leading-tight">
+                                {row.attemptSummary}
+                              </span>
+                            </div>
                           );
                         })()}
                       </td>
@@ -143,15 +176,16 @@ export function CompetencyMasteryTable({ competencies = [] }) {
                             onClick={() => toggleExpand(row.id)}
                             className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground font-medium px-2 py-1 rounded-lg hover:bg-muted transition-colors cursor-pointer"
                             aria-expanded={isExpanded}
+                            aria-controls={panelId}
                             aria-label={`Toggle score trajectory for ${row.name}`}
                           >
                             <span className="text-[11px]">
                               {row.trajectory.length}
                             </span>
                             {isExpanded ? (
-                              <ChevronUp className="w-3.5 h-3.5" />
+                              <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
                             ) : (
-                              <ChevronDown className="w-3.5 h-3.5" />
+                              <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
                             )}
                           </button>
                         ) : (
@@ -162,14 +196,18 @@ export function CompetencyMasteryTable({ competencies = [] }) {
                       </td>
                     </tr>
 
-                    {/* Trajectory Timeline Accordion */}
-                    {isExpanded && hasTrajectory && (
-                      <tr className="bg-muted/40">
+                    {/*
+                      Rendered whether or not it is open, and hidden rather than
+                      removed, so that the `aria-controls` on the toggle always
+                      names a row that exists.
+                    */}
+                    {hasTrajectory ? (
+                      <tr id={panelId} hidden={!isExpanded} className="bg-muted/40">
                         <td colSpan={6} className="py-3 px-8">
                           <div className="space-y-2">
                             <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                              <History className="w-3.5 h-3.5 text-primary" />
-                              <span>Score Timeline & Attempt History</span>
+                              <History className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
+                              <span>Score Timeline &amp; Attempt History</span>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
                               {row.trajectory.map((point, ptIdx) => (
@@ -194,7 +232,7 @@ export function CompetencyMasteryTable({ competencies = [] }) {
                           </div>
                         </td>
                       </tr>
-                    )}
+                    ) : null}
                   </React.Fragment>
                 );
               })}
@@ -202,6 +240,6 @@ export function CompetencyMasteryTable({ competencies = [] }) {
           </table>
         </div>
       )}
-    </div>
+    </section>
   );
 }

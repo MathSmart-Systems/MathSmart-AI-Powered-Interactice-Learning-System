@@ -43,7 +43,9 @@ READINESS = "as grade_is_active"
 #: back out of learners' hands.
 OPEN_ATTEMPTS = "from app.assessment_attempts"
 MEMBERSHIP_IDS = "order by assessment_questions.position"
-MEMBERSHIP_COUNTS = "group by assessment_questions.assessment_id"
+#: The one statement that answers membership size and readiness together, named
+#: by the identifier array only it takes.
+MEMBERSHIP_COUNTS = "assessments.assessment_id = any($1::uuid[])"
 
 COMPETENCY_ROW = {
     "competency_id": COMPETENCY,
@@ -122,6 +124,10 @@ READINESS_ROW = {
     "grade_is_active": True,
     "question_total": 1,
     "unpublished_total": 0,
+    # How many of its questions sit under a competency that is still a draft.
+    # `app.start_assessment_attempt` counts those as undeliverable, so an
+    # assessment with any of them opens for nobody.
+    "unpublished_competency_total": 0,
 }
 
 USER_ROW = {
@@ -170,6 +176,12 @@ ATTEMPT_ROW = {
 #: the same fragment; this one exists because the fixture needs it first.
 MVP_GRADE = "order by grade_levels.is_active desc"
 
+#: The per-row setup status each listing reads: how many questions the record
+#: holds and whether a learner could actually open it. Named by the identifier
+#: array only those two statements take.
+ACTIVITY_SETUP = "activities.activity_id = any($1::uuid[])"
+ASSESSMENT_SETUP = "assessments.assessment_id = any($1::uuid[])"
+
 
 def admin_connection(**overrides):
     """Build a mock database connection pre-populated with admin fixtures."""
@@ -178,6 +190,11 @@ def admin_connection(**overrides):
         # Ahead of the table fragments, because the per-state counts select
         # from the same tables and would otherwise be answered with rows.
         STATE_COUNTS: STATE_COUNT_ROW,
+        # Ahead of the plain table fragments: the two setup-status statements
+        # read from app.activities and app.assessments themselves now, so the
+        # fragment naming their identifier array has to be matched first.
+        ACTIVITY_SETUP: [],
+        ASSESSMENT_SETUP: [],
         "from app.competencies": [COMPETENCY_ROW],
         "from app.learning_modules": [MODULE_ROW],
         "from app.activities": [ACTIVITY_ROW],
@@ -710,7 +727,7 @@ def test_archiving_an_activity_does_not_delete_it():
 
 #: The activity membership statements, each named by a clause only it carries.
 ACTIVITY_MEMBERSHIP_IDS = "order by activity_questions.position"
-ACTIVITY_MEMBERSHIP_COUNTS = "group by activity_questions.activity_id"
+ACTIVITY_MEMBERSHIP_COUNTS = "activities.activity_id = any($1::uuid[])"
 ACTIVITY_OPEN_ATTEMPTS = "activity_attempts.status = 'in_progress'"
 ACTIVITY_READINESS = "as activity_status"
 ACTIVITY_LIST = "order by activities.title"
@@ -724,6 +741,11 @@ ACTIVITY_READINESS_ROW = {
     "competency_status": "published",
     "question_total": 2,
     "unpublished_total": 0,
+    # The competency of each *question*, which is not the module's competency:
+    # a question may be authored under any of them, and
+    # `app.start_activity_attempt` refuses the ones whose own competency is a
+    # draft.
+    "unpublished_competency_total": 0,
 }
 
 
@@ -913,7 +935,12 @@ def test_an_activity_listing_carries_how_many_questions_each_holds():
         **{
             TOTAL: 1,
             ACTIVITY_MEMBERSHIP_COUNTS: [
-                {"activity_id": ACTIVITY, "question_total": 3}
+                {
+                    "activity_id": ACTIVITY,
+                    "question_total": 3,
+                    "is_ready": False,
+                    "readiness_reason": "draft_question",
+                }
             ],
         }
     )
@@ -1622,7 +1649,16 @@ def test_an_assessment_listing_carries_how_many_questions_each_holds():
     """Verify assessment listing payload includes question_count computed from membership."""
     client = build_client(
         admin_connection(
-            **{MEMBERSHIP_COUNTS: [{"assessment_id": ASSESSMENT, "question_total": 3}]}
+            **{
+                MEMBERSHIP_COUNTS: [
+                    {
+                        "assessment_id": ASSESSMENT,
+                        "question_total": 3,
+                        "is_ready": False,
+                        "readiness_reason": "draft_question",
+                    }
+                ]
+            }
         )
     )
 
@@ -3448,3 +3484,354 @@ def test_the_archiving_routes_still_only_archive():
         assert response.status_code == 204, path
         assert [call for call in connection.calls if "set status = 'archived'" in call[0]]
         assert not [call for call in connection.calls if "delete from app." in call[0]]
+
+
+# ---------------------------------------------------------------------------
+# Publishing by the back door
+# ---------------------------------------------------------------------------
+# There were two ways to reach `published` and only one of them checked
+# anything. `POST .../publish` asked whether the record was safe to deliver;
+# `PATCH .../{id}` took `status: "published"` as an ordinary column write and
+# asked nothing at all — so every rule below was one request away from being
+# skipped, and that is how activities with no questions and an assessment whose
+# question sat under a draft competency reached learners.
+
+
+def test_an_activity_cannot_be_published_by_patching_its_status():
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "question_total": 0}}
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "activity_not_publishable"
+    assert "at least one question" in response.json()["error"]["message"]
+    assert not [call for call in connection.calls if "update app.activities" in call[0]]
+
+
+def test_patching_an_activity_to_published_refuses_a_draft_competency_question():
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "unpublished_competency_total": 1}}
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "activity_not_publishable"
+    assert "competency" in response.json()["error"]["message"]
+    assert not [call for call in connection.calls if "update app.activities" in call[0]]
+
+
+def test_patching_a_ready_activity_to_published_still_works():
+    """The checks refuse what is broken, not the ordinary act of publishing."""
+    published = {**ACTIVITY_ROW, "status": "published"}
+    connection = activity_membership_connection(**{"returning": published})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "published"
+
+
+def test_patching_an_already_published_activity_is_not_a_publish():
+    """Correcting the title of a live activity is not the same decision.
+
+    The request moves it nowhere, so refusing it over what is inside it would
+    make the edit form unusable for exactly the correction the teacher opened
+    it to make.
+    """
+    live = {**ACTIVITY_READINESS_ROW, "activity_status": "published", "question_total": 0}
+    connection = activity_membership_connection(**{ACTIVITY_READINESS: live})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}",
+        json={"status": "published", "title": "Integers Multiplication Practice"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+
+
+def test_an_activity_patch_that_does_not_publish_runs_no_readiness_check():
+    connection = activity_membership_connection()
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}",
+        json={"title": "A clearer title"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert not [call for call in connection.calls if "as activity_status" in call[0]]
+
+
+def test_an_assessment_cannot_be_published_by_patching_its_status():
+    connection = admin_connection(
+        **{READINESS: {**READINESS_ROW, "question_total": 0}, "returning": ASSESSMENT_ROW}
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert "at least one question" in response.json()["error"]["message"]
+    assert not [call for call in connection.calls if "update app.assessments" in call[0]]
+
+
+def test_patching_an_assessment_to_published_refuses_a_draft_competency_question():
+    """The case that put a broken paper in front of learners.
+
+    Every question was published, so the old check passed. Their competency was
+    not, and `app.start_assessment_attempt` counts a question as deliverable
+    only when both are — so the paper went live and then refused to open.
+    """
+    connection = admin_connection(
+        **{
+            READINESS: {**READINESS_ROW, "unpublished_competency_total": 1},
+            "returning": ASSESSMENT_ROW,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert "competency" in response.json()["error"]["message"]
+    assert not [call for call in connection.calls if "update app.assessments" in call[0]]
+
+
+def test_publishing_an_assessment_with_a_draft_competency_question_is_refused():
+    """The same rule from the publish route, which shares the implementation."""
+    connection = admin_connection(
+        **{
+            READINESS: {**READINESS_ROW, "unpublished_competency_total": 1},
+            "returning": ASSESSMENT_ROW,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "assessment_not_publishable"
+    assert "competency" in response.json()["error"]["message"]
+
+
+def test_publishing_an_activity_with_a_draft_competency_question_is_refused():
+    connection = activity_membership_connection(
+        **{ACTIVITY_READINESS: {**ACTIVITY_READINESS_ROW, "unpublished_competency_total": 1}}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/teacher-admin/activities/{ACTIVITY}/publish", headers=ADVISER_HEADERS
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "activity_not_publishable"
+    assert "competency" in response.json()["error"]["message"]
+
+
+def test_patching_a_ready_assessment_to_published_still_works():
+    published = {**ASSESSMENT_ROW, "status": "published"}
+    connection = admin_connection(**{"returning": published})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}",
+        json={"status": "published"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "published"
+
+
+def test_an_assessment_patch_that_does_not_publish_runs_no_readiness_check():
+    connection = admin_connection(**{"returning": ASSESSMENT_ROW})
+    client = build_client(connection)
+
+    response = client.patch(
+        f"/api/v1/teacher-admin/assessments/{ASSESSMENT}",
+        json={"title": "A clearer title"},
+        headers=ADVISER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert not [call for call in connection.calls if "as grade_is_active" in call[0]]
+
+
+# ---------------------------------------------------------------------------
+# What the workspace can show about setup
+# ---------------------------------------------------------------------------
+
+
+def test_an_activity_listing_says_whether_each_row_is_ready():
+    """A row saying "published" said nothing about whether it would open.
+
+    The workspace could only show the status the teacher had set, so an
+    activity published empty looked exactly like one a class was working
+    through.
+    """
+    connection = activity_membership_connection(
+        **{
+            TOTAL: 1,
+            ACTIVITY_MEMBERSHIP_COUNTS: [
+                {
+                    "activity_id": ACTIVITY,
+                    "question_total": 0,
+                    "is_ready": False,
+                    "readiness_reason": "no_questions",
+                }
+            ],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get("/api/v1/teacher-admin/activities", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    row = response.json()["data"][0]
+    assert row["question_count"] == 0
+    assert row["is_ready"] is False
+
+
+def test_an_assessment_listing_says_whether_each_row_is_ready():
+    client = build_client(
+        admin_connection(
+            **{
+                MEMBERSHIP_COUNTS: [
+                    {
+                        "assessment_id": ASSESSMENT,
+                        "question_total": 4,
+                        "is_ready": True,
+                        "readiness_reason": None,
+                    }
+                ]
+            }
+        )
+    )
+
+    response = client.get("/api/v1/teacher-admin/assessments", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    row = response.json()["data"][0]
+    assert row["question_count"] == 4
+    assert row["is_ready"] is True
+
+
+def test_a_row_the_setup_statement_did_not_answer_for_is_not_ready():
+    """Absent is not unknown here: it is an empty record, which is not ready."""
+    client = build_client(admin_connection())
+
+    response = client.get("/api/v1/teacher-admin/assessments", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    row = response.json()["data"][0]
+    assert row["question_count"] == 0
+    assert row["is_ready"] is False
+    assert row["readiness_reason"] == "no_questions"
+
+
+def test_an_activity_row_names_the_one_thing_to_fix():
+    """"Not ready" on its own sends the teacher looking.
+
+    The row has to say which dependency is missing, because the four causes
+    live on four different screens: the membership editor, the question bank,
+    the competency list and the module.
+    """
+    connection = activity_membership_connection(
+        **{
+            TOTAL: 1,
+            ACTIVITY_MEMBERSHIP_COUNTS: [
+                {
+                    "activity_id": ACTIVITY,
+                    "question_total": 2,
+                    "is_ready": False,
+                    "readiness_reason": "draft_module",
+                }
+            ],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get("/api/v1/teacher-admin/activities", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["readiness_reason"] == "draft_module"
+
+
+def test_a_ready_assessment_row_has_no_reason_to_report():
+    client = build_client(
+        admin_connection(
+            **{
+                MEMBERSHIP_COUNTS: [
+                    {
+                        "assessment_id": ASSESSMENT,
+                        "question_total": 4,
+                        "is_ready": True,
+                        "readiness_reason": None,
+                    }
+                ]
+            }
+        )
+    )
+
+    response = client.get("/api/v1/teacher-admin/assessments", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["readiness_reason"] is None
+
+
+def test_an_assessment_row_names_a_draft_competency_behind_its_questions():
+    client = build_client(
+        admin_connection(
+            **{
+                MEMBERSHIP_COUNTS: [
+                    {
+                        "assessment_id": ASSESSMENT,
+                        "question_total": 2,
+                        "is_ready": False,
+                        "readiness_reason": "draft_competency",
+                    }
+                ]
+            }
+        )
+    )
+
+    response = client.get("/api/v1/teacher-admin/assessments", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    row = response.json()["data"][0]
+    assert row["is_ready"] is False
+    assert row["readiness_reason"] == "draft_competency"

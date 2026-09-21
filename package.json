@@ -17,7 +17,9 @@
     "db:reset:migrations": "supabase db reset --no-seed",
     "db:lint": "supabase db lint --fail-on error",
     "db:advisors": "supabase db advisors --local --type all --fail-on error",
-    "db:test": "supabase test db"
+    "db:test": "supabase test db",
+    "seed:demo": "node scripts/seed-demo.mjs",
+    "seed:demo:remove": "node scripts/seed-demo-remove.mjs"
   },
   "dependencies": {
     "@supabase/server": "^1.5.3",

@@ -29,6 +29,17 @@ export class ActivityError extends Error {
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/**
+ * What to say when the response carried no message of its own.
+ *
+ * Only a reply that would not parse gets this far — the API writes its own
+ * refusals for a learner and those are preferred. Every status the activity
+ * routes actually answer with is named here anyway, because the default is a
+ * sentence about something going wrong, and a 409 or a 422 is not something
+ * going wrong: it is the server saying no for a reason a learner can be told.
+ * Neither may ever reach a child as "check your connection", which is the one
+ * thing here that is certainly untrue.
+ */
 function fallbackMessage(status) {
   switch (status) {
     case 401:
@@ -37,6 +48,10 @@ function fallbackMessage(status) {
       return "You do not have access to this activity.";
     case 404:
       return "This activity is not ready yet. Ask your teacher if you expected it to be.";
+    case 409:
+      return "This activity is not ready yet. Ask your teacher to finish setting it up.";
+    case 412:
+      return "This activity is not open yet. Finish the earlier lessons in your learning path first.";
     case 422:
       return "Some of your answers could not be accepted. Please review and try again.";
     default:
@@ -131,7 +146,15 @@ export async function checkAnswer({ attemptId, questionId, answer }) {
   });
 }
 
-/** The authored hint for one question. It never discloses the answer. */
+/**
+ * The authored hint for one question, with the optional advisory rephrasing
+ * the backend may have put beside it. Neither discloses the answer.
+ *
+ * Both are returned because they are not interchangeable. `hint` is what a
+ * teacher wrote and is the hint; `aiHint` is extra wording that is null
+ * whenever Groq is disabled, silent or slow, so the player must be able to show
+ * the authored one on its own without anything looking missing.
+ */
 export async function requestHint({ attemptId, questionId }) {
   if (!attemptId) {
     throw new ActivityError("This activity is no longer active. Reload the page.");
@@ -142,7 +165,7 @@ export async function requestHint({ attemptId, questionId }) {
     body: { question_id: questionId },
   });
 
-  return result?.hint ?? null;
+  return { hint: result?.hint ?? null, aiHint: result?.ai_hint ?? null };
 }
 
 /**

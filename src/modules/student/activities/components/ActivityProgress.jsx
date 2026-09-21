@@ -7,6 +7,12 @@ import { formatAnsweredCount } from "../utils/format.js";
  * The sticky player chrome: question position, competency, answered count and
  * the progress bar. Both the count and the bar carry the same meaning, so the
  * state is never conveyed by colour alone.
+ *
+ * The negative margins cancel the workspace shell's own padding so the bar
+ * spans the full width of the content column, and they have to track it at
+ * every breakpoint the shell uses — `px-5 sm:px-8 lg:px-12`. Stopping at `sm`
+ * left the bar inset by the difference from `lg` upward, which read as a
+ * misaligned edge on exactly the screens most learners use in a computer lab.
  */
 export function ActivityProgress({
   index = 0,
@@ -18,7 +24,7 @@ export function ActivityProgress({
   const count = formatAnsweredCount(answeredCount, total);
 
   return (
-    <div className="sticky top-0 z-20 -mx-5 border-b border-border bg-background/95 px-5 pt-4 pb-4 backdrop-blur-sm sm:-mx-8 sm:px-8">
+    <div className="sticky top-0 z-20 -mx-5 border-b border-border bg-background/95 px-5 pt-4 pb-4 backdrop-blur-sm sm:-mx-8 sm:px-8 lg:-mx-12 lg:px-12">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="flex items-baseline gap-2">
           <span className="text-sm font-semibold text-foreground">

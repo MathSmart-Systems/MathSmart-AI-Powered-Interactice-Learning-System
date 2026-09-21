@@ -19,7 +19,9 @@ describe("diagnostic fallbackMessage", () => {
     assert.match(fallbackMessage(401), /session has expired/i);
     assert.match(fallbackMessage(403), /do not have access/i);
     assert.match(fallbackMessage(404), /not available yet/i);
-    assert.match(fallbackMessage(409), /already been submitted/i);
+    // 409 covers both an attempt already submitted and a paper the server
+    // cannot deliver, so the sentence may not assert one of them.
+    assert.match(fallbackMessage(409), /cannot be opened right now/i);
     assert.match(fallbackMessage(412), /not eligible/i);
     assert.match(fallbackMessage(422), /could not be accepted/i);
   });
@@ -89,7 +91,10 @@ describe("getMockFeedback", () => {
     assert.ok(feedback, "Feedback result should not be null");
     assert.equal(typeof feedback.feedback_text, "string");
     assert.ok(feedback.feedback_text.length > 0);
-    assert.equal(feedback.provider, "groq");
+    // "mock", not "groq". This text is written in the repository, and calling
+    // it Groq output put a canned sentence on screen under the same
+    // provenance line as a real one.
+    assert.equal(feedback.provider, "mock");
     assert.equal(feedback.confidence_score, null);
     assert.ok(feedback.generated_at);
   });

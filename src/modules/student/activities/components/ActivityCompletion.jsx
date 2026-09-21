@@ -13,11 +13,16 @@ import { formatPercent } from "../utils/format.js";
  * Score, accuracy, pass decision, mastery band and competency growth are all
  * deterministic outputs the API computed. The AI encouragement at the bottom,
  * when present, is advisory and clearly labelled as a suggestion.
+ *
+ * `headingRef` belongs to the player, which moves the keyboard here when this
+ * report replaces the questions: a learner who submitted from half way down a
+ * tall page would otherwise be left reading whitespace.
  */
 export function ActivityCompletion({
   outcome,
   encouragement = null,
   encouragementLoading = false,
+  headingRef = null,
   onTryAgain,
 }) {
   if (!outcome) return null;
@@ -33,7 +38,12 @@ export function ActivityCompletion({
     <section className="flex flex-col gap-8" aria-labelledby="completion-heading">
       <header className="flex flex-col gap-2">
         <p className="text-sm font-medium text-primary">Activity finished</p>
-        <h1 id="completion-heading" className="font-display text-3xl font-semibold tracking-tight text-foreground">
+        <h1
+          id="completion-heading"
+          ref={headingRef}
+          tabIndex={-1}
+          className="font-display text-3xl font-semibold tracking-tight text-foreground"
+        >
           {passed ? "Nicely done!" : "Good effort — keep going."}
         </h1>
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">

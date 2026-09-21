@@ -26,7 +26,14 @@ function ActivitySkeletonRow() {
  */
 export function StudentActivitiesSkeleton() {
   return (
-    <div className="flex flex-col gap-10" aria-labelledby="activities-heading">
+    // No `aria-labelledby`: it pointed at the real page's heading, which does
+    // not exist yet while this is on screen, so it named nothing. A spoken
+    // line of its own is what a screen reader actually needs here.
+    <div className="flex flex-col gap-10">
+      <p role="status" className="sr-only">
+        Loading your activities
+      </p>
+
       <div className="flex flex-col gap-2">
         <Block className="h-4 w-44" />
         <Block className="h-9 w-72 max-w-full" />

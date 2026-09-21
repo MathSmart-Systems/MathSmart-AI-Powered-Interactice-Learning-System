@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
+import asyncpg
+
 from fastapi import APIRouter, Query
 
 from app.dependencies import ActorDb, CurrentActor
@@ -26,6 +28,17 @@ from modules.learning_modules.schemas import (
     ModuleSummary,
     SaveModuleProgressRequest,
 )
+
+
+# A learner's path can refuse a write that the route itself would allow: a
+# module whose earlier items are unfinished is not open yet. The database says
+# so with 55000 (object_not_in_prerequisite_state), which asyncpg raises as
+# ObjectNotInPrerequisiteStateError. The documented status table names 412 for
+# locked content, and the refusal is an ordinary answer to an ordinary request
+# rather than a fault, so it must not reach the caller as a 500.
+LOCKED_MESSAGE = "This is not open yet. Finish the earlier lessons in your learning path first."
+LOCKED_CODE = "content_locked"
+
 
 router = APIRouter(tags=["modules"])
 
@@ -164,12 +177,15 @@ async def save_module_progress(
     """
     _only_a_learner(actor)
 
-    row = await repository.save_progress(
-        connection,
-        module_id=module_id,
-        completed_section_ids=body.completed_section_ids,
-        last_section_id=body.last_section_id,
-    )
+    try:
+        row = await repository.save_progress(
+            connection,
+            module_id=module_id,
+            completed_section_ids=body.completed_section_ids,
+            last_section_id=body.last_section_id,
+        )
+    except asyncpg.ObjectNotInPrerequisiteStateError as exc:
+        raise ApiError(412, LOCKED_MESSAGE, code=LOCKED_CODE) from exc
     if row is None:
         raise ApiError(404, "No learning module was found")
     return {"data": _progress(row).model_dump(mode="json")}
@@ -182,7 +198,10 @@ async def complete_module(
     """Mark a module complete, once every section is finished."""
     _only_a_learner(actor)
 
-    row = await repository.complete(connection, module_id=module_id)
+    try:
+        row = await repository.complete(connection, module_id=module_id)
+    except asyncpg.ObjectNotInPrerequisiteStateError as exc:
+        raise ApiError(412, LOCKED_MESSAGE, code=LOCKED_CODE) from exc
     if row is None:
         raise ApiError(
             412,

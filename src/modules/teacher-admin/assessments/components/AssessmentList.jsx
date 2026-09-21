@@ -21,6 +21,9 @@ import {
   formatQuestionCount,
 } from "../utils/format.js";
 
+import { describeAssessmentReadiness } from "../utils/readiness.js";
+
+import { AssessmentReadinessBadge, AssessmentReadinessNote } from "./AssessmentReadiness.jsx";
 import { AssessmentStatusBadge } from "./AssessmentStatusBadge.jsx";
 
 /** The status tabs, in the order an author works through them. */
@@ -144,11 +147,16 @@ function LoadingRows({ rows = DEFAULT_PAGE_SIZE }) {
  * Searching and status filtering happen on the server, so this component
  * renders exactly the page it was given. Filtering here instead would quietly
  * hide every assessment on the pages that were not fetched.
+ *
+ * `publishRefusal` is the last refusal the API gave for one of these rows,
+ * carried down so the reason survives the dialog the teacher dismissed. It
+ * names a single row, because a teacher publishes one paper at a time.
  */
 export function AssessmentList({
   assessments = [],
   isLoading = false,
   hasFilter = false,
+  publishRefusal = null,
   panelId,
   labelledBy,
   onEdit,
@@ -199,6 +207,11 @@ export function AssessmentList({
         {assessments.map((assessment) => {
           const status = (assessment.status || "draft").toLowerCase();
           const questionCount = assessment.question_count ?? 0;
+          const readiness = describeAssessmentReadiness(assessment);
+          const refusal =
+            publishRefusal?.assessmentId === assessment.assessment_id
+              ? publishRefusal.message
+              : null;
 
           return (
             <li
@@ -211,6 +224,19 @@ export function AssessmentList({
                     {assessment.title}
                   </h3>
                   <AssessmentStatusBadge status={assessment.status} />
+                  {/*
+                    Readiness is a second badge and a line beneath, not a
+                    rewrite of the first badge. Published and ready are two
+                    separate facts: a paper that was published is being offered
+                    to learners right now, which is exactly why an unready one
+                    is worth interrupting for, so overwriting "Published" with
+                    "Not ready" would hide the urgency rather than explain it.
+                    The badge is what makes the row findable in a list of
+                    twenty, and a badge has no room for which dependency is
+                    missing — so the sentence that names it, and the control
+                    that fixes it, go underneath where there is room for both.
+                  */}
+                  {readiness ? <AssessmentReadinessBadge /> : null}
                 </div>
 
                 {assessment.description ? (
@@ -240,6 +266,32 @@ export function AssessmentList({
                   ) : null}
                 </dl>
               </div>
+
+              {/*
+                A refusal outranks the row's own reading of readiness. The
+                server checked this assessment a moment ago and named the one
+                condition that failed; `is_ready` only knows that one of them
+                did. Both lead to the same place, so the same note carries both.
+              */}
+              {refusal ? (
+                <AssessmentReadinessNote
+                  headline="It could not be published"
+                  detail={refusal}
+                  title={assessment.title}
+                  onFix={
+                    onManageQuestions ? () => onManageQuestions(assessment) : undefined
+                  }
+                />
+              ) : readiness ? (
+                <AssessmentReadinessNote
+                  headline={readiness.headline}
+                  detail={readiness.detail}
+                  title={assessment.title}
+                  onFix={
+                    onManageQuestions ? () => onManageQuestions(assessment) : undefined
+                  }
+                />
+              ) : null}
 
               <div className="flex flex-wrap gap-2">
                 <Button

@@ -34,6 +34,7 @@ from modules.assessments.schemas import (
     DiagnosticStatus,
     PathItem,
     ReassessmentAuthorization,
+    ReviewedQuestion,
     SaveAnswersRequest,
 )
 from modules.competencies.schemas import PublicationStatus
@@ -72,6 +73,8 @@ def _summary(row: Any) -> dict[str, Any]:
         attempt_count=row["attempt_count"] or 0,
         latest_attempt_id=row["latest_attempt_id"],
         latest_status=str(row["latest_status"]) if row["latest_status"] else None,
+        is_ready=bool(row["is_ready"]),
+        availability=str(row["availability"]) if row.get("availability") else None,
     ).model_dump(mode="json")
 
 
@@ -114,6 +117,29 @@ def _next_action(path: list[PathItem]) -> dict[str, str]:
     return {"type": "dashboard", "label": "Return to Dashboard"}
 
 
+async def _visible_assessment(actor: Any, connection: Any, assessment_id: UUID) -> Any:
+    """The assessment as this caller is allowed to see it, or a refusal.
+
+    Typing an identifier into the address bar is not authorization. The
+    catalogue restricts a learner to their own year group, and a paper they
+    could never be shown has to answer the same way whether it is missing or
+    merely somebody else's — otherwise the difference between the two replies
+    is itself a way to enumerate the assessment table.
+    """
+    row = await repository.assessment(
+        connection, user_id=actor.user_id, assessment_id=assessment_id
+    )
+    if row is None:
+        raise ApiError(404, "No assessment was found")
+
+    if actor.role is MathSmartRole.STUDENT:
+        grade_id = await repository.learner_grade_id(connection, user_id=actor.user_id)
+        if grade_id is None or row["grade_id"] != grade_id:
+            raise ApiError(404, "No assessment was found")
+
+    return row
+
+
 @router.get("/assessments")
 async def list_assessments(
     actor: CurrentActor,
@@ -134,7 +160,7 @@ async def list_assessments(
     rows = await repository.listing(
         connection, user_id=actor.user_id, limit=page_size, offset=offset, **filters
     )
-    total = await repository.listing_total(connection, **filters)
+    total = await repository.listing_total(connection, user_id=actor.user_id, **filters)
 
     return {
         "data": [_summary(row) for row in rows],
@@ -152,11 +178,7 @@ async def read_assessment(
     actor: CurrentActor, connection: ActorDb, assessment_id: UUID
 ) -> dict[str, Any]:
     """One assessment. Never its questions, and never an answer key."""
-    row = await repository.assessment(
-        connection, user_id=actor.user_id, assessment_id=assessment_id
-    )
-    if row is None:
-        raise ApiError(404, "No assessment was found")
+    row = await _visible_assessment(actor, connection, assessment_id)
     return {"data": _summary(row)}
 
 
@@ -170,6 +192,7 @@ async def start_attempt(
     documents. A refresh is not an error and must not create a second attempt.
     """
     _only_a_learner(actor)
+    await _visible_assessment(actor, connection, assessment_id)
 
     already_open = await repository.open_attempt_id(
         connection, assessment_id=assessment_id, user_id=actor.user_id
@@ -185,6 +208,20 @@ async def start_attempt(
             403,
             "Sitting this assessment again needs your teacher's authorisation",
             code="reassessment_not_authorized",
+        ) from exc
+    except asyncpg.NoDataFoundError as exc:
+        # Not published, or its competency is not. Indistinguishable from
+        # missing, from where the learner stands.
+        raise ApiError(404, "No assessment was found") from exc
+    except asyncpg.AssertError as exc:
+        # The paper exists but cannot be delivered: no questions, some of them
+        # unpublished, or an attempt opened before the question snapshot
+        # existed. None of that is the learner's doing, and it used to reach
+        # them as "the request could not be completed".
+        raise ApiError(
+            409,
+            "This assessment is not ready yet. Ask your teacher to finish setting it up.",
+            code="assessment_not_ready",
         ) from exc
     if attempt_row is None:
         raise ApiError(404, "No assessment was found")
@@ -471,6 +508,55 @@ async def read_attempt(
 
     report = _report_from_attempt(attempt_row, results, path_rows, valid_payload=valid_payload)
     return {"data": report.model_dump(mode="json")}
+
+
+@router.get("/assessment-attempts/{attempt_id}/review")
+async def read_attempt_review(
+    _actor: CurrentActor, connection: ActorDb, attempt_id: UUID
+) -> dict[str, Any]:
+    """Which questions were right, once the paper is closed.
+
+    This exists because a score on its own teaches nothing. A learner who is
+    told 6 out of 10 and shown no item has no way to know what to study, and
+    the competency breakdown answers a different, coarser question.
+
+    What it still does not carry is the correct answer. That column is not
+    granted to this connection, so the report can say "this one was wrong" and
+    cannot say "the answer was 72" — which is the line between reviewing a
+    paper and handing over the key before a retake.
+
+    Whose attempt this may be is decided by the policies, exactly as the
+    attempt read-back above: a learner sees their own, a Teacher/Administrator
+    sees the school's, and anyone else is told it was not found.
+    """
+    attempt_row = await repository.attempt(connection, attempt_id)
+    if attempt_row is None:
+        raise ApiError(404, "No attempt was found")
+
+    rows = await repository.attempt_review(connection, attempt_id)
+    items = [
+        ReviewedQuestion(
+            question_id=row["question_id"],
+            position=row["position"],
+            competency_id=row["competency_id"],
+            competency_name=row["competency_name"],
+            text=row["text"],
+            question_type=row["question_type"],
+            choices=_json_value(row["choices"]) or [],
+            submitted_answer=_json_value(row["answer"]),
+            is_correct=row["is_correct"],
+        ).model_dump(mode="json")
+        for row in rows
+    ]
+
+    return {
+        "data": items,
+        "meta": {
+            "attempt_id": str(attempt_id),
+            "status": str(attempt_row["status"]),
+            "reviewable": bool(items),
+        },
+    }
 
 
 @router.get("/students/{student_id}/assessment-attempts")

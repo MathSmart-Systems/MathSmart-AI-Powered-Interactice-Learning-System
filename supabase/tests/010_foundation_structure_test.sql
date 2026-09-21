@@ -210,6 +210,21 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --                            actor_user_id restricts the deletion of their
 --                            profile. A function keeps that exception narrow:
 --                            one learner, and never anyone who is not one.
+--   module_is_satisfied,     what finishes a module is a passed activity, read
+--   module_activity_passed,  from attempt evidence the learner cannot write.
+--   module_has_required_activity  Revoked from every role: whether somebody
+--                            else has finished a lesson is not a learner's
+--                            question to ask one module at a time.
+--   refresh_learning_path,   the path is SELECT-only for the learner it
+--   module_is_locked_for     belongs to, and recomputing it must not be
+--                            something a learner can aim at somebody else.
+--                            Both are revoked from every role and reachable
+--                            only from the triggers below.
+--   enforce_module_progress_unlocked,   trigger guards and their refresh
+--   enforce_activity_attempt_unlocked,  companions. They call the two above,
+--   refresh_path_after_module_progress, which no caller holds EXECUTE on, so
+--   refresh_path_after_activity_attempt, they have to carry the definer's
+--   refresh_path_after_insert            rights themselves.
 --
 -- A new name appearing here is a review item, not a formatting change.
 select is(
@@ -220,8 +235,14 @@ select is(
      and pg_proc.prosecdef),
   'activity_hint,archive_intervention,authorize_reassessment,'
   || 'check_activity_answer,claim_assessment_submission_idempotency,'
-  || 'complete_assessment_submission_idempotency,complete_module,is_active_account,may_start_reassessment,module_section_ids,'
-  || 'open_intervention,purge_learner_audit_trail,record_audit_event,reset_diagnostic,'
+  || 'complete_assessment_submission_idempotency,complete_module,'
+  || 'enforce_activity_attempt_unlocked,enforce_module_progress_unlocked,'
+  || 'is_active_account,may_start_reassessment,module_activity_passed,'
+  || 'module_has_required_activity,module_is_locked_for,module_is_satisfied,'
+  || 'module_section_ids,'
+  || 'open_intervention,purge_learner_audit_trail,record_audit_event,'
+  || 'refresh_learning_path,refresh_path_after_activity_attempt,'
+  || 'refresh_path_after_insert,refresh_path_after_module_progress,reset_diagnostic,'
   || 'save_assessment_answers,save_module_progress,set_account_status,'
   || 'setting_integer,start_activity_attempt,start_assessment_attempt,'
   || 'submit_activity_attempt,submit_assessment_attempt,update_intervention',

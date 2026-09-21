@@ -9,7 +9,7 @@
  * backend's answer in.
  */
 
-import { catalogueStatus, pathItemStatus } from "./status.js";
+import { catalogueStatus, isLockedStatus, pathItemStatus } from "./status.js";
 import { formatPercent, toNumber } from "./format.js";
 
 export const MY_LEARNING_ROUTE = "/student/my-learning";
@@ -77,6 +77,26 @@ function pathRow(item = {}) {
 }
 
 /**
+ * Which earlier lesson a locked row is waiting on.
+ *
+ * `app.refresh_learning_path` locks an item whenever any earlier item is
+ * unfinished, so the lesson a learner should open next is the first unfinished
+ * one above it. Naming that lesson is the whole difference between "this is
+ * shut" and "here is how to open it". When nothing earlier is unfinished the
+ * row was locked for a reason this screen cannot see — a path rebuilt in
+ * another tab, most likely — and the caller is left to say so in general
+ * terms rather than name the wrong lesson.
+ */
+function blockedBy(rows, index) {
+  for (let earlier = 0; earlier < index; earlier += 1) {
+    if (!rows[earlier].isComplete) {
+      return rows[earlier].title;
+    }
+  }
+  return null;
+}
+
+/**
  * The My Learning screen. `path` runs in the order the teacher's reasons gave
  * it; `browse` lists every published module not on the path, ordered by the
  * curriculum, so a learner who outgrows their path can still open anything.
@@ -111,6 +131,13 @@ export function buildMyLearningModel({ modules = [], pathItems = [] }) {
     })
     .filter((row) => row !== null);
 
+  // The lock reason is read after the whole path exists, because it is a fact
+  // about the rows above a row rather than about the row itself.
+  path.forEach((row, index) => {
+    row.isLocked = isLockedStatus(row);
+    row.blockedByTitle = row.isLocked ? blockedBy(path, index) : null;
+  });
+
   const browse = catalogue
     .filter((row) => !pathIds.has(row.moduleId))
     .sort((a, b) => a.orderIndex - b.orderIndex)
@@ -127,6 +154,10 @@ export function buildMyLearningModel({ modules = [], pathItems = [] }) {
         statusValue: row.isComplete ? "completed" : row.pathStatus,
         pathStatus: status,
         cta: `${status.verb} this module`,
+        isLocked: isLockedStatus({ statusValue: row.pathStatus, isComplete: row.isComplete }),
+        // A browse row sits on no line, so there is no "the one before this"
+        // to name even when the catalogue still reports it as locked.
+        blockedByTitle: null,
       };
     });
 
@@ -244,4 +275,20 @@ export function buildModuleReaderModel(detail = {}) {
     },
     allSectionsFinished,
   };
+}
+
+/**
+ * Whether a lesson the API handed back is one the learner may not work in yet.
+ *
+ * `path_status` is the backend's own answer, recomputed by
+ * `app.refresh_learning_path` from stored progress; nothing here recalculates
+ * it. A finished lesson is never locked, because a completed item is never
+ * downgraded and a learner coming back to revise one must not be shut out by a
+ * status that has not caught up.
+ */
+export function isLockedModule(model) {
+  return isLockedStatus({
+    statusValue: model?.pathStatus ?? null,
+    isComplete: Boolean(model?.progress?.isComplete),
+  });
 }

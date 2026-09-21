@@ -155,9 +155,13 @@ select is((select count(*) from app.learning_path_items
             where learning_path_items.competency_id = 'c4000000-0000-4000-8000-000000000001'), 1::bigint,
           'A learner sees only their own learning path');
 
+-- `in_progress` rather than the `available` this fixture inserts: the learner
+-- has 25% of the module recorded, and the path now derives its own status from
+-- that evidence. What this assertion is for is unchanged — the peer's item on
+-- the same competency is `completed`, and the learner does not see it.
 select is((select status from app.learning_path_items
             where learning_path_items.competency_id = 'c4000000-0000-4000-8000-000000000001'),
-          'available'::app.path_item_status,
+          'in_progress'::app.path_item_status,
           'The path item a learner sees is their own');
 
 select is((select count(*) from app.student_module_progress

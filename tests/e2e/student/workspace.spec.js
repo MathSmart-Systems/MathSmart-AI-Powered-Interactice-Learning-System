@@ -10,9 +10,15 @@ import {
 
 const describe = hasAccount(STUDENT_ACCOUNT) ? test.describe : test.describe.skip;
 
+// Every student destination is built now, so each one is named here. The two
+// that were missing — Activities and Progress — were being asserted as
+// unbuilt placeholders, which only stopped failing because no learner account
+// existed locally to run the check against.
 const IMPLEMENTED_HEADINGS = new Map([
   ["/student/my-learning", "My Learning"],
   ["/student/assessments", "Assessments"],
+  ["/student/activities", "Activities"],
+  ["/student/progress", "My Mathematics Competency Progress"],
   ["/student/profile", "Student Profile & Learning Record"],
 ]);
 
@@ -46,7 +52,9 @@ describe("student workspace", () => {
           page.getByRole("heading", { name: IMPLEMENTED_HEADINGS.get(route), level: 1 }),
         ).toBeVisible();
       } else {
-        await expect(page.getByRole("heading", { name: "UI in progress" })).toBeVisible();
+        // Nothing is left to be a placeholder. If a destination ever regresses
+        // to one, this says so rather than passing quietly.
+        await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
       }
 
       await expect(page.locator('nav[aria-label="Workspace"] a[aria-current="page"]')).toHaveCount(1);

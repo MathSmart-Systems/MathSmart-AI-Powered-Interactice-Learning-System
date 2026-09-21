@@ -52,6 +52,16 @@ export function TeacherAssessmentsView() {
   const [dialog, setDialog] = useState(NO_DIALOG);
   const [confirmation, setConfirmation] = useState(null);
 
+  /**
+   * The last publication the API refused, and the reason it gave.
+   *
+   * One row at a time, because a teacher publishes one paper at a time. Unlike
+   * a confirmation it is not put on a timer: a confirmation reports something
+   * that already happened, while this is work still outstanding, and taking it
+   * away after six seconds would take the reason with it.
+   */
+  const [publishRefusal, setPublishRefusal] = useState(null);
+
   const confirmationTimer = useRef(null);
 
   /** A confirmation that clears itself, and never outlives the component. */
@@ -316,6 +326,7 @@ export function TeacherAssessmentsView() {
             assessments={assessments}
             isLoading={isFirstLoad}
             hasFilter={hasFilter}
+            publishRefusal={publishRefusal}
             panelId={PANEL_ID}
             labelledBy={`assessment-status-tab-${status}`}
             onCreateDraft={() => openDialog("form")}
@@ -381,7 +392,14 @@ export function TeacherAssessmentsView() {
         onOpenChange={closeDialog}
         assessment={dialog.assessment}
         onSaved={(saved) => {
+          const editedId = dialog.assessment?.assessment_id;
           setDialog(NO_DIALOG);
+          // The teacher has just worked on the row the refusal was about, so
+          // the refusal is stale whatever they changed. What the row is still
+          // missing, if anything, comes back with the reload.
+          setPublishRefusal((refusal) =>
+            refusal?.assessmentId === editedId ? null : refusal,
+          );
           confirm(
             `The question list was saved. This assessment now holds ${saved.question_count} ${
               saved.question_count === 1 ? "question" : "questions"
@@ -430,6 +448,18 @@ export function TeacherAssessmentsView() {
         open={dialog.kind === "publish"}
         onOpenChange={closeDialog}
         assessment={dialog.assessment}
+        onRefused={(message) =>
+          setPublishRefusal((refusal) => {
+            const publishedId = dialog.assessment?.assessment_id;
+            if (message) {
+              return { assessmentId: publishedId, message };
+            }
+            // A publication that succeeded clears only its own row's refusal.
+            // Clearing whatever was there would let publishing a second paper
+            // quietly retire the warning still standing against the first.
+            return refusal?.assessmentId === publishedId ? null : refusal;
+          })
+        }
         onPublished={(published) => {
           setDialog(NO_DIALOG);
           confirm(`${published.title} is published and can be delivered to learners.`);

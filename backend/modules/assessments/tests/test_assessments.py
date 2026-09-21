@@ -46,6 +46,9 @@ ASSESSMENT_ROW = {
     "attempt_count": 0,
     "latest_attempt_id": None,
     "latest_status": None,
+    # A catalogue column now: whether starting this paper would actually
+    # succeed, which `status` alone never said.
+    "is_ready": True,
 }
 
 ATTEMPT_ROW = {
@@ -84,6 +87,21 @@ QUESTION_ROW = {
 
 RESPONSE_ROW = {"question_id": QUESTION, "answer": '"72"', "is_correct": None}
 
+# One reviewed item, as the closed-paper read returns it. Note what is not
+# here: there is no correct answer and no key, because the column that holds
+# them is not granted to this connection.
+REVIEW_ROW = {
+    "question_id": QUESTION,
+    "position": 1,
+    "competency_id": COMPETENCY,
+    "competency_name": "Multiplication and Division of Integers",
+    "text": "What is (-9) x (-8)?",
+    "question_type": "number_input",
+    "choices": "[]",
+    "answer": '"64"',
+    "is_correct": False,
+}
+
 RESULT_ROW = {
     "competency_id": COMPETENCY,
     "competency_name": "Multiplication and Division of Integers",
@@ -109,7 +127,11 @@ PATH_ROW = {
 
 # Each key is an anchor that appears in exactly one statement, so a fake answer
 # reaches the query it was written for.
-OPEN_ATTEMPT = "assessment_attempts.status = 'in_progress'"
+# The catalogue now derives the caller's standing from their attempts, so it
+# mentions both the status predicate and the attempt id this query selects.
+# Neither is an anchor any more. The parameter position is: the open-attempt
+# lookup takes the user id as $2, and every catalogue subquery takes it as $1.
+OPEN_ATTEMPT = "and student_profiles.user_id = $2"
 ATTEMPT_BY_ID = "where assessment_attempts.attempt_id = $1"
 ASSESSMENT_BY_ID = "where assessments.assessment_id"
 ASSESSMENT_LIST = "order by assessments.title"
@@ -121,6 +143,11 @@ QUESTIONS = "order by assessment_questions.position"
 DELIVERED = "order by assessment_responses.delivered_position"
 SAVED = "select assessment_responses.question_id, assessment_responses.answer"
 HISTORY = "limit $2 offset $3"
+# The year-group check the detail and start routes run before anything else. A
+# learner whose grade does not match the paper is told it was not found, so the
+# fakes have to answer it or every one of those routes reads as missing.
+LEARNER_GRADE = "select student_profiles.grade_id"
+REVIEW = "order by assessment_responses.delivered_position"
 
 
 def attempt_connection(**overrides):
@@ -138,6 +165,7 @@ def attempt_connection(**overrides):
         ASSESSMENT_BY_ID: ASSESSMENT_ROW,
         OPEN_ATTEMPT: ATTEMPT,
         ATTEMPT_BY_ID: ATTEMPT_ROW,
+        LEARNER_GRADE: GRADE,
     }
     results.update(overrides)
     return FakeConnection(results=results)
@@ -178,7 +206,9 @@ def test_the_documented_assessment_filters_reach_the_query():
 
 
 def test_an_assessment_detail_never_carries_questions_or_an_answer_key():
-    connection = FakeConnection(results={ASSESSMENT_BY_ID: ASSESSMENT_ROW})
+    connection = FakeConnection(
+        results={ASSESSMENT_BY_ID: ASSESSMENT_ROW, LEARNER_GRADE: GRADE}
+    )
     client = build_client(connection)
 
     response = client.get(f"/api/v1/assessments/{ASSESSMENT}", headers=LEARNER_HEADERS)
@@ -187,6 +217,53 @@ def test_an_assessment_detail_never_carries_questions_or_an_answer_key():
     body = response.text
     assert "questions" not in response.json()["data"]
     assert "answer_key" not in body
+
+
+def test_an_assessment_from_another_year_group_is_not_found():
+    """Typing the identifier is not authorization.
+
+    404 rather than 403 on purpose: a learner who could tell "forbidden" from
+    "missing" could walk the assessment table one identifier at a time and
+    learn what other year groups are being set.
+    """
+    connection = FakeConnection(
+        results={
+            ASSESSMENT_BY_ID: ASSESSMENT_ROW,
+            LEARNER_GRADE: UUID("3f0f0000-0000-4000-8000-000000000007"),
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get(f"/api/v1/assessments/{ASSESSMENT}", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 404
+
+
+def test_a_learner_with_no_profile_cannot_open_an_assessment():
+    connection = FakeConnection(
+        results={ASSESSMENT_BY_ID: ASSESSMENT_ROW, LEARNER_GRADE: None}
+    )
+    client = build_client(connection)
+
+    response = client.get(f"/api/v1/assessments/{ASSESSMENT}", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 404
+
+
+def test_another_year_groups_assessment_cannot_be_started():
+    connection = attempt_connection(
+        **{LEARNER_GRADE: UUID("3f0f0000-0000-4000-8000-000000000007")}
+    )
+    client = build_client(connection)
+
+    response = client.post(
+        f"/api/v1/assessments/{ASSESSMENT}/attempts", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 404
+    assert not any(
+        "app.start_assessment_attempt" in query for query, _ in connection.calls
+    ), "the refusal has to come before anything is written"
 
 
 def test_an_assessment_the_caller_cannot_see_is_not_found():
@@ -243,7 +320,15 @@ def test_a_retake_without_authorisation_is_refused_rather_than_failing():
                 )
             return await super().fetchrow(query, *args)
 
-    client = build_client(Refusing(results={OPEN_ATTEMPT: None}))
+    client = build_client(
+        Refusing(
+            results={
+                OPEN_ATTEMPT: None,
+                ASSESSMENT_BY_ID: ASSESSMENT_ROW,
+                LEARNER_GRADE: GRADE,
+            }
+        )
+    )
 
     response = client.post(
         f"/api/v1/assessments/{ASSESSMENT}/attempts", headers=LEARNER_HEADERS
@@ -677,3 +762,143 @@ def test_the_assessment_count_binds_exactly_what_it_references():
         highest = max(numbers, default=0)
         assert numbers == set(range(1, highest + 1)), statement
         assert len(args) == highest, statement
+
+
+# ---------------------------------------------------------------------------
+# Reviewing a closed paper
+# ---------------------------------------------------------------------------
+def test_a_closed_attempt_can_be_reviewed_question_by_question():
+    """A score on its own teaches nothing; the learner needs the items back."""
+    connection = attempt_connection(**{ATTEMPT_BY_ID: SCORED_ROW, REVIEW: [REVIEW_ROW]})
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/review", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["meta"]["reviewable"] is True
+    item = body["data"][0]
+    assert item["question_id"] == str(QUESTION)
+    assert item["is_correct"] is False
+    assert item["submitted_answer"] == "64"
+    assert item["text"] == "What is (-9) x (-8)?"
+
+
+def test_a_review_never_discloses_the_correct_answer():
+    """The verdict is the whole of what a review may add.
+
+    Telling a learner which item was wrong is reviewing the paper. Telling them
+    what the answer was is handing over the key before the retake, and the
+    column it lives in is not granted to this connection at all.
+    """
+    connection = attempt_connection(**{ATTEMPT_BY_ID: SCORED_ROW, REVIEW: [REVIEW_ROW]})
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/review", headers=LEARNER_HEADERS
+    )
+
+    body = response.text
+    for forbidden in ("answer_key", "grading_answer_key", "correct_answer"):
+        assert forbidden not in body
+    assert "72" not in body, "the key for this question must not appear anywhere"
+
+    assert not any(
+        "grading_answer_key" in query for query, _ in connection.calls
+    ), "no statement may even name the key column"
+
+
+def test_an_open_attempt_has_nothing_to_review():
+    """Mid-paper verdicts would turn the assessment into a quiz with a tutor.
+
+    The statement itself filters on a closed status, so an open attempt simply
+    returns no rows rather than being refused — the paper exists, it is just
+    not finished.
+    """
+    connection = attempt_connection(**{ATTEMPT_BY_ID: ATTEMPT_ROW, REVIEW: []})
+    client = build_client(connection)
+
+    response = client.get(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/review", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == []
+    assert response.json()["meta"]["reviewable"] is False
+
+
+def test_a_review_of_an_attempt_that_is_not_there_is_not_found():
+    client = build_client(FakeConnection())
+
+    response = client.get(
+        f"/api/v1/assessment-attempts/{ATTEMPT}/review", headers=LEARNER_HEADERS
+    )
+
+    assert response.status_code == 404
+
+
+def test_the_catalogue_says_whether_the_caller_may_open_each_paper():
+    """Decided once in SQL rather than guessed by every client from a status."""
+    connection = FakeConnection(
+        results={
+            TOTAL: 1,
+            ASSESSMENT_LIST: [{**ASSESSMENT_ROW, "availability": "reassessment"}],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get("/api/v1/assessments", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["availability"] == "reassessment"
+
+
+def test_a_paper_nobody_can_open_is_reported_not_ready():
+    """`published` was never the same claim as "a learner can sit this".
+
+    An assessment with no questions, or holding a question whose own competency
+    is still a draft, passed for live in every catalogue while
+    `app.start_assessment_attempt` refused every learner who opened it. The
+    availability the catalogue reports is the one the start would give, so the
+    card can say "not ready" instead of inviting somebody into a refusal.
+    """
+    connection = FakeConnection(
+        results={
+            TOTAL: 1,
+            ASSESSMENT_LIST: [
+                {**ASSESSMENT_ROW, "is_ready": False, "availability": "not_ready"}
+            ],
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get("/api/v1/assessments", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    paper = response.json()["data"][0]
+    assert paper["status"] == "published"
+    assert paper["is_ready"] is False
+    assert paper["availability"] == "not_ready"
+
+
+def test_the_assessment_detail_carries_the_same_readiness_as_the_list():
+    """One answer, so a detail page cannot contradict the card that opened it."""
+    connection = FakeConnection(
+        results={
+            ASSESSMENT_BY_ID: {
+                **ASSESSMENT_ROW,
+                "is_ready": False,
+                "availability": "not_ready",
+            },
+            LEARNER_GRADE: GRADE,
+        }
+    )
+    client = build_client(connection)
+
+    response = client.get(f"/api/v1/assessments/{ASSESSMENT}", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["is_ready"] is False
+    assert response.json()["data"]["availability"] == "not_ready"
