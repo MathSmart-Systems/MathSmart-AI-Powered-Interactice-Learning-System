@@ -11,31 +11,38 @@ const ICON_FOR_DIRECTION = {
   unknown: Minus,
 };
 
+/**
+ * One topic as one row: name and score, a bar, and the band in words.
+ *
+ * Rows rather than cards. Each topic used to be its own bordered box with
+ * three lines of detail, and five of them were most of the page on a phone.
+ * The band is always written out beside its glyph, so the bar's length and
+ * colour are never the only thing saying how a topic is going.
+ */
 function CompetencyRow({ competency }) {
   const Icon = ICON_FOR_DIRECTION[competency.growth.direction] ?? Minus;
   const current = formatScore(competency.currentScore);
-  const diagnostic = formatScore(competency.diagnosticScore);
 
   return (
-    <li className="flex flex-col gap-2.5 p-4 rounded-xl bg-muted/20 border border-border">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="min-w-0 font-medium text-foreground text-xs sm:text-sm">{competency.name}</p>
-        <p className="font-display text-base font-bold tracking-tight text-foreground">
+    <li className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0">
+      <div className="flex items-baseline justify-between gap-4">
+        <p className="min-w-0 text-sm font-medium text-foreground">{competency.name}</p>
+        <p className="shrink-0 font-display text-base font-semibold tabular-nums text-foreground">
           {current ?? "Not scored yet"}
         </p>
       </div>
 
       {competency.currentScore === null ? null : (
-        <div aria-hidden="true" className="relative h-2 w-full rounded-full bg-muted overflow-hidden">
+        <div aria-hidden="true" className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full bg-primary rounded-full transition-all duration-500"
+            className="h-full rounded-full bg-primary"
             style={{ width: `${Math.min(Math.max(competency.currentScore, 0), 100)}%` }}
           />
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-        <span className="inline-flex items-center gap-1.5 text-foreground font-medium">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
           <BandGlyph fill={competency.band.fill} />
           {competency.band.label}
         </span>
@@ -43,17 +50,14 @@ function CompetencyRow({ competency }) {
           <Icon aria-hidden="true" className="size-3.5" />
           {competency.growth.text}
         </span>
-        {diagnostic ? (
-          <span className="text-muted-foreground">Baseline: {diagnostic}</span>
-        ) : null}
-      </div>
+      </p>
     </li>
   );
 }
 
 export function CompetencyProgressList({ competencies }) {
   return (
-    <ul className="space-y-3">
+    <ul className="divide-y divide-border">
       {competencies.map((competency, index) => (
         <CompetencyRow key={competency.id ?? index} competency={competency} />
       ))}

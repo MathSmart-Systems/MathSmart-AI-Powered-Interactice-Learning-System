@@ -26,7 +26,11 @@ GRADE = UUID("3f0f0000-0000-4000-8000-000000000006")
 COMPETENCY = UUID("13ec5f06-746e-45fb-a58a-92f4ce42621c")
 STUDENT_ID = UUID("58000000-0000-4000-8000-000000000001")
 
-# Anchors that appear in exactly one statement each.
+# Anchors that appear in exactly one statement each. The breakdown and the
+# recent-activity statements also name `scoped_learners`, so they are matched
+# first, on anchors only they carry.
+BREAKDOWN = "as section_count"
+RECENT = "union all"
 DASHBOARD = "scoped_learners"
 SECTIONS = "from app.section_performance_summary"
 LEARNERS = "from app.student_performance_summary"
@@ -96,6 +100,28 @@ COMPETENCY_ROW = {
     "needs_improvement_count": 6,
     "average_current_score": 58,
     "average_diagnostic_score": 41,
+    "average_mastery_band": "Developing",
+}
+
+BREAKDOWN_ROW = {
+    "section_count": 3,
+    "diagnostic_not_started": 5,
+    "diagnostic_in_progress": 2,
+    "diagnostic_completed": 33,
+    "interventions_needs_intervention": 2,
+    "interventions_in_progress": 2,
+    "interventions_resolved": 7,
+}
+
+RECENT_ROW = {
+    "kind": "assessment",
+    "activity_id": UUID("8a000000-0000-4000-8000-000000000001"),
+    "student_id": STUDENT_ID,
+    "learner_id": "STU-2026-001",
+    "full_name": "Juan Dela Cruz",
+    "title": "Diagnostic Assessment",
+    "score": 72,
+    "occurred_at": None,
 }
 
 HEATMAP_ROW = {
@@ -111,6 +137,8 @@ HEATMAP_ROW = {
 
 def reporting_connection(**overrides):
     results = {
+        BREAKDOWN: BREAKDOWN_ROW,
+        RECENT: [RECENT_ROW],
         DASHBOARD: DASHBOARD_ROW,
         SECTIONS: [SECTION_ROW],
         LEARNERS: [LEARNER_ROW],
@@ -341,7 +369,9 @@ def test_the_dashboard_competencies_honour_the_section_filter():
         headers=ADVISER_HEADERS,
     )
 
-    assert _args_for(connection, COMPETENCIES) == (GRADE, SECTION)
+    # The third argument is the published-only switch. The dashboard turns it
+    # on: a draft is not being taught, and a class summary listed every row.
+    assert _args_for(connection, COMPETENCIES) == (GRADE, SECTION, True)
 
 
 def test_analytics_totals_honour_the_grade_and_section_filters():
@@ -356,7 +386,8 @@ def test_analytics_totals_honour_the_grade_and_section_filters():
 
     assert response.status_code == 200
     assert _args_for(connection, DASHBOARD) == (GRADE, SECTION)
-    assert _args_for(connection, COMPETENCIES) == (GRADE, SECTION)
+    # Reports keeps every competency, archived ones with history included.
+    assert _args_for(connection, COMPETENCIES) == (GRADE, SECTION, False)
 
 
 def test_every_reporting_statement_binds_exactly_what_it_references():
@@ -375,3 +406,106 @@ def test_every_reporting_statement_binds_exactly_what_it_references():
         highest = max(numbers, default=0)
         assert numbers == set(range(1, highest + 1)), statement
         assert len(args) == highest, statement
+
+
+# ---------------------------------------------------------------------------
+# The dashboard's breakdown: sections, diagnostics, interventions, activity
+# ---------------------------------------------------------------------------
+
+
+def test_the_dashboard_counts_sections_and_diagnostics():
+    client = build_client(reporting_connection())
+
+    data = client.get("/api/v1/teacher-admin/dashboard", headers=ADVISER_HEADERS).json()["data"]
+
+    assert data["totals"]["section_count"] == 3
+    assert data["diagnostic"] == {"not_started": 5, "in_progress": 2, "completed": 33}
+
+
+def test_the_dashboard_splits_interventions_by_status():
+    client = build_client(reporting_connection())
+
+    data = client.get("/api/v1/teacher-admin/dashboard", headers=ADVISER_HEADERS).json()["data"]
+
+    # Three statuses, three numbers. A single "open" count could not tell a
+    # teacher how much of it was waiting and how much was already in hand.
+    assert data["interventions"] == {"needs_intervention": 2, "in_progress": 2, "resolved": 7}
+
+
+def test_the_dashboard_lists_recent_scored_work():
+    client = build_client(reporting_connection())
+
+    data = client.get("/api/v1/teacher-admin/dashboard", headers=ADVISER_HEADERS).json()["data"]
+
+    assert data["recent_activity"] == [
+        {
+            "kind": "assessment",
+            "id": "8a000000-0000-4000-8000-000000000001",
+            "student_id": str(STUDENT_ID),
+            "learner_id": "STU-2026-001",
+            "full_name": "Juan Dela Cruz",
+            "title": "Diagnostic Assessment",
+            "score": 72,
+            "occurred_at": None,
+        }
+    ]
+
+
+def test_the_dashboard_breakdown_honours_the_grade_and_section_filters():
+    connection = reporting_connection()
+    client = build_client(connection)
+
+    client.get(
+        "/api/v1/teacher-admin/dashboard",
+        params={"grade_id": str(GRADE), "section_id": str(SECTION)},
+        headers=ADVISER_HEADERS,
+    )
+
+    # Every number on the page narrows together, or a filtered page would mix
+    # a section's learners with the whole school's interventions.
+    assert _args_for(connection, BREAKDOWN) == (GRADE, SECTION)
+    assert _args_for(connection, RECENT)[:2] == (GRADE, SECTION)
+
+
+def test_recent_activity_is_bounded():
+    connection = reporting_connection()
+    client = build_client(connection)
+
+    client.get("/api/v1/teacher-admin/dashboard", headers=ADVISER_HEADERS)
+
+    assert _args_for(connection, RECENT)[2] == 8
+
+
+def test_a_competency_carries_the_databases_own_band():
+    client = build_client(reporting_connection())
+
+    data = client.get("/api/v1/teacher-admin/dashboard", headers=ADVISER_HEADERS).json()["data"]
+
+    # Read from `app.mastery_band_for`, not redrawn with thresholds of the
+    # page's own, which had drifted to 75/60 against the database's 80/50.
+    assert data["competencies"][0]["average_mastery_band"] == "Developing"
+
+
+def test_a_small_cohort_hides_the_band_with_the_average():
+    small = dict(COMPETENCY_ROW, learners_tracked=2)
+    client = build_client(reporting_connection(**{COMPETENCIES: [small]}))
+
+    competency = client.get(
+        "/api/v1/teacher-admin/dashboard", headers=ADVISER_HEADERS
+    ).json()["data"]["competencies"][0]
+
+    assert competency["suppressed"] is True
+    assert competency["average_current_score"] is None
+    assert competency["average_mastery_band"] is None
+
+
+def test_a_learner_cannot_read_the_dashboard_breakdown():
+    connection = reporting_connection()
+    client = build_client(connection)
+
+    response = client.get("/api/v1/teacher-admin/dashboard", headers=LEARNER_HEADERS)
+
+    assert response.status_code == 403
+    assert not [query for query in connection.queries() if BREAKDOWN in query]
+    assert not [query for query in connection.queries() if RECENT in query]
+

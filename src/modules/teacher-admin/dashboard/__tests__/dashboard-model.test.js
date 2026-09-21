@@ -3,168 +3,203 @@ import assert from "node:assert/strict";
 
 import {
   buildDashboardModel,
-  extractInitials,
-  formatNumber,
-  formatPercentage,
-  getCompetencyMasteryBand,
-  normalizeCompetencies,
-  normalizePriorityLearners,
-  normalizeTotals,
+  count,
+  initials,
+  monitoringLabel,
+  percent,
+  show,
+  weakestFirst,
 } from "../utils/dashboard-model.js";
+import { PREVIEW, TEACHER_ROUTES } from "../utils/constants.js";
 
-test("formatNumber handles valid numbers and fallbacks", () => {
-  assert.equal(formatNumber(42), 42);
-  assert.equal(formatNumber("15.7"), 16);
-  assert.equal(formatNumber(null), 0);
-  assert.equal(formatNumber(undefined), 0);
-  assert.equal(formatNumber("invalid"), 0);
-});
-
-test("formatPercentage formats numbers into percentage strings", () => {
-  assert.equal(formatPercentage(75), "75%");
-  assert.equal(formatPercentage(88.4), "88%");
-  assert.equal(formatPercentage(null), "—");
-  assert.equal(formatPercentage(undefined), "—");
-  assert.equal(formatPercentage("bad"), "—");
-});
-
-test("extractInitials extracts two letters or fallback", () => {
-  assert.equal(extractInitials("Juan Dela Cruz"), "JC");
-  assert.equal(extractInitials("Maria Santos"), "MS");
-  assert.equal(extractInitials("Pedro"), "PE");
-  assert.equal(extractInitials(""), "?");
-  assert.equal(extractInitials(null), "?");
-});
-
-test("getCompetencyMasteryBand classifies scores accurately", () => {
-  assert.equal(getCompetencyMasteryBand(85), "Mastered");
-  assert.equal(getCompetencyMasteryBand(75), "Mastered");
-  assert.equal(getCompetencyMasteryBand(65), "Developing");
-  assert.equal(getCompetencyMasteryBand(60), "Developing");
-  assert.equal(getCompetencyMasteryBand(59), "Needs Support");
-  assert.equal(getCompetencyMasteryBand(0), "Needs Support");
-  assert.equal(getCompetencyMasteryBand(null), "Not Started");
-});
-
-test("normalizeTotals maps raw API totals to formatted view properties", () => {
-  const raw = {
+const DASHBOARD = {
+  totals: {
     learner_count: 40,
+    section_count: 3,
+    average_mastery: 62.67,
     needs_support_count: 9,
-    active_count: 15,
-    improving_count: 12,
-    mastered_count: 4,
-    average_mastery: 63.4,
-    open_intervention_count: 5,
-    published_competency_count: 8,
-    scored_attempt_count: 120,
-    completed_module_count: 32,
-  };
+  },
+  diagnostic: { not_started: 5, in_progress: 2, completed: 33 },
+  interventions: { needs_intervention: 2, in_progress: 3, resolved: 7 },
+  priority_learners: Array.from({ length: 9 }, (_, index) => ({
+    student_id: `s-${index}`,
+    full_name: `Learner ${index}`,
+    section_name: "Rizal",
+    monitoring_status: "needs_intervention",
+    diagnostic_score: 40,
+    overall_mastery: 35.5,
+    active_intervention_count: 1,
+  })),
+  competencies: [
+    { competency_id: "c1", code: "A", name: "Strong", learners_tracked: 8, needs_improvement_count: 0, average_current_score: 90, average_mastery_band: "Mastered" },
+    { competency_id: "c2", code: "B", name: "Weak", learners_tracked: 9, needs_improvement_count: 6, average_current_score: 41, average_mastery_band: "Needs Improvement" },
+    { competency_id: "c3", code: "C", name: "Hidden", learners_tracked: 2, needs_improvement_count: 2, average_current_score: null, suppressed: true },
+    { competency_id: "c4", code: "D", name: "Untouched", learners_tracked: 0, needs_improvement_count: 0 },
+  ],
+  recent_activity: [
+    { kind: "assessment", id: "a1", full_name: "Ana", title: "Diagnostic", score: 72.4, occurred_at: "2026-09-21T01:00:00Z" },
+  ],
+};
 
-  const totals = normalizeTotals(raw);
-  assert.equal(totals.learnerCount, 40);
-  assert.equal(totals.needsSupportCount, 9);
-  assert.equal(totals.activeCount, 15);
-  assert.equal(totals.masteredCount, 4);
-  assert.equal(totals.averageMastery, 63.4);
-  assert.equal(totals.averageMasteryFormatted, "63%");
-  assert.equal(totals.openInterventionCount, 5);
+test("a missing count is unknown, not zero", () => {
+  // The previous helper turned null into 0 for every count on the page, so a
+  // partial reply read as "nobody needs help".
+  assert.equal(count(null), null);
+  assert.equal(count(undefined), null);
+  assert.equal(count("nope"), null);
+  assert.equal(count(0), 0);
+  assert.equal(count(7), 7);
 });
 
-test("normalizePriorityLearners preserves canonical status, intervention count, and identity", () => {
-  const rawLearners = [
-    {
-      student_id: "stu-001",
-      learner_id: "LRN-2026-001",
-      full_name: "Juan Dela Cruz",
-      section_name: "Rizal",
-      diagnostic_score: 40,
-      overall_mastery: 45,
-      monitoring_status: "needs_intervention",
-      active_intervention_count: 1,
-    },
-    {
-      student_id: "stu-002",
-      learner_id: "LRN-2026-002",
-      full_name: "Maria Reyes",
-      section_name: "Bonifacio",
-      diagnostic_score: 60,
-      overall_mastery: 65,
-      monitoring_status: "active",
-      active_intervention_count: 0,
-    },
-  ];
-
-  const learners = normalizePriorityLearners(rawLearners);
-  assert.equal(learners.length, 2);
-  assert.equal(learners[0].studentId, "stu-001");
-  assert.equal(learners[0].initials, "JC");
-  assert.equal(learners[0].monitoringStatus, "needs_intervention");
-  assert.equal(learners[0].activeInterventionCount, 1);
-  assert.equal("severity" in learners[0], false);
-  assert.equal(learners[0].attemptSummary, "1 active intervention");
-  assert.equal(learners[1].initials, "MR");
-  assert.equal(learners[1].monitoringStatus, "active");
-  assert.equal(learners[1].activeInterventionCount, 0);
-  assert.equal("severity" in learners[1], false);
+test("show prints zero as zero and unknown as a dash", () => {
+  assert.equal(show(0), "0");
+  assert.equal(show(null), "—");
+  assert.equal(show(12, "%"), "12%");
 });
 
-test("normalizeCompetencies formats scores and respects small cohort privacy suppression", () => {
-  const rawCompetencies = [
-    {
-      competency_id: "comp-01",
-      code: "MATH6-INT-01",
-      name: "Integer Addition",
-      domain: "Number Sense",
-      learners_tracked: 25,
-      mastered_count: 15,
-      developing_count: 8,
-      needs_improvement_count: 2,
-      average_current_score: 82.5,
-    },
-    {
-      competency_id: "comp-02",
-      code: "MATH6-GEO-01",
-      name: "Geometry Fundamentals",
-      domain: "Geometry",
-      learners_tracked: 2,
-      mastered_count: 0,
-      developing_count: 1,
-      needs_improvement_count: 1,
-      average_current_score: null, // withheld by backend (cohort < 5)
-      suppressed: true,            // backend sets this flag explicitly
-    },
-  ];
-
-  const competencies = normalizeCompetencies(rawCompetencies);
-  assert.equal(competencies.length, 2);
-  assert.equal(competencies[0].averageFormatted, "83%");
-  assert.equal(competencies[0].isSuppressed, false);
-  assert.equal(competencies[0].masteryBand, "Mastered");
-
-  assert.equal(competencies[1].averageFormatted, "Withheld (Small Cohort)");
-  assert.equal(competencies[1].isSuppressed, true);
-  assert.equal(competencies[1].masteryBand, "Not Started");
+test("percentages are rounded once, the same way everywhere", () => {
+  assert.equal(percent(62.67), 63);
+  assert.equal(percent(null), null);
 });
 
-test("buildDashboardModel aggregates totals, sections, and selection state", () => {
+test("initials survive odd names", () => {
+  assert.equal(initials("Ana Dela Cruz"), "AC");
+  assert.equal(initials("Ana"), "A");
+  assert.equal(initials(""), "?");
+});
+
+test("a learner with no status is not invented a status", () => {
+  assert.equal(monitoringLabel(null), null);
+  assert.equal(monitoringLabel("needs_intervention"), "Needs support");
+});
+
+test("the summary carries every figure the page shows", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+
+  assert.equal(model.summary.learners, 40);
+  assert.equal(model.summary.sections, 3);
+  assert.equal(model.summary.diagnosticCompleted, 33);
+  assert.equal(model.summary.diagnosticInProgress, 2);
+  assert.equal(model.summary.diagnosticNotStarted, 5);
+  assert.equal(model.summary.averageMastery, 63);
+});
+
+test("interventions are counted by status, three numbers not one", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+
+  assert.deepEqual(model.interventions, { needsIntervention: 2, inProgress: 3, resolved: 7 });
+});
+
+test("a genuine zero in every aggregate is shown as 0, never as a dash", () => {
   const model = buildDashboardModel({
-    totals: { learner_count: 20 },
-    sections: [{ id: "sec-01", name: "Rizal", learner_count: 20 }],
-    selectedSectionId: "sec-01",
+    dashboard: {
+      totals: { learner_count: 0, section_count: 0 },
+      diagnostic: { not_started: 0, in_progress: 0, completed: 0 },
+      interventions: { needs_intervention: 0, in_progress: 0, resolved: 0 },
+    },
   });
 
-  assert.equal(model.hasData, true);
-  assert.equal(model.totals.learnerCount, 20);
-  assert.equal(model.sections.length, 1);
-  assert.equal(model.selectedSection?.name, "Rizal");
+  assert.equal(show(model.summary.sections), "0");
+  assert.equal(show(model.summary.diagnosticCompleted), "0");
+  for (const value of Object.values(model.interventions)) assert.equal(show(value), "0");
 });
 
-test("buildDashboardModel handles empty data safely", () => {
-  const model = buildDashboardModel();
-  assert.equal(model.hasData, false);
-  assert.equal(model.totals.learnerCount, 0);
-  assert.equal(model.competencies.length, 0);
-  assert.equal(model.priorityLearners.length, 0);
-  assert.equal(model.sections.length, 0);
-  assert.equal(model.selectedSection, null);
+test("the figures are read from the reply as given, not recounted here", () => {
+  // Totals that could never be summed from the lists the reply also carries:
+  // the page must print the API's own counts, not count rows itself.
+  const model = buildDashboardModel({
+    dashboard: {
+      ...DASHBOARD,
+      totals: { ...DASHBOARD.totals, section_count: 17 },
+      interventions: { needs_intervention: 11, in_progress: 0, resolved: 4 },
+    },
+  });
+
+  assert.equal(model.summary.sections, 17);
+  assert.deepEqual(model.interventions, { needsIntervention: 11, inProgress: 0, resolved: 4 });
+});
+
+test("a reply missing the breakdown shows unknowns rather than zeros", () => {
+  const model = buildDashboardModel({ dashboard: { totals: { learner_count: 4 } } });
+
+  assert.equal(model.summary.sections, null);
+  assert.equal(model.summary.diagnosticCompleted, null);
+  assert.deepEqual(model.interventions, { needsIntervention: null, inProgress: null, resolved: null });
+});
+
+test("the support list is capped, and says how many more there are", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+
+  assert.equal(model.priority.total, 9);
+  assert.equal(model.priority.shown.length, PREVIEW.PRIORITY_LEARNERS);
+});
+
+test("competencies are ordered weakest first, by the database's own figures", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+
+  assert.deepEqual(
+    model.competencies.shown.map((competency) => competency.code),
+    ["B", "C", "A"],
+  );
+});
+
+test("a competency's band is the API's, never redrawn here", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+  const weak = model.competencies.shown.find((competency) => competency.code === "B");
+
+  // 41 is "Needs Improvement" because the database says so. The previous
+  // model drew its own bands at 75 and 60 and disagreed with the database.
+  assert.equal(weak.band, "Needs Improvement");
+});
+
+test("a competency nobody has started is counted, not listed", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+
+  assert.ok(!model.competencies.shown.some((competency) => competency.code === "D"));
+  assert.equal(model.competencies.untracked, 1);
+});
+
+test("the privacy note is raised once when any average is withheld", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+
+  assert.equal(model.competencies.anySuppressed, true);
+});
+
+test("weakestFirst puts unknown averages after known ones at equal need", () => {
+  const ordered = weakestFirst([
+    { code: "X", needsImprovement: 1, average: null },
+    { code: "Y", needsImprovement: 1, average: 30 },
+  ]);
+
+  assert.deepEqual(ordered.map((item) => item.code), ["Y", "X"]);
+});
+
+test("an empty class is only empty when the reply said so", () => {
+  assert.equal(buildDashboardModel({ dashboard: { totals: { learner_count: 0 } } }).isEmpty, true);
+  // No reply at all is not an empty class; it is an unknown one.
+  assert.equal(buildDashboardModel().isEmpty, false);
+});
+
+test("the selected section is only selected when it exists", () => {
+  const sections = [{ id: "s1", name: "Rizal", learner_count: 0 }];
+
+  const chosen = buildDashboardModel({ dashboard: DASHBOARD, sections, selectedSectionId: "s1" });
+  const unknown = buildDashboardModel({ dashboard: DASHBOARD, sections, selectedSectionId: "gone" });
+
+  assert.equal(chosen.selectedSection.name, "Rizal");
+  // Zero learners is shown as zero, not hidden.
+  assert.equal(chosen.sections[0].learnerCount, 0);
+  assert.equal(unknown.selectedSection, null);
+});
+
+test("recent activity keeps the recorded score, rounded for display", () => {
+  const model = buildDashboardModel({ dashboard: DASHBOARD });
+
+  assert.equal(model.recentActivity[0].score, 72);
+  assert.equal(model.recentActivity[0].kind, "assessment");
+});
+
+test("deep links go to real routes, not ignored query strings", () => {
+  assert.equal(TEACHER_ROUTES.student("abc"), "/teacher/students/abc");
+  assert.equal(TEACHER_ROUTES.learnerCases("abc"), "/teacher/interventions?student=abc");
 });

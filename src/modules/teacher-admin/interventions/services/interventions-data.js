@@ -64,6 +64,7 @@ async function readFromApi(path, token, base) {
 function queuePath(filters) {
   const query = new URLSearchParams({ page_size: String(MAX_PAGE_SIZE) });
   const named = {
+    student_id: filters.studentId,
     grade_id: filters.gradeId,
     section_id: filters.sectionId,
     competency_id: filters.competencyId,

@@ -16,7 +16,7 @@ export async function StudentDashboard() {
   }
 
   if (result.state === DASHBOARD_STATE.ERROR) {
-    return <DashboardServiceError />;
+    return <DashboardServiceError reason={result.reason} />;
   }
 
   return <DashboardView model={result.model} pathUnavailable={result.pathUnavailable} />;

@@ -10,7 +10,7 @@ export function Section({ id, title, description, link, className = "", children
   return (
     <section
       aria-labelledby={id}
-      className={`bg-card rounded-2xl p-6 border border-border shadow-xs flex flex-col gap-4 ${className}`.trim()}
+      className={`flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-5 ${className}`.trim()}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <div className="flex flex-col gap-0.5">
@@ -39,13 +39,6 @@ export function Section({ id, title, description, link, className = "", children
 
       {children}
     </section>
-  );
-}
-
-/** Legacy panel helper */
-export function Panel({ className = "", children }) {
-  return (
-    <div className={`border border-border bg-card rounded-xl ${className}`.trim()}>{children}</div>
   );
 }
 

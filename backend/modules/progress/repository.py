@@ -161,6 +161,20 @@ where learning_path_items.student_id = $1
 """
 
 
+_OWN_SUPPORT_SQL = "select app.own_open_intervention_count()"
+
+
+async def own_support_count(connection: ActorConnection) -> int:
+    """How many of the caller's own cases are open, and nothing else.
+
+    Learners cannot read `app.interventions`, so the performance view's count
+    is always 0 for them. This function answers the one question the learner
+    dashboard asks, for the caller only; the caller is `auth.uid()`, never an
+    argument.
+    """
+    return await connection.fetchval(_OWN_SUPPORT_SQL) or 0
+
+
 async def own_student_id(connection: ActorConnection, user_id: UUID) -> Any:
     return await connection.fetchval(_OWN_STUDENT_SQL, user_id)
 

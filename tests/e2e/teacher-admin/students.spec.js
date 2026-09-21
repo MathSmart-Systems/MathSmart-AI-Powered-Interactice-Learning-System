@@ -102,7 +102,12 @@ async function stubClientCalls(
 
       if (pathname.includes("/ai/teacher-insight")) {
         store.insights.push(request.postDataJSON());
-        if (insight === null) {
+        // A function answers with whatever the test has set by then, so a
+        // test can say "now a new note", "now a failure" around each click —
+        // counting requests would not work, because development mode sends
+        // the first one twice.
+        const reply = typeof insight === "function" ? insight() : insight;
+        if (reply === null) {
           return jsonReply(route, 503, {
             error: {
               code: "groq_assistance_unavailable",
@@ -110,7 +115,7 @@ async function stubClientCalls(
             },
           });
         }
-        return jsonReply(route, 200, { data: insight });
+        return jsonReply(route, 200, { data: reply });
       }
 
       if (pathname.endsWith("/purge-preview")) {
@@ -200,6 +205,40 @@ async function firstLearner(page) {
     href: await anyLearner.getAttribute("href"),
     name: (await anyLearner.innerText()).trim(),
   };
+}
+
+/** A teaching note as the server now shapes it. */
+function note(gap) {
+  return {
+    insight_summary: gap,
+    evidence: ["Current score 55%, diagnostic 40%.", "3 of 5 attempts were unsuccessful."],
+    recommended_actions: [
+      "Model one product on an area grid.",
+      "Pair the learner for two worked examples.",
+      "Give three short items with feedback after each.",
+    ],
+    next_check: "Ask for one product without the grid.",
+    learning_gaps: [],
+    suggested_intervention_type: null,
+    urgency_level: null,
+  };
+}
+
+/** Opens the first learner whose record has a competency to write a note about. */
+async function learnerWithNote(page) {
+  await page.goto("/teacher/students");
+  await page.getByRole("heading", { name: "Student roster" }).waitFor();
+  const hrefs = await page
+    .locator('main a[href^="/teacher/students/"]')
+    .evaluateAll((links) => [...new Set(links.map((link) => link.getAttribute("href")))]);
+
+  for (const href of hrefs.slice(0, 6)) {
+    await page.goto(href);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 20_000 });
+    const panel = page.getByRole("region", { name: "Teaching note", exact: true });
+    if ((await panel.count()) > 0) return panel;
+  }
+  return null;
 }
 
 describe("teacher students workspace", () => {
@@ -1518,7 +1557,7 @@ describe("teacher students workspace", () => {
 
     // Nothing to ask about is not a failure: the panel stays away and no
     // request is made, rather than asking Groq to comment on an empty record.
-    await expect(page.getByRole("region", { name: "Teaching note (advisory)" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Teaching note", exact: true })).toHaveCount(0);
     expect(store.insights).toHaveLength(0);
   });
 
@@ -1529,7 +1568,7 @@ describe("teacher students workspace", () => {
     test.skip(learner === null, "no learner is enrolled in this deployment");
 
     await page.goto(learner.href);
-    const panel = page.getByRole("region", { name: "Teaching note (advisory)" });
+    const panel = page.getByRole("region", { name: "Teaching note", exact: true });
     test.skip((await panel.count()) === 0, "this learner has no scored competency to ask about");
 
     await expect.poll(() => store.insights.length).toBeGreaterThan(0);
@@ -1539,6 +1578,81 @@ describe("teacher students workspace", () => {
     expect(sent, "a learner id travelled").not.toContain(learner.href.split("/").pop());
     // Recurring-mistake evidence is never sent, because none is collected.
     expect(store.insights.at(-1).incorrect_patterns).toEqual([]);
+  });
+
+  for (const viewport of [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "phone", width: 375, height: 740 },
+  ]) {
+    test(`the teaching note is short, structured and plain on a ${viewport.name}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await stubClientCalls(page, { insight: note("Adds the denominators when multiplying.") });
+      const panel = await learnerWithNote(page);
+      test.skip(panel === null, "no learner has a scored competency");
+
+      await expect(panel.getByText("Adds the denominators when multiplying.")).toBeVisible();
+      for (const part of ["Learning gap", "Evidence", "Suggested actions", "Next check"]) {
+        await expect(panel.getByRole("heading", { name: part, exact: true })).toBeVisible();
+      }
+      await expect(panel.getByRole("listitem")).toHaveCount(5);
+      await expect(panel.getByText("AI suggestion (advisory)")).toBeVisible();
+
+      // No provenance, and nothing that reads as raw markup.
+      const text = await panel.innerText();
+      for (const marker of ["Written by", "groq", "gpt", "**", "##", "|"]) {
+        expect(text, `"${marker}" reached the teacher`).not.toContain(marker);
+      }
+      expect(text).not.toMatch(/\b(AM|PM)\b|\d{1,2}:\d{2}/);
+
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, "the page scrolls sideways").toBeLessThanOrEqual(1);
+    });
+
+    test(`asking again replaces the note only when a new one arrives, on a ${viewport.name}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      let reply = note("The first note.");
+      await stubClientCalls(page, { insight: () => reply });
+      const panel = await learnerWithNote(page);
+      test.skip(panel === null, "no learner has a scored competency");
+
+      await expect(panel.getByText("The first note.")).toBeVisible();
+      const ask = panel.getByRole("button", { name: "Ask for a new teaching note" });
+
+      // A success replaces it.
+      reply = note("A second, newer note.");
+      await ask.click();
+      await expect(panel.getByText("A second, newer note.")).toBeVisible();
+      await expect(panel.getByText("The first note.")).toHaveCount(0);
+
+      // A failure keeps it, and says so in a toast rather than in its place.
+      reply = null;
+      await ask.click();
+      const toast = page.getByRole("alert").filter({ hasText: "could not be prepared" });
+      await expect(toast).toBeVisible();
+      await expect(panel.getByText("A second, newer note.")).toBeVisible();
+      await expect(panel.getByText(/unavailable right now/)).toHaveCount(0);
+      await expect(ask).toBeEnabled();
+
+      await toast.getByRole("button", { name: "Dismiss this message" }).click();
+      await expect(toast).toHaveCount(0);
+      await expect(panel.getByText("A second, newer note.")).toBeVisible();
+    });
+  }
+
+  test("a first request that fails says so in place, with nothing invented", async ({ page }) => {
+    await stubClientCalls(page, { insight: null });
+    const panel = await learnerWithNote(page);
+    test.skip(panel === null, "no learner has a scored competency");
+
+    await expect(panel.getByText(/unavailable right now/)).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "Learning gap" })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "could not be prepared" })).toHaveCount(0);
   });
 
   // ─── Access, keyboard and width ──────────────────────────────────

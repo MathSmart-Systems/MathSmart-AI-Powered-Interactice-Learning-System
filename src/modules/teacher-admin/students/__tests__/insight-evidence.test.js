@@ -13,6 +13,8 @@ import {
   buildInsightEvidence,
   insightUnavailableReason,
   readInsight,
+  REFRESH_FAILED,
+  settleInsight,
   weakestCompetency,
 } from "../utils/insight-evidence.js";
 
@@ -162,34 +164,55 @@ describe("buildInsightEvidence", () => {
 describe("readInsight", () => {
   const reply = (data) => ({ ok: true, status: 200, data });
 
-  it("reads the advisory text and its provenance", () => {
-    const insight = readInsight(
+  const NOTE = {
+    insight_summary: "  Adds the denominators when multiplying fractions.  ",
+    evidence: ["Current score 55%, diagnostic 40%.", "3 of 5 attempts unsuccessful."],
+    recommended_actions: ["Model one product on an area grid.", "Pair for two worked examples."],
+    next_check: "Ask for one product without the grid.",
+  };
+
+  it("reads the four parts of the note", () => {
+    const note = readInsight(reply(NOTE));
+
+    assert.deepEqual(note, {
+      gap: "Adds the denominators when multiplying fractions.",
+      evidence: NOTE.evidence,
+      actions: NOTE.recommended_actions,
+      nextCheck: "Ask for one product without the grid.",
+    });
+  });
+
+  it("never reads the provider, the model or the time", () => {
+    const note = readInsight(
+      reply({ ...NOTE, provider: "groq", model: "some-model", generated_at: "2026-09-20T08:00:00Z" }),
+    );
+
+    assert.deepEqual(Object.keys(note).sort(), ["actions", "evidence", "gap", "nextCheck"]);
+    assert.ok(!JSON.stringify(note).includes("some-model"));
+  });
+
+  it("keeps a note whose optional parts are missing", () => {
+    const note = readInsight(reply({ insight_summary: "A gap." }));
+
+    assert.deepEqual(note, { gap: "A gap.", evidence: [], actions: [], nextCheck: null });
+  });
+
+  it("guards the list sizes without rewriting any text", () => {
+    const note = readInsight(
       reply({
-        insight_summary: "  The learner is improving on integer multiplication.  ",
-        provider: "groq",
-        model: "llama-3.1",
-        generated_at: "2026-09-20T08:00:00Z",
+        insight_summary: "A gap.",
+        evidence: ["a", "b", "c"],
+        recommended_actions: ["1", "2", "3", "4", " ", null],
       }),
     );
 
-    assert.equal(insight.text, "The learner is improving on integer multiplication.");
-    assert.equal(insight.provider, "groq");
-    assert.equal(insight.model, "llama-3.1");
-    assert.equal(insight.generatedAt, "2026-09-20T08:00:00Z");
+    assert.deepEqual(note.evidence, ["a", "b"]);
+    assert.deepEqual(note.actions, ["1", "2", "3"]);
   });
 
-  it("reports no provenance when the contract supplied none", () => {
-    const insight = readInsight(reply({ insight_summary: "Something useful." }));
-
-    assert.equal(insight.provider, null);
-    assert.equal(insight.model, null);
-    assert.equal(insight.generatedAt, null);
-  });
-
-  it("treats empty or whitespace-only text as nothing at all", () => {
-    assert.equal(readInsight(reply({ insight_summary: "   " })), null);
-    assert.equal(readInsight(reply({ insight_summary: "" })), null);
-    assert.equal(readInsight(reply({ insight_summary: null })), null);
+  it("treats a note with no learning gap as nothing at all", () => {
+    assert.equal(readInsight(reply({ ...NOTE, insight_summary: "   " })), null);
+    assert.equal(readInsight(reply({ ...NOTE, insight_summary: null })), null);
     assert.equal(readInsight(reply({})), null);
   });
 
@@ -198,6 +221,50 @@ describe("readInsight", () => {
     assert.equal(readInsight(null), null);
     assert.equal(readInsight(undefined), null);
     assert.equal(readInsight({ ok: true, data: null }), null);
+  });
+});
+
+describe("settleInsight", () => {
+  const ok = (gap) => ({ ok: true, status: 200, data: { insight_summary: gap } });
+  const refused = { ok: false, status: 503, code: "groq_assistance_unavailable" };
+  const previous = { insight: { gap: "The note on screen.", evidence: [], actions: [], nextCheck: null } };
+
+  it("replaces the note when a new one arrives", () => {
+    const next = settleInsight(previous, ok("A newer note."));
+
+    assert.equal(next.insight.gap, "A newer note.");
+    assert.equal(next.failure, null);
+    assert.equal(next.loading, false);
+  });
+
+  it("keeps the note on screen when asking again fails, and says so", () => {
+    const next = settleInsight(previous, refused);
+
+    assert.equal(next.insight, previous.insight);
+    assert.equal(next.failure, REFRESH_FAILED);
+    assert.equal(next.reason, null);
+  });
+
+  it("keeps the note when a reply arrives but holds nothing readable", () => {
+    const next = settleInsight(previous, ok("   "));
+
+    assert.equal(next.insight, previous.insight);
+    assert.equal(next.failure, REFRESH_FAILED);
+  });
+
+  it("shows the reason in place when there was no note to keep", () => {
+    const next = settleInsight({ insight: null }, refused);
+
+    assert.equal(next.insight, null);
+    assert.equal(next.failure, null);
+    assert.match(next.reason, /unavailable right now/);
+  });
+
+  it("treats an unreadable first reply as unavailable, not as an empty note", () => {
+    const next = settleInsight({ insight: null }, ok(""));
+
+    assert.equal(next.insight, null);
+    assert.match(next.reason, /unavailable right now/);
   });
 });
 

@@ -9,9 +9,9 @@ import { formatScore } from "../utils/format";
  * where they stand now — joined by the segment between. Nothing is drawn that
  * is not one of those values, so the picture cannot say more than the records.
  *
- * The drawing is decorative in the accessibility sense only: every value in it
- * is written out in the description list beside it, which is what a screen
- * reader reads and what anyone reads when the plot is too small to squint at.
+ * The chart names itself: the two values are its accessible label and its
+ * caption. The description list that used to sit beside it repeated the
+ * figures the dashboard now shows once, in the strip above, so it is gone.
  */
 
 const VIEW = { width: 320, height: 200 };
@@ -55,30 +55,6 @@ function PendingPoint({ x }) {
 }
 
 /**
- * A score, set in the display face at figure size. "Not scored yet" is set in
- * the body face at body size instead: it is a sentence, and typesetting it like
- * a result would give a learner a number-shaped thing that is not a number.
- */
-function Score({ value }) {
-  const score = formatScore(value);
-
-  return score === null ? (
-    <span className="text-sm text-muted-foreground">Not scored yet</span>
-  ) : (
-    <span className="font-display text-2xl font-semibold tracking-tight">{score}</span>
-  );
-}
-
-function Figure({ term, children }) {
-  return (
-    <div className="bg-card px-4 py-3">
-      <dt className="text-sm text-muted-foreground">{term}</dt>
-      <dd className="mt-1 text-foreground">{children}</dd>
-    </div>
-  );
-}
-
-/**
  * @param {object} props
  * @param {number|null} props.diagnosticScore first plotted point
  * @param {number|null} props.currentScore    second plotted point
@@ -90,10 +66,15 @@ export function GrowthPlot({ diagnosticScore, currentScore, growthValue, growth 
   const hasCurrent = currentScore !== null;
   const rise = hasBaseline && hasCurrent && growthValue !== null && Math.round(growthValue) !== 0;
 
+  const baselineText = formatScore(diagnosticScore) ?? "not scored yet";
+  const currentText = formatScore(currentScore) ?? "not scored yet";
+  const label = `Diagnostic ${baselineText}, now ${currentText}. ${growth.text}`;
+
   return (
-    <div className="grid items-center gap-6 sm:grid-cols-[minmax(0,1fr)_minmax(0,15rem)]">
+    <figure className="flex flex-col gap-2">
       <svg
-        aria-hidden="true"
+        role="img"
+        aria-label={label}
         viewBox={`0 0 ${VIEW.width} ${VIEW.height}`}
         className="h-auto w-full"
         preserveAspectRatio="xMidYMid meet"
@@ -197,17 +178,10 @@ export function GrowthPlot({ diagnosticScore, currentScore, growthValue, growth 
         </text>
       </svg>
 
-      <dl className="grid gap-px overflow-hidden rounded-xl border border-border bg-border">
-        <Figure term="Diagnostic score">
-          <Score value={diagnosticScore} />
-        </Figure>
-        <Figure term="Overall mastery now">
-          <Score value={currentScore} />
-        </Figure>
-        <Figure term="Growth since then">
-          <span className="text-sm leading-relaxed">{growth.text}</span>
-        </Figure>
-      </dl>
-    </div>
+      <figcaption className="text-xs text-muted-foreground">
+        Diagnostic <span className="font-medium text-foreground">{baselineText}</span> · now{" "}
+        <span className="font-medium text-foreground">{currentText}</span>
+      </figcaption>
+    </figure>
   );
 }

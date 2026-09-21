@@ -1,263 +1,173 @@
 import { expect, test } from "@playwright/test";
 
-import {
-  STUDENT_ACCOUNT,
-  STUDENT_ROUTES,
-  hasAccount,
-  signIn,
-} from "../support/accounts";
+import { STUDENT_ACCOUNT, hasAccount, signIn } from "../support/accounts";
 
 /**
- * Browser coverage for the learner dashboard.
+ * The learner dashboard, against the real API and the learner's own records.
  *
- * The suite signs in as the configured learner and reads whatever the MathSmart
- * API says about them. It therefore asserts the things that hold for any
- * learner — the dominant action exists and leads somewhere real, every status
- * is written out, the layout survives a phone — and never a particular score,
- * which would pin the test to one seeded record.
+ * It asserts what holds for any learner — every number is shown once, every
+ * link lands on a real page, the support notice never uses case vocabulary,
+ * the layout survives a phone — and reads the learner's own figures back from
+ * the API where a check needs one, rather than pinning a seeded score.
  *
- * When the API is not running, the dashboard is expected to render its
- * documented recoverable failure instead, and that is checked too.
+ * The states a single account cannot be put into on demand — no diagnostic,
+ * diagnostic in progress, no path yet, everything mastered — are covered by
+ * the model's unit tests, which build each from the API's own contract.
  */
 
 const describe = hasAccount(STUDENT_ACCOUNT) ? test.describe : test.describe.skip;
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-/** Every destination the dashboard is allowed to link to. */
-const VALID_ROUTES = new Set([...STUDENT_ROUTES, "/student/assessments/diagnostic"]);
-
-/** The wording the dashboard is allowed to use for a diagnostic. */
-const DIAGNOSTIC_LABELS = ["Not started", "In progress", "Completed", "Not available"];
-
-/** The call to action of each state the dominant panel can be in. */
-const NEXT_ACTION_LABELS = [
-  "Start the diagnostic",
-  "Finish the diagnostic",
-  "Start this module",
-  "Continue this module",
-  "Review this module",
-  "Open this module",
-  "Look at my progress",
-  "Browse My Learning",
+const VIEWPORTS = [
+  { name: "phone", width: 360, height: 780 },
+  { name: "tablet", width: 768, height: 1024 },
+  { name: "short laptop", width: 1280, height: 620 },
+  { name: "desktop", width: 1440, height: 900 },
 ];
 
-/**
- * The dashboard is streamed into a Suspense boundary, so the loading shape is
- * what a locator finds first. Assertions that read the DOM directly, rather
- * than auto-waiting on an element, have to wait for the real page to arrive.
- */
 async function settled(page) {
-  await page.getByRole("heading", { level: 1 }).first().waitFor({ state: "visible" });
-  await page.waitForLoadState("networkidle");
-}
-
-async function apiIsReachable(request) {
-  if (!API_BASE_URL) {
-    return false;
-  }
-
-  try {
-    const response = await request.get(`${API_BASE_URL.replace(/\/+$/, "")}/health`, {
-      timeout: 5000,
-    });
-    return response.ok();
-  } catch {
-    return false;
-  }
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".animate-pulse")).toHaveCount(0, { timeout: 20_000 });
 }
 
 describe("student dashboard", () => {
-  let apiUp = false;
-
-  test.beforeAll(async ({ request }) => {
-    apiUp = await apiIsReachable(request);
-  });
-
   test.beforeEach(async ({ page }) => {
     await signIn(page, STUDENT_ACCOUNT);
-    await page.waitForURL("**/student/dashboard");
+    await page.waitForURL(/\/student\/dashboard/);
     await settled(page);
   });
 
-  test("the dashboard replaces the placeholder for a signed-in learner", async ({
-    page,
-  }) => {
-    await expect(page.getByRole("heading", { name: "UI in progress" })).toHaveCount(0);
-
-    const headings = page.getByRole("heading", { level: 1 });
-    await expect(headings).toHaveCount(1);
-    await expect(headings.first()).toBeVisible();
+  test("greets the learner and says where their diagnostic stands", async ({ page }) => {
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Good (morning|afternoon|evening)/);
+    await expect(page.getByText(/^Diagnostic:$/)).toBeVisible();
   });
 
-  test("a recoverable failure is usable when the service cannot be reached", async ({
-    page,
-  }) => {
-    test.skip(apiUp, "The MathSmart API is running, so this state does not apply.");
+  test("has one next step, and it leads to a real page", async ({ page }) => {
+    const next = page.locator("#continue-learning-btn");
+    await expect(next).toHaveCount(1);
 
-    await expect(
-      page.getByRole("heading", { name: "Your progress could not be loaded" }),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Go to My Learning" })).toBeVisible();
+    const href = await next.getAttribute("href");
+    await next.click();
+    await page.waitForURL((url) => url.pathname === href.split("?")[0]);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("This page could not be found")).toHaveCount(0);
   });
 
-  test("the greeting names the learner's own workspace", async ({ page }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
+  test("shows each figure once, rounded, with growth in points", async ({ page }) => {
+    const strip = page.getByRole("region", { name: "Your progress at a glance" });
+    await expect(strip).toBeVisible();
 
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-      /Good (morning|afternoon|evening)/,
-    );
-    await expect(page.getByText("Grade 6 mathematics").first()).toBeVisible();
+    const text = await strip.innerText();
+    // No unrounded percentages anywhere in the strip.
+    expect(text).not.toMatch(/\d+\.\d+%/);
+    // Growth is a difference in points, never labelled as a percentage.
+    expect(text).toMatch(/(points?|No change|—)/);
+    expect(text).not.toMatch(/null/);
+
+    // The four tiles that repeated the chart are gone; the chart repeats nothing.
+    await expect(page.getByText("Overall Progress")).toHaveCount(0);
+    await expect(page.getByText("Score Trajectory")).toHaveCount(0);
   });
 
-  test("the diagnostic status is written out, not only coloured", async ({ page }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
+  test("lists work that is open, each linking to its own page", async ({ page }) => {
+    const ready = page.getByRole("region", { name: "Ready for you" });
+    await expect(ready).toBeVisible();
 
-    const status = page.locator("p").filter({ hasText: /Diagnostic status/ }).first();
-    await expect(status).toBeVisible();
-    await expect(status).toHaveText(
-      new RegExp(`Diagnostic status\\s*(${DIAGNOSTIC_LABELS.join("|")})`),
-    );
-  });
-
-  test("one dominant next action is offered, and it leads to a real route", async ({
-    page,
-  }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
-
-    const cta = page.getByRole("link", { name: new RegExp(NEXT_ACTION_LABELS.join("|")) });
-    await expect(cta).toHaveCount(1);
-
-    const href = await cta.getAttribute("href");
-    expect(VALID_ROUTES.has(href)).toBe(true);
-
-    await cta.click();
-    await expect(page).toHaveURL(new RegExp(`${href}$`));
-
-    if (href === "/student/assessments/diagnostic") {
-      await expect(
-        page.getByRole("heading", { name: "Let's find out exactly where to start." }),
-      ).toBeVisible();
+    const links = ready.getByRole("link");
+    const count = await links.count();
+    for (let index = 0; index < count; index += 1) {
+      const href = await links.nth(index).getAttribute("href");
+      expect(href).toMatch(/^\/student\/(activities|assessments)(\/[0-9a-f-]{36})?$/);
     }
   });
 
-  test("every dashboard link points at a route that exists", async ({ page }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
+  test("links every lesson it can open to that lesson", async ({ page }) => {
+    const path = page.getByRole("region", { name: "Your learning path" });
+    const lessonLinks = path.locator('a[href^="/student/my-learning/"]');
+    test.skip((await lessonLinks.count()) === 0, "this learner has no open lesson on their path");
 
-    const hrefs = await page.locator("#workspace-content a[href]").evaluateAll((links) =>
-      links.map((link) => link.getAttribute("href")),
-    );
+    const href = await lessonLinks.first().getAttribute("href");
+    await lessonLinks.first().click();
+    await page.waitForURL((url) => url.pathname === href);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 20_000 });
+  });
 
+  test("every link on the page opens a real destination", async ({ page, context }) => {
+    const hrefs = await page
+      .locator("#workspace-content a[href^='/student']")
+      .evaluateAll((anchors) => [...new Set(anchors.map((anchor) => anchor.getAttribute("href")))]);
     expect(hrefs.length).toBeGreaterThan(0);
 
+    const probe = await context.newPage();
     for (const href of hrefs) {
-      expect(VALID_ROUTES.has(href), `${href} is not a student route`).toBe(true);
+      const response = await probe.goto(href);
+      expect(response?.status(), `${href} answered`).toBeLessThan(400);
+      await expect(probe.getByText("This page could not be found")).toHaveCount(0);
+    }
+    await probe.close();
+  });
+
+  test("a support notice is kind, and never names a case", async ({ page }) => {
+    const notice = page.getByRole("status", { name: "Support from your teacher" });
+    test.skip((await notice.count()) === 0, "this learner has no open support");
+
+    await expect(notice).toContainText("Your teacher is preparing extra support for your learning");
+    const text = await notice.innerText();
+    for (const word of ["intervention", "severity", "HIGH", "MEDIUM", "case"]) {
+      expect(text, `the notice says "${word}"`).not.toContain(word);
     }
   });
 
-  test("the sections a learner needs are all present", async ({ page }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
+  test("the primary action is reachable and visibly focused from the keyboard", async ({ page }) => {
+    const next = page.locator("#continue-learning-btn");
 
-    for (const title of [
-      "How you are improving",
-      "Your learning path",
-      "Competency progress",
-      "Recently finished",
-    ]) {
-      await expect(page.getByRole("heading", { name: title, level: 2 })).toBeVisible();
-    }
-  });
-
-  test("progress figures are readable as text, not only as a drawing", async ({
-    page,
-  }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
-
-    for (const term of ["Diagnostic score", "Overall mastery now", "Growth since then"]) {
-      await expect(page.getByText(term, { exact: true })).toBeVisible();
-    }
-
-    // The plot itself is hidden from assistive technology precisely because the
-    // figures above repeat every value it draws.
-    await expect(page.locator("#workspace-content svg[aria-hidden='true']").first()).toBeAttached();
-  });
-
-  test("the next action can be reached and used from the keyboard", async ({ page }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
-
-    const cta = page.getByRole("link", { name: new RegExp(NEXT_ACTION_LABELS.join("|")) });
-    const href = await cta.getAttribute("href");
-
-    await page.locator("body").click({ position: { x: 2, y: 2 } });
-
+    // Reached with Tab, the way a keyboard user gets there. A focus ring is a
+    // :focus-visible style, which a script's .focus() does not trigger.
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
     let reached = false;
-    for (let step = 0; step < 30 && !reached; step += 1) {
+    for (let press = 0; press < 40 && !reached; press += 1) {
       await page.keyboard.press("Tab");
-      reached = await cta.evaluate((node) => node === document.activeElement);
+      reached = await next.evaluate((element) => element === document.activeElement);
     }
+    expect(reached, "the primary action is not in the tab order").toBe(true);
 
-    expect(reached, "the next action was not reachable by tabbing").toBe(true);
-
-    const outlineWidth = await cta.evaluate(
-      (node) => getComputedStyle(node).outlineWidth,
-    );
-    expect(outlineWidth).not.toBe("0px");
-
-    await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(new RegExp(`${href}$`));
-
-    if (href === "/student/assessments/diagnostic") {
-      await expect(
-        page.getByRole("heading", { name: "Let's find out exactly where to start." }),
-      ).toBeVisible();
-    }
+    const ring = await next.evaluate((element) => {
+      const style = window.getComputedStyle(element);
+      return { outline: style.outlineStyle, width: style.outlineWidth, shadow: style.boxShadow };
+    });
+    expect(
+      ring.outline !== "none" && ring.width !== "0px" ? true : ring.shadow !== "none",
+      `no visible focus: ${JSON.stringify(ring)}`,
+    ).toBe(true);
   });
 
-  test("the dashboard fits a phone without sideways scrolling", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto("/student/dashboard");
-    await settled(page);
+  test("fits every viewport without sideways scroll or inner scrollbars", async ({ page }) => {
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize({ width: size.width, height: size.height });
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(1);
-  });
-
-  test("the dashboard fits a tablet without sideways scrolling", async ({ page }) => {
-    await page.setViewportSize({ width: 768, height: 1024 });
-    await page.goto("/student/dashboard");
-    await settled(page);
-
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(1);
-  });
-
-  test("a section with nothing to list says what would appear there", async ({ page }) => {
-    test.skip(!apiUp, "The MathSmart API is not running.");
-
-    // Whichever sections are empty for this learner, none of them may be blank:
-    // each either lists rows or explains what puts rows there.
-    for (const [heading, emptyText] of [
-      ["Your learning path", /No modules are on your path yet|could not be loaded/],
-      ["Competency progress", /No competency scores have been recorded yet/],
-      ["Recently finished", /Nothing has been marked yet/],
-    ]) {
-      const section = page.locator("section").filter({
-        has: page.getByRole("heading", { name: heading, level: 2 }),
-      });
-
-      const rows = section.getByRole("listitem");
-      const rowCount = await rows.count();
-
-      if (rowCount === 0) {
-        await expect(section.getByText(emptyText)).toBeVisible();
-      } else {
-        expect(rowCount).toBeGreaterThan(0);
-      }
+      const { overflow, scrollers } = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        scrollers: [...document.querySelectorAll("#workspace-content *")].filter((element) => {
+          const style = window.getComputedStyle(element);
+          return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight - element.clientHeight > 4;
+        }).length,
+      }));
+      expect(overflow, `${size.name} scrolls sideways`).toBeLessThanOrEqual(1);
+      expect(scrollers, `${size.name} has a scrollbar inside the page`).toBe(0);
     }
+  });
+});
+
+describe("student dashboard is closed to teachers", () => {
+  test.skip(!hasAccount(STUDENT_ACCOUNT), "no student account is configured");
+
+  test("a learner cannot open the teacher dashboard", async ({ page }) => {
+    await signIn(page, STUDENT_ACCOUNT);
+    await page.waitForURL(/\/student\/dashboard/);
+
+    await page.goto("/teacher/dashboard");
+
+    await expect(page).not.toHaveURL(/\/teacher\/dashboard/);
+    await expect(page.getByRole("heading", { name: "Grade 6 Mathematics" })).toHaveCount(0);
   });
 });

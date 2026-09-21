@@ -13,11 +13,14 @@ the documentation asks for as provenance.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
 
 from app.dependencies import CurrentActor, TeacherAdmin
+from middleware.errors import ApiError
+from modules.ai import teaching_note
 from modules.ai.schemas import (
     AnswerExplanationRequest,
     PatternAnalysisRequest,
@@ -25,7 +28,15 @@ from modules.ai.schemas import (
     StudentFeedbackRequest,
     TeacherInsightRequest,
 )
-from modules.ai.service import UNAVAILABLE, provenance_of, request_advice
+from modules.ai.service import (
+    UNAVAILABLE,
+    UNAVAILABLE_MESSAGE,
+    evidence_from,
+    provenance_of,
+    request_advice,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ai"])
 
@@ -83,16 +94,40 @@ async def incorrect_answer_explanation(
 async def teacher_insight(
     actor: TeacherAdmin, request: Request, body: TeacherInsightRequest
 ) -> dict[str, Any]:
-    """Advisory insight for an educator looking at one learner and competency."""
-    result = await request_advice(request, purpose="teacher insight", model=body, actor=actor)
+    """A short, structured teaching note about one learner's competency.
+
+    The reply is validated rather than trusted: a gap of at most two
+    sentences, at most two pieces of evidence that quote recorded numbers, at
+    most three actions and one next check, 150 words in all, with no markup.
+    Provider and model stay on the server. A teacher is told the note is an
+    advisory AI suggestion, which is all they need, and the model name is
+    deployment configuration.
+    """
+    result = await request_advice(
+        request,
+        purpose="teacher insight",
+        model=body,
+        actor=actor,
+        instructions=teaching_note.INSTRUCTIONS,
+        max_tokens=teaching_note.MAX_TOKENS,
+    )
+    note = teaching_note.parse_teaching_note(result.text, evidence_from(body))
+    if note is None:
+        raise ApiError(503, UNAVAILABLE_MESSAGE, code=UNAVAILABLE)
+
+    logger.info(
+        "teacher insight generated",
+        extra={"provider": result.provider, "model": result.model, "words": note.word_count()},
+    )
     return {
         "data": {
-            "insight_summary": result.text,
+            "insight_summary": note.gap,
+            "evidence": note.evidence,
+            "recommended_actions": note.actions,
+            "next_check": note.next_check,
             "learning_gaps": [],
             "suggested_intervention_type": None,
-            "recommended_actions": [],
             "urgency_level": None,
-            **provenance_of(result),
         }
     }
 

@@ -19,3 +19,4 @@ export { WorkspaceShell } from "./components/WorkspaceShell";
 export { Wordmark } from "./components/Wordmark";
 export { TeacherThemeListener, applyTeacherTheme } from "./components/TeacherThemeListener";
 export { StudentThemeGuard } from "./components/StudentThemeGuard";
+export { Toast } from "./components/Toast";

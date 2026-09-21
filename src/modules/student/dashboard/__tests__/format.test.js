@@ -15,6 +15,7 @@ import {
   describeGrowth,
   firstName,
   formatCount,
+  formatGrowthPoints,
   formatMinutes,
   formatPoints,
   formatScore,
@@ -146,3 +147,22 @@ describe("formatCount and completionPercent", () => {
     assert.deepEqual(formatCount(null, null), { finished: 0, total: 0, text: "0 of 0" });
   });
 });
+
+describe("formatGrowthPoints", () => {
+  it("counts growth in signed, rounded points", () => {
+    // Growth is a difference between two percentages. It used to print as
+    // "-8.33%", unrounded and labelled as a percentage of something.
+    assert.equal(formatGrowthPoints(-8.33), "−8 points");
+    assert.equal(formatGrowthPoints(5.4), "+5 points");
+    assert.equal(formatGrowthPoints(1), "+1 point");
+  });
+
+  it("says no change rather than a signed zero", () => {
+    assert.equal(formatGrowthPoints(0.4), "No change");
+  });
+
+  it("has nothing to say without a value", () => {
+    assert.equal(formatGrowthPoints(null), null);
+  });
+});
+

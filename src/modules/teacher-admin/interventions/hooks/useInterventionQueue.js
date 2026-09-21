@@ -65,6 +65,7 @@ export function useInterventionQueue(initialCases = []) {
     setError(null);
 
     const result = await listInterventionCases({
+      studentId: nextFilters.studentId,
       gradeId: nextFilters.gradeId,
       sectionId: nextFilters.sectionId,
       competencyId: nextFilters.competencyId,

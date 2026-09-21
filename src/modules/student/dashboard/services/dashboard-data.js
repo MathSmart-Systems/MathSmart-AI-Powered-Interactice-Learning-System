@@ -97,10 +97,15 @@ export async function readDashboard() {
     return { state: DASHBOARD_STATE.ERROR, reason: "session" };
   }
 
-  const [learner, progress, pathItems] = await Promise.all([
+  // The last two are the learner's own catalogues. The server has already
+  // decided what is open to them — `is_ready`, `path_status`, `availability`
+  // — so the dashboard only has to choose which few to show.
+  const [learner, progress, pathItems, activities, assessments] = await Promise.all([
     readFromApi("/students/me", token, base),
     readFromApi("/progress/me", token, base),
     readFromApi("/learning-path/me", token, base),
+    readFromApi("/activities?status=published&page_size=100", token, base),
+    readFromApi("/assessments?status=published&page_size=100", token, base),
   ]);
 
   if (learner.status === 404) {
@@ -111,7 +116,9 @@ export async function readDashboard() {
   // path is a supporting list, so an unavailable path degrades to an empty one
   // rather than replacing the whole dashboard with a failure.
   if (!learner.ok || !progress.ok) {
-    return { state: DASHBOARD_STATE.ERROR, reason: "unavailable" };
+    // A disabled account is told so; everything else is the service.
+    const refused = learner.status === 403 || progress.status === 403;
+    return { state: DASHBOARD_STATE.ERROR, reason: refused ? "account" : "unavailable" };
   }
 
   return {
@@ -120,6 +127,8 @@ export async function readDashboard() {
       learner: learner.data,
       progress: progress.data,
       pathItems: pathItems.ok ? pathItems.data : [],
+      activities: activities.ok && Array.isArray(activities.data) ? activities.data : null,
+      assessments: assessments.ok && Array.isArray(assessments.data) ? assessments.data : null,
     }),
     pathUnavailable: !pathItems.ok,
   };

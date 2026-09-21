@@ -1,6 +1,8 @@
 import React from "react";
+import Link from "next/link";
 import { Circle, CircleCheck, CircleDot, Lock } from "lucide-react";
 
+import { STUDENT_ROUTE } from "../utils/dashboard-model";
 import { formatMinutes } from "../utils/format";
 
 const ICON_FOR_STATUS = {
@@ -11,8 +13,13 @@ const ICON_FOR_STATUS = {
 };
 
 /**
- * Sequential learning journey roadmap conforming to the MathSmart UI/UX reference.
- * Renders individual steps as clean status cards with progress badges.
+ * The learner's lessons in path order.
+ *
+ * An open lesson's title is a link to that lesson; a locked one is not, because
+ * the lesson page would refuse it. Steps are numbered from 1 in the order shown
+ * — the raw database priority used to be printed instead — and the
+ * recommendation reason is left to My Learning, because the same sentence
+ * repeated under every lesson, finished ones included, said nothing.
  */
 export function LearningPathPreview({ items }) {
   return (
@@ -45,17 +52,26 @@ export function LearningPathPreview({ items }) {
                     : "bg-muted text-muted-foreground"
                 }`}
               >
-                {isCompleted ? "✓" : isInProgress ? "●" : (item.priority ?? index + 1)}
+                {isCompleted ? "✓" : isInProgress ? "●" : index + 1}
               </div>
 
               <div className="min-w-0 flex flex-col gap-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-xs font-bold text-foreground">
-                    {item.moduleTitle}
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {item.moduleId && item.status !== "locked" ? (
+                      <Link
+                        href={STUDENT_ROUTE.module(item.moduleId)}
+                        className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      >
+                        {item.moduleTitle}
+                      </Link>
+                    ) : (
+                      item.moduleTitle
+                    )}
                   </h3>
                   {isInProgress && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary">
-                      CURRENT
+                    <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
+                      Current
                     </span>
                   )}
                 </div>
@@ -64,11 +80,6 @@ export function LearningPathPreview({ items }) {
                   <p className="text-[11px] text-muted-foreground">{item.competencyName}</p>
                 ) : null}
 
-                {item.reason ? (
-                  <p className="text-[11px] text-muted-foreground/80 leading-normal">
-                    {item.reason}
-                  </p>
-                ) : null}
               </div>
             </div>
 

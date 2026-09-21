@@ -68,6 +68,89 @@ select
     where student_module_progress.is_complete) as completed_module_count
 """
 
+# The four figures the dashboard reports beside its totals. Each is scoped to
+# the same learners as `_DASHBOARD_SQL`, named once in `scoped_learners`, so a
+# section filter narrows every number on the page together.
+_DASHBOARD_BREAKDOWN_SQL = """
+with scoped_learners as (
+  select student_profiles.student_id, student_profiles.diagnostic_status
+  from app.student_profiles
+  where ($1::uuid is null or student_profiles.grade_id = $1)
+    and ($2::uuid is null or student_profiles.section_id = $2)
+)
+select
+  (select count(*) from app.sections
+    where sections.is_active
+      and ($1::uuid is null or sections.grade_id = $1)
+      and ($2::uuid is null or sections.section_id = $2)) as section_count,
+  (select count(*) from scoped_learners
+    where scoped_learners.diagnostic_status = 'not_started') as diagnostic_not_started,
+  (select count(*) from scoped_learners
+    where scoped_learners.diagnostic_status = 'in_progress') as diagnostic_in_progress,
+  (select count(*) from scoped_learners
+    where scoped_learners.diagnostic_status = 'completed') as diagnostic_completed,
+  (select count(*) from app.interventions
+     join scoped_learners on scoped_learners.student_id = interventions.student_id
+    where interventions.archived_at is null
+      and interventions.status = 'Needs Intervention') as interventions_needs_intervention,
+  (select count(*) from app.interventions
+     join scoped_learners on scoped_learners.student_id = interventions.student_id
+    where interventions.archived_at is null
+      and interventions.status = 'In Progress') as interventions_in_progress,
+  (select count(*) from app.interventions
+     join scoped_learners on scoped_learners.student_id = interventions.student_id
+    where interventions.archived_at is null
+      and interventions.status = 'Resolved') as interventions_resolved
+"""
+
+# The most recent finished work across the cohort: scored assessments and
+# completed modules, newest first. The score is the one the database already
+# recorded; nothing here re-derives it.
+_RECENT_ACTIVITY_SQL = """
+with scoped_learners as (
+  select student_profiles.student_id, student_profiles.learner_id,
+         user_profiles.full_name
+  from app.student_profiles
+  join app.user_profiles on user_profiles.user_id = student_profiles.user_id
+  where ($1::uuid is null or student_profiles.grade_id = $1)
+    and ($2::uuid is null or student_profiles.section_id = $2)
+),
+activity as (
+  select
+    'assessment' as kind,
+    assessment_attempts.attempt_id as activity_id,
+    scoped_learners.student_id,
+    scoped_learners.learner_id,
+    scoped_learners.full_name,
+    assessments.title,
+    assessment_attempts.overall_score as score,
+    assessment_attempts.submitted_at as occurred_at
+  from app.assessment_attempts
+  join scoped_learners on scoped_learners.student_id = assessment_attempts.student_id
+  join app.assessments on assessments.assessment_id = assessment_attempts.assessment_id
+  where assessment_attempts.status = 'scored'
+    and assessment_attempts.submitted_at is not null
+  union all
+  select
+    'module' as kind,
+    student_module_progress.progress_id as activity_id,
+    scoped_learners.student_id,
+    scoped_learners.learner_id,
+    scoped_learners.full_name,
+    learning_modules.title,
+    null::numeric as score,
+    student_module_progress.completed_at as occurred_at
+  from app.student_module_progress
+  join scoped_learners on scoped_learners.student_id = student_module_progress.student_id
+  join app.learning_modules
+    on learning_modules.module_id = student_module_progress.module_id
+  where student_module_progress.is_complete
+)
+select * from activity
+order by occurred_at desc
+limit $3
+"""
+
 _SECTIONS_SQL = """
 select
   section_performance_summary.section_id,
@@ -147,7 +230,12 @@ select
   count(*) filter (where competency_progress.mastery_band = 'Needs Improvement')
     as needs_improvement_count,
   round(avg(competency_progress.current_score), 2) as average_current_score,
-  round(avg(competency_progress.diagnostic_score), 2) as average_diagnostic_score
+  round(avg(competency_progress.diagnostic_score), 2) as average_diagnostic_score,
+  -- The band the database would give this average. `app.mastery_band_for` is
+  -- the only definition of a band; a caller that drew its own thresholds had
+  -- already drifted from it once.
+  app.mastery_band_for(round(avg(competency_progress.current_score), 2))
+    as average_mastery_band
 from app.competencies
 left join app.competency_progress
   on competency_progress.competency_id = competencies.competency_id
@@ -156,6 +244,9 @@ left join app.competency_progress
         from app.student_profiles
         where student_profiles.section_id = $2))
 where ($1::uuid is null or competencies.grade_id = $1)
+  -- A draft is not taught yet and an archived competency no longer is, so a
+  -- class summary that lists them describes a curriculum nobody is following.
+  and (not $3::boolean or competencies.status = 'published')
 group by
   competencies.competency_id,
   competencies.code,
@@ -213,9 +304,13 @@ async def learners(
 
 
 async def competencies(
-    connection: ActorConnection, *, grade_id: UUID | None, section_id: UUID | None
+    connection: ActorConnection,
+    *,
+    grade_id: UUID | None,
+    section_id: UUID | None,
+    published_only: bool = False,
 ) -> list[Any]:
-    return await connection.fetch(_COMPETENCIES_SQL, grade_id, section_id)
+    return await connection.fetch(_COMPETENCIES_SQL, grade_id, section_id, published_only)
 
 
 async def heatmap(connection: ActorConnection, section_id: UUID) -> list[Any]:
@@ -234,3 +329,19 @@ async def record_audit_event(
     return await connection.fetchval(
         _AUDIT_SQL, action, target_type, target_id, request_id, details
     )
+
+
+async def dashboard_breakdown(
+    connection: ActorConnection, *, grade_id: UUID | None, section_id: UUID | None
+) -> Any:
+    return await connection.fetchrow(_DASHBOARD_BREAKDOWN_SQL, grade_id, section_id)
+
+
+async def recent_activity(
+    connection: ActorConnection,
+    *,
+    grade_id: UUID | None,
+    section_id: UUID | None,
+    limit: int,
+) -> list[Any]:
+    return await connection.fetch(_RECENT_ACTIVITY_SQL, grade_id, section_id, limit)

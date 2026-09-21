@@ -32,7 +32,41 @@ function Frame({ children }) {
   );
 }
 
-export function DashboardServiceError() {
+/**
+ * What to say for each way the dashboard can fail.
+ *
+ * These used to be one sentence about an unreachable service, whatever had
+ * happened — including an account that had been paused, where "try again in a
+ * moment" was simply untrue. Each reason now says what is actually the case,
+ * and a retry is offered only where one could help.
+ */
+const FAILURE = Object.freeze({
+  unavailable: {
+    heading: "Your progress could not be loaded",
+    body: "MathSmart could not reach the service that keeps your scores. Nothing you have finished is lost. Try again in a moment, and tell your teacher if it keeps happening.",
+    retry: true,
+  },
+  session: {
+    heading: "Please sign in again",
+    body: "Your session has ended, so MathSmart cannot show your progress. Sign in again and you will come straight back here.",
+    retry: false,
+    signIn: true,
+  },
+  account: {
+    heading: "Your account is not active",
+    body: "Your account has been paused, so your progress cannot be shown right now. Ask your teacher to check it.",
+    retry: false,
+  },
+  unconfigured: {
+    heading: "MathSmart is not set up here yet",
+    body: "This copy of MathSmart is missing its connection to the progress service. Tell your teacher.",
+    retry: false,
+  },
+});
+
+export function DashboardServiceError({ reason = "unavailable" }) {
+  const copy = FAILURE[reason] ?? FAILURE.unavailable;
+
   return (
     <Frame>
       <section
@@ -42,21 +76,23 @@ export function DashboardServiceError() {
         <div className="flex items-center gap-2.5 text-destructive">
           <TriangleAlert aria-hidden="true" className="size-4" />
           <h2 id="dashboard-error-heading" className="text-base font-semibold">
-            Your progress could not be loaded
+            {copy.heading}
           </h2>
         </div>
 
-        <p className="max-w-prose text-sm leading-relaxed text-foreground">
-          MathSmart could not reach the service that keeps your scores. Nothing you have
-          finished is lost. Try again in a moment, and tell your teacher if it keeps
-          happening.
-        </p>
+        <p className="max-w-prose text-sm leading-relaxed text-foreground">{copy.body}</p>
 
         <div className="flex flex-wrap items-center gap-3 pt-1">
-          <RetryButton label="Try again" />
-          <Button asChild variant="outline" className="h-11 px-5">
-            <Link href={STUDENT_ROUTE.MY_LEARNING}>Go to My Learning</Link>
-          </Button>
+          {copy.retry ? <RetryButton label="Try again" /> : null}
+          {copy.signIn ? (
+            <Button asChild className="h-11 px-5">
+              <Link href="/login">Sign in again</Link>
+            </Button>
+          ) : (
+            <Button asChild variant="outline" className="h-11 px-5">
+              <Link href={STUDENT_ROUTE.MY_LEARNING}>Go to My Learning</Link>
+            </Button>
+          )}
         </div>
       </section>
     </Frame>

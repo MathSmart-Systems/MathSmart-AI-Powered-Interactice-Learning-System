@@ -19,7 +19,9 @@ export const DIAGNOSTIC_STATUS = Object.freeze({
   }),
   completed: Object.freeze({
     label: "Completed",
-    summary: "Your diagnostic is done, so your learning path is ready.",
+    // Only what is true. A finished diagnostic does not mean a path exists
+    // yet, and this sentence used to promise one to learners who had none.
+    summary: "Your diagnostic is done.",
   }),
 });
 
@@ -65,11 +67,14 @@ export function masteryBand(value) {
  * a learner for, or `null` when the interface should stay quiet.
  */
 export function supportNotice({ monitoringStatus, openInterventionCount = 0 }) {
-  if (monitoringStatus === "needs_intervention" || openInterventionCount > 0) {
+  // `openInterventionCount` is the learner's own count, from a function that
+  // returns one number and nothing else. The words below are all a learner is
+  // told: never a severity, a reason, a status or what a teacher wrote.
+  if (openInterventionCount > 0 || monitoringStatus === "needs_intervention") {
     return {
       tone: "support",
-      heading: "Your teacher is setting up extra help",
-      body: "Some competencies are taking longer, and your teacher can see that too. Nothing here is a mark against you. Keep working through your path, and the extra practice will come to you.",
+      heading: "Your teacher is preparing extra support for your learning",
+      body: "Some topics take more time, and that is normal. Keep going with your next step, and your teacher will help you with the rest.",
     };
   }
 

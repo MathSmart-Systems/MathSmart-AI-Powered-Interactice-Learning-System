@@ -1,79 +1,50 @@
 import React from "react";
-import Link from "next/link";
-import { CheckCircle2, Clock, Sparkles } from "lucide-react";
+import { CheckCircle2, Circle, CircleDashed } from "lucide-react";
 
 import { greetingFor } from "../utils/format";
-import { STUDENT_ROUTE } from "../utils/dashboard-model";
+
+const DIAGNOSTIC_ICON = {
+  completed: CheckCircle2,
+  in_progress: CircleDashed,
+};
 
 /**
- * Welcome banner conforming to the MathSmart UI/UX reference.
- * Displays learner greeting, ARAL indicator, Grade 6 mathematics scope,
- * and quick diagnostic status card with action links.
+ * Who this is for, and where their diagnostic stands.
+ *
+ * A heading and one line, not a card. The version this replaced wrapped the
+ * greeting in a padded card with a badge, a paragraph promising a path
+ * "adjusted to your individual strengths" — shown to learners who had not yet
+ * taken the diagnostic it would be adjusted from — and a status box whose
+ * links led to the same pages the rest of the dashboard already links to.
+ *
+ * The diagnostic status is read from the raw value, not compared against a
+ * display label, and it is always written out: the icon never carries it alone.
  */
 export function DashboardHeader({ learner, diagnostic }) {
   const name = learner.firstName;
-  const isCompleted = diagnostic.label === "Completed";
+  const Icon = DIAGNOSTIC_ICON[diagnostic.value] ?? Circle;
 
   return (
-    <header className="bg-card rounded-2xl p-6 sm:p-8 border border-border shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-      <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
-          <Sparkles className="size-3.5" aria-hidden="true" />
-          <span>ARAL Targeted Mathematics Learning</span>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground font-medium mb-0.5">Grade 6 mathematics</p>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground font-display tracking-tight">
-            {greetingFor()}
-            {name ? `, ${name}` : ""}!
-          </h1>
-        </div>
-        <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
-          You are currently working on your Grade 6 mathematics competencies. Your targeted learning path is adjusted to your individual strengths and learning gaps.
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <p className="text-sm text-muted-foreground">
+          Grade 6 mathematics
+          {learner.sectionName ? ` · ${learner.sectionName}` : ""}
         </p>
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
+          {greetingFor()}
+          {name ? `, ${name}` : ""}!
+        </h1>
       </div>
 
-      {/* Quick Diagnostic Card */}
-      <div className="bg-muted/40 p-4 rounded-xl border border-border w-full md:w-auto min-w-[240px] shrink-0">
-        <div className="text-xs text-muted-foreground font-medium">Diagnostic Assessment</div>
-        <div className="flex items-center justify-between mt-1">
-          <p className="text-sm font-bold text-foreground">
-            <span className="text-muted-foreground font-normal">Diagnostic status </span>
-            <span className="font-semibold">{diagnostic.label}</span>
-          </p>
-          {isCompleted ? (
-            <span className="inline-flex items-center text-xs text-primary font-medium ml-2 shrink-0">
-              <CheckCircle2 className="size-3.5 mr-1" aria-hidden="true" />
-              Active
-            </span>
-          ) : (
-            <span className="inline-flex items-center text-xs text-muted-foreground font-medium ml-2 shrink-0">
-              <Clock className="size-3.5 mr-1" aria-hidden="true" />
-              Pending
-            </span>
-          )}
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-1 max-w-xs leading-normal">
-          {diagnostic.summary}
-        </p>
-        <div className="mt-3 flex items-center gap-2 pt-2 border-t border-border/60">
-          <Link
-            id="view-diagnostic-results-btn"
-            href={STUDENT_ROUTE.PROGRESS}
-            className="text-xs font-semibold text-primary hover:underline cursor-pointer"
-          >
-            View Gap Analysis
-          </Link>
-          <span className="text-border" aria-hidden="true">|</span>
-          <Link
-            id="retake-diagnostic-btn"
-            href={STUDENT_ROUTE.ASSESSMENTS}
-            className="text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
-          >
-            Assessments
-          </Link>
-        </div>
-      </div>
+      <p className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm">
+        <Icon
+          aria-hidden="true"
+          className={`size-4 ${diagnostic.isComplete ? "text-primary" : "text-muted-foreground"}`}
+        />
+        <span className="text-muted-foreground">Diagnostic:</span>
+        <span className="font-medium text-foreground">{diagnostic.label}</span>
+      </p>
     </header>
   );
 }

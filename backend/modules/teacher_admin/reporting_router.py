@@ -27,6 +27,10 @@ router = APIRouter(tags=["teacher-admin"])
 
 MAX_PAGE_SIZE = 200
 DEFAULT_PAGE_SIZE = 50
+
+#: How much finished work the dashboard lists. Enough to see a class is
+#: moving; the full record is in Reports.
+RECENT_ACTIVITY_LIMIT = 8
 EXPORT_LIMIT = 5000
 
 EXPORT_HEADER = [
@@ -95,7 +99,27 @@ def _competency(row: Any) -> dict[str, Any]:
                 row["average_current_score"], row["average_diagnostic_score"]
             )
         ),
+        # Withheld with the average it was drawn from: a band is the average
+        # rounded to three words, and just as identifying in a small cohort.
+        "average_mastery_band": (
+            None
+            if hidden or row["average_mastery_band"] is None
+            else str(row["average_mastery_band"])
+        ),
         "suppressed": hidden,
+    }
+
+
+def _recent(row: Any) -> dict[str, Any]:
+    return {
+        "kind": row["kind"],
+        "id": str(row["activity_id"]),
+        "student_id": str(row["student_id"]),
+        "learner_id": row["learner_id"],
+        "full_name": row["full_name"],
+        "title": row["title"],
+        "score": _number(row["score"]),
+        "occurred_at": row["occurred_at"].isoformat() if row["occurred_at"] else None,
     }
 
 
@@ -106,12 +130,32 @@ async def read_dashboard(
     grade_id: Annotated[UUID | None, Query()] = None,
     section_id: Annotated[UUID | None, Query()] = None,
 ) -> dict[str, Any]:
-    """Cohort totals, the competency overview, and the learners who need support."""
+    """Cohort totals, the competency overview, and the learners who need support.
+
+    Every figure is the database's, scoped to the same cohort. The breakdown
+    beside the totals — sections, where each learner's diagnostic stands, and
+    interventions by status — is counted in SQL, and recent activity is the
+    work the database already scored. Nothing here is estimated, and nothing
+    is derived from advisory text.
+
+    The competency overview is published competencies only. A draft is not
+    being taught and an archived one no longer is, and listing them turned a
+    class summary into a list of every row ever written.
+    """
     totals = await repository.dashboard(
         connection, grade_id=grade_id, section_id=section_id
     )
-    competency_rows = await repository.competencies(
+    breakdown = await repository.dashboard_breakdown(
         connection, grade_id=grade_id, section_id=section_id
+    )
+    competency_rows = await repository.competencies(
+        connection, grade_id=grade_id, section_id=section_id, published_only=True
+    )
+    recent_rows = await repository.recent_activity(
+        connection,
+        grade_id=grade_id,
+        section_id=section_id,
+        limit=RECENT_ACTIVITY_LIMIT,
     )
     priority = await repository.learners(
         connection,
@@ -135,9 +179,21 @@ async def read_dashboard(
                 "published_competency_count": totals["published_competency_count"] or 0,
                 "scored_attempt_count": totals["scored_attempt_count"] or 0,
                 "completed_module_count": totals["completed_module_count"] or 0,
+                "section_count": breakdown["section_count"] or 0,
+            },
+            "diagnostic": {
+                "not_started": breakdown["diagnostic_not_started"] or 0,
+                "in_progress": breakdown["diagnostic_in_progress"] or 0,
+                "completed": breakdown["diagnostic_completed"] or 0,
+            },
+            "interventions": {
+                "needs_intervention": breakdown["interventions_needs_intervention"] or 0,
+                "in_progress": breakdown["interventions_in_progress"] or 0,
+                "resolved": breakdown["interventions_resolved"] or 0,
             },
             "competencies": [_competency(row) for row in competency_rows],
             "priority_learners": [_learner(row) for row in priority],
+            "recent_activity": [_recent(row) for row in recent_rows],
         }
     }
 

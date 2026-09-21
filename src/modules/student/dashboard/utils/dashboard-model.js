@@ -30,14 +30,22 @@ export const STUDENT_ROUTE = Object.freeze({
   ASSESSMENTS: "/student/assessments",
   DIAGNOSTIC: "/student/assessments/diagnostic",
   PROGRESS: "/student/progress",
+  module: (moduleId) => `/student/my-learning/${encodeURIComponent(moduleId)}`,
+  activity: (activityId) => `/student/activities/${encodeURIComponent(activityId)}`,
+  assessment: (assessmentId) => `/student/assessments/${encodeURIComponent(assessmentId)}`,
 });
 
 /** How many rows each summary section shows before it defers to its own page. */
 export const PATH_PREVIEW_LIMIT = 4;
 export const COMPETENCY_PREVIEW_LIMIT = 5;
 export const ACTIVITY_PREVIEW_LIMIT = 5;
+export const READY_PREVIEW_LIMIT = 3;
 
-const ACTIVE_PATH_STATUSES = new Set(["available", "in_progress"]);
+/** Activity path states the server marks as open to this learner now. */
+const OPEN_PATH_STATUSES = new Set(["available", "in_progress"]);
+
+/** Assessment availability values that mean "there is something to sit". */
+const OPEN_ASSESSMENT = new Set(["available", "in_progress", "reassessment"]);
 
 function nextActionForDiagnostic(status) {
   const starting = status !== "in_progress";
@@ -63,10 +71,16 @@ function nextActionForModule(item, masteryScore = null) {
     kind: "module",
     eyebrow: carryingOn ? "Carry on" : "Your next step",
     title: item.moduleTitle,
-    description:
-      item.reason ?? "This module is next on the path built from your diagnostic.",
-    cta: `${status.verb} this module`,
-    href: STUDENT_ROUTE.MY_LEARNING,
+    // Plain words for a Grade 6 learner. The API's recommendation reason is a
+    // teacher-facing sentence ("places this competency in the Needs
+    // Improvement band") and it stays on the teacher's side of the product.
+    description: carryingOn
+      ? "You have started this lesson. Pick up where you stopped."
+      : "This is the next lesson on your learning path.",
+    cta: `${status.verb} this lesson`,
+    // The lesson itself, not the list it sits in. The module id was already
+    // loaded; the old link made the learner find it again.
+    href: item.moduleId ? STUDENT_ROUTE.module(item.moduleId) : STUDENT_ROUTE.MY_LEARNING,
     meta: {
       competency: item.competencyName,
       competencyCode: item.competencyCode,
@@ -80,7 +94,7 @@ function nextActionForModule(item, masteryScore = null) {
 const ALL_DONE_ACTION = Object.freeze({
   kind: "all_done",
   eyebrow: "Nothing left waiting",
-  title: "You have finished every module on your path",
+  title: "You have finished every lesson on your path",
   description:
     "There is no work queued for you right now. Look back at how far your scores have moved, and your teacher will add the next competencies.",
   cta: "Look at my progress",
@@ -91,9 +105,9 @@ const ALL_DONE_ACTION = Object.freeze({
 const NO_PATH_ACTION = Object.freeze({
   kind: "no_path",
   eyebrow: "Your path is being prepared",
-  title: "No modules are on your path yet",
+  title: "Your learning path is not ready yet",
   description:
-    "Your teacher builds your path from your diagnostic and the Grade 6 competencies. Until it arrives, the modules already published are open to browse.",
+    "Your path is built from your diagnostic. While it is being prepared, you can look through the lessons in My Learning.",
   cta: "Browse My Learning",
   href: STUDENT_ROUTE.MY_LEARNING,
   meta: null,
@@ -139,6 +153,58 @@ function toCompetency(row) {
   };
 }
 
+/**
+ * Practice the server says is open to this learner right now.
+ *
+ * Both flags are the server's: `is_ready` means the activity can actually be
+ * delivered, and `path_status` is where it sits on this learner's own path. An
+ * activity on no path at all is open practice, and is offered too.
+ */
+function toReadyActivity(row) {
+  return {
+    id: String(row?.id ?? ""),
+    title: row?.title ?? "Untitled practice",
+    // The practice title already names its lesson, so the lesson title under
+    // it only said the same thing twice.
+    detail: null,
+    minutes: toNumber(row?.estimated_minutes),
+    href: row?.id ? STUDENT_ROUTE.activity(row.id) : STUDENT_ROUTE.ACTIVITIES,
+    started: toNumber(row?.attempt_count) > 0,
+  };
+}
+
+function isOpenActivity(row) {
+  if (!row?.is_ready) return false;
+  return row.path_status === null || row.path_status === undefined || OPEN_PATH_STATUSES.has(row.path_status);
+}
+
+/**
+ * Assessments the server says this learner can sit now.
+ *
+ * `availability` is decided in SQL — including whether a retake is allowed —
+ * so nothing here works out who may sit what. The diagnostic is left out: it
+ * has its own place at the top of the page until it is done.
+ */
+function toReadyAssessment(row) {
+  return {
+    id: String(row?.id ?? ""),
+    title: row?.title ?? "Untitled assessment",
+    detail:
+      row?.availability === "in_progress"
+        ? "Started — pick up where you stopped"
+        : row?.availability === "reassessment"
+          ? "You can try this again"
+          : null,
+    minutes: toNumber(row?.duration_minutes),
+    href: row?.id ? STUDENT_ROUTE.assessment(row.id) : STUDENT_ROUTE.ASSESSMENTS,
+    started: row?.availability === "in_progress",
+  };
+}
+
+function isOpenAssessment(row) {
+  return Boolean(row?.is_ready) && row?.type !== "diagnostic" && OPEN_ASSESSMENT.has(row?.availability);
+}
+
 function toActivity(row, index) {
   return {
     id: `${row?.resource_id ?? "record"}-${row?.date ?? index}`,
@@ -157,7 +223,13 @@ function toActivity(row, index) {
  * @param {object|null} input.progress data from `GET /progress/me`
  * @param {Array|null} input.pathItems data from `GET /learning-path/me`
  */
-export function buildDashboardModel({ learner, progress, pathItems }) {
+export function buildDashboardModel({
+  learner,
+  progress,
+  pathItems,
+  activities = null,
+  assessments = null,
+}) {
   const path = Array.isArray(pathItems) ? pathItems.map(toPathItem) : [];
   const diagnosticValue = learner?.diagnostic_status ?? null;
   const diagnostic = diagnosticStatus(diagnosticValue);
@@ -196,6 +268,9 @@ export function buildDashboardModel({ learner, progress, pathItems }) {
       competencyCode: null,
       estimatedMinutes: null,
     });
+  } else if (recommendation?.type === "path_complete") {
+    // The API's own answer. It used to be re-derived here from path statuses.
+    nextAction = ALL_DONE_ACTION;
   } else if (path.length > 0 && path.every((item) => item.status === "completed")) {
     nextAction = ALL_DONE_ACTION;
   } else if (path.length > 0) {
@@ -206,6 +281,15 @@ export function buildDashboardModel({ learner, progress, pathItems }) {
 
   const modulesFinished = toNumber(progress?.modules_completed_count) ?? 0;
   const modulesTotal = toNumber(progress?.total_modules_count) ?? 0;
+  const masteredCount = toNumber(progress?.competencies_mastered_count);
+  const competencyTotal = toNumber(progress?.total_competencies_count);
+
+  const openActivities = Array.isArray(activities)
+    ? activities.filter(isOpenActivity).map(toReadyActivity)
+    : null;
+  const openAssessments = Array.isArray(assessments)
+    ? assessments.filter(isOpenAssessment).map(toReadyAssessment)
+    : null;
   const activity = Array.isArray(progress?.recent_activity)
     ? progress.recent_activity.map(toActivity)
     : [];
@@ -215,6 +299,7 @@ export function buildDashboardModel({ learner, progress, pathItems }) {
       fullName: learner?.full_name ?? null,
       firstName: firstName(learner?.full_name),
       learnerId: learner?.learner_id ?? null,
+      sectionName: learner?.section_name ?? null,
     },
     diagnostic: {
       value: diagnosticValue,
@@ -235,13 +320,28 @@ export function buildDashboardModel({ learner, progress, pathItems }) {
     },
     modules: {
       ...formatCount(modulesFinished, modulesTotal),
+      // Null when there is no path to be a percentage of. The view used to
+      // print "null% of Grade 6 path completed" for every learner without one.
       percent: completionPercent(modulesFinished, modulesTotal),
+      hasPath: modulesTotal > 0,
+    },
+    mastery: {
+      mastered: masteredCount,
+      total: competencyTotal,
+    },
+    ready: {
+      // Null when the list could not be read, which the view says in words;
+      // an empty array is a real "nothing open right now".
+      activities: openActivities === null ? null : openActivities.slice(0, READY_PREVIEW_LIMIT),
+      activityCount: openActivities === null ? null : openActivities.length,
+      assessments:
+        openAssessments === null ? null : openAssessments.slice(0, READY_PREVIEW_LIMIT),
+      assessmentCount: openAssessments === null ? null : openAssessments.length,
     },
     path: {
       items: path,
       preview: path.slice(0, PATH_PREVIEW_LIMIT),
       remaining: Math.max(path.length - PATH_PREVIEW_LIMIT, 0),
-      activeCount: path.filter((item) => ACTIVE_PATH_STATUSES.has(item.status)).length,
       isEmpty: path.length === 0,
     },
     competencies: {

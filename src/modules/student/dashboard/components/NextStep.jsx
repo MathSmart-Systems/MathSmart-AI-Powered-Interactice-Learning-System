@@ -1,6 +1,8 @@
 import React from "react";
 import Link from "next/link";
-import { ArrowRight, CircleCheck, Clock3, Compass, PlayCircle, Sparkles } from "lucide-react";
+import { ArrowRight, CircleCheck, Clock3, Compass, PencilRuler } from "lucide-react";
+
+import { LinkPending } from "@/modules/shared";
 
 import { STUDENT_ROUTE } from "../utils/dashboard-model";
 import { formatMinutes } from "../utils/format";
@@ -10,110 +12,76 @@ const ICON_FOR_KIND = {
   module: Compass,
   all_done: CircleCheck,
   no_path: Clock3,
+  locked_path: Clock3,
 };
 
 /**
- * Primary Next Step Action Card conforming to the MathSmart UI/UX reference
- * while honoring the system's signature pine-tree and deep-shell colorway.
+ * The one thing to do next, on the deep-shell panel that carries the page.
  *
- * Features:
- * - Solid deep-shell surface matching the sidebar's dark ink tone.
- * - MathSmart notebook grid ruling texture.
- * - Soft shell-accent highlights and badges.
- * - Dynamic competency mastery progress indicator.
- * - High-contrast white CTA button with shell typography and pine iconography.
- * - Secondary translucent action button for interactive practice.
+ * This is the dashboard's single signature surface: the same ink as the
+ * sidebar, the notebook grid ruled faintly across it. Everything on it is a
+ * theme token — the panel used to reach for raw white and an amber from
+ * outside the palette, which drifted from the shell it was meant to echo.
+ *
+ * The call to action goes to the lesson itself rather than the list it sits
+ * in. The mastery bar that used to sit here is gone: it printed the score
+ * unrounded, and the same score is already on the page, rounded, once.
  */
 export function NextStep({ action, headingId }) {
   const Icon = ICON_FOR_KIND[action.kind] ?? Compass;
   const minutes = formatMinutes(action.meta?.minutes);
-  const masteryScore = action.meta?.masteryScore ?? null;
   const isModule = action.kind === "module";
 
   return (
     <section
       aria-labelledby={headingId}
-      className="on-shell relative rounded-2xl p-6 sm:p-8 text-white shadow-md overflow-hidden border border-shell-border bg-shell"
+      className="on-shell relative overflow-hidden rounded-2xl border border-shell-border bg-shell p-5 text-shell-foreground sm:p-7"
     >
-      {/* MathSmart notebook grid texture */}
-      <div aria-hidden="true" className="grid-paper absolute inset-0 opacity-20 pointer-events-none" />
+      <div aria-hidden="true" className="grid-paper pointer-events-none absolute inset-0 opacity-20" />
 
-      <div className="relative z-10 max-w-2xl space-y-4">
-        {/* Eyebrow badge with pine/shell accent */}
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-shell-accent text-xs font-semibold backdrop-blur-xs border border-shell-accent/30">
-          <Icon className="size-3.5 text-amber-300 shrink-0" aria-hidden="true" />
-          <span>{action.eyebrow}</span>
-        </div>
+      <div className="relative flex max-w-2xl flex-col gap-3">
+        <p className="inline-flex w-fit items-center gap-1.5 rounded-md border border-shell-accent/30 px-2.5 py-1 text-xs font-semibold text-shell-accent">
+          <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+          {action.eyebrow}
+        </p>
 
-        <div className="space-y-2">
+        <div className="flex flex-col gap-1.5">
           <h2
             id={headingId}
-            className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-white"
+            className="font-display text-2xl font-bold tracking-tight text-shell-foreground sm:text-3xl"
           >
             {action.title}
           </h2>
-          <p className="text-shell-foreground/90 text-sm leading-relaxed max-w-xl">
-            {action.description}
-          </p>
+          <p className="max-w-xl text-sm leading-relaxed text-shell-muted">{action.description}</p>
         </div>
 
-        {/* Competency Progress Indicator (when mastery score is available) */}
-        {masteryScore !== null && masteryScore !== undefined ? (
-          <div className="pt-2">
-            <div className="flex items-center justify-between text-xs font-medium text-shell-accent mb-1.5">
-              <span>Current Mastery Progress</span>
-              <span className="font-bold text-white">{masteryScore}%</span>
-            </div>
-            <div className="h-2.5 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/15">
-              <div
-                className="h-full bg-shell-accent rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, Math.max(0, masteryScore))}%` }}
-              />
-            </div>
-          </div>
+        {action.meta && (action.meta.competency || action.meta.statusLabel || minutes) ? (
+          <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-shell-muted">
+            {action.meta.competency ? <span>Topic: {action.meta.competency}</span> : null}
+            {action.meta.statusLabel ? <span>{action.meta.statusLabel}</span> : null}
+            {minutes ? <span>{minutes}</span> : null}
+          </p>
         ) : null}
 
-        {/* Metadata row */}
-        {action.meta ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-shell-muted pt-1 border-t border-white/10">
-            {action.meta.competency ? (
-              <span>
-                <strong className="text-white font-semibold">Competency:</strong> {action.meta.competency}
-              </span>
-            ) : null}
-            {action.meta.statusLabel ? (
-              <span>
-                <strong className="text-white font-semibold">Status:</strong> {action.meta.statusLabel}
-              </span>
-            ) : null}
-            {minutes ? (
-              <span>
-                <strong className="text-white font-semibold">Time needed:</strong> {minutes}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* Action Buttons */}
-        <div className="pt-2 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 pt-1">
           <Link
             id="continue-learning-btn"
             href={action.href}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-shell font-bold text-sm shadow-sm hover:bg-white/95 hover:shadow-md transition-all cursor-pointer"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-shell-foreground px-5 text-sm font-bold text-shell transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-shell-accent"
           >
-            <PlayCircle className="size-4 text-primary shrink-0" aria-hidden="true" />
-            <span>{action.cta}</span>
-            <ArrowRight className="size-4 text-primary ml-1 shrink-0" aria-hidden="true" />
+            {action.cta}
+            <LinkPending />
+            <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
           </Link>
 
           {isModule ? (
             <Link
               id="quick-activity-btn"
               href={STUDENT_ROUTE.ACTIVITIES}
-              className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-white/10 text-white font-medium text-sm hover:bg-white/20 transition-colors border border-white/20 cursor-pointer backdrop-blur-xs"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-shell-border px-4 text-sm font-medium text-shell-foreground transition-colors hover:bg-shell-border/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-shell-accent"
             >
-              <Sparkles className="size-4 text-amber-300 shrink-0" aria-hidden="true" />
-              <span>Jump to Interactive Practice</span>
+              <PencilRuler aria-hidden="true" className="size-4 shrink-0 text-shell-accent" />
+              Go to practice
             </Link>
           ) : null}
         </div>

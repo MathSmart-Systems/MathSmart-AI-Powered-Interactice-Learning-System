@@ -41,7 +41,7 @@ const TONES = {
  * @param {{message: string, tone?: "success"|"error"}|null} props.toast
  * @param {() => void} props.onDismiss
  */
-export function CaseToast({ toast, onDismiss }) {
+export function Toast({ toast, onDismiss }) {
   const [held, setHeld] = useState(false);
   const dismiss = useRef(onDismiss);
 

@@ -27,6 +27,7 @@ MODULE = UUID("4a39d286-e93e-4e75-9644-b873fcac185c")
 ACTIVITY = UUID("fd80cc3c-4951-439c-894e-f93cbf7a23e1")
 
 SUMMARY = "from app.student_performance_summary"
+OWN_SUPPORT = "app.own_open_intervention_count()"
 OWN_STUDENT = "where student_profiles.user_id = $1"
 COMPETENCIES = "from app.competency_progress"
 # The path list, the path totals and the competency total all read
@@ -98,6 +99,7 @@ def progress_connection(**overrides):
         TRAJECTORY: [TRAJECTORY_ROW],
         COMPETENCY_TOTAL: 18,
         PATH_MODULE_TOTALS: PATH_TOTALS_ROW,
+        OWN_SUPPORT: 2,
     }
     results.update(overrides)
     return FakeConnection(results=results)
@@ -115,7 +117,44 @@ def test_a_learner_reads_their_own_progress():
     assert data["diagnostic_score"] == 48
     assert data["modules_completed_count"] == 1
     assert data["total_modules_count"] == 4
-    assert data["active_intervention_count"] == 1
+    # The learner's own count, from the function that can see past the table
+    # policy — not the summary view's figure, which is 0 for every learner.
+    assert data["active_intervention_count"] == 2
+
+
+def test_a_learners_support_count_comes_from_their_own_function():
+    connection = progress_connection()
+    client = build_client(connection)
+
+    client.get("/api/v1/progress/me", headers=LEARNER_HEADERS)
+
+    calls = [query for query in connection.queries() if OWN_SUPPORT in query]
+    assert len(calls) == 1
+    # It takes nothing from the request: the caller is auth.uid(), never an
+    # identifier a browser could change.
+    args = next(args for query, args in connection.calls if OWN_SUPPORT in query)
+    assert args == ()
+
+
+def test_a_learner_with_no_open_support_reads_zero():
+    client = build_client(progress_connection(**{OWN_SUPPORT: None}))
+
+    data = client.get("/api/v1/progress/me", headers=LEARNER_HEADERS).json()["data"]
+
+    assert data["active_intervention_count"] == 0
+
+
+def test_an_educator_reading_a_learner_gets_the_summary_count():
+    connection = progress_connection()
+    client = build_client(connection)
+
+    response = client.get(f"/api/v1/progress/{STUDENT_ID}", headers=ADVISER_HEADERS)
+
+    assert response.status_code == 200
+    # An educator can see the rows, so the view's own count is right for them,
+    # and the learner-only function is not asked at all.
+    assert response.json()["data"]["active_intervention_count"] == 1
+    assert not [query for query in connection.queries() if OWN_SUPPORT in query]
 
 
 def test_growth_is_the_difference_between_the_diagnostic_and_now():

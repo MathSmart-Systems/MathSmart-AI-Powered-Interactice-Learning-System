@@ -6,8 +6,8 @@
  * about a person — only the numbers for one competency, which is all the
  * `/ai/teacher-insight` contract has fields for.
  *
- * The reply is read defensively: only `insight_summary` ever carries content,
- * and anything else is treated as nothing at all.
+ * The reply is read defensively: a note with no learning gap is treated as
+ * nothing at all.
  */
 
 /** The backend caps both evidence arrays at twenty items. */
@@ -108,30 +108,72 @@ export function buildInsightEvidence(progress, competency) {
   };
 }
 
+/** The server's own ceilings. Read as guards, never as a place to trim text. */
+export const NOTE_LIMITS = { evidence: 2, actions: 3 };
+
+function line(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function lines(value, limit) {
+  return (Array.isArray(value) ? value : []).map(line).filter(Boolean).slice(0, limit);
+}
+
 /**
- * Reads one advisory reply, or null when nothing usable came back.
+ * Reads one teaching note, or null when nothing usable came back.
  *
- * Only `insight_summary` carries text; `learning_gaps`, `recommended_actions`,
- * `suggested_intervention_type` and `urgency_level` are returned by the API but
- * are hardcoded empty, so they are deliberately not read. Provenance is passed
- * through only when the contract actually supplied it.
+ * The server shapes and bounds the note — a gap, up to two pieces of evidence,
+ * up to three actions and one next check, 150 words in all, no markup — so
+ * this only picks the fields out. Provider, model and time are not part of
+ * the reply and are not read: a teacher is told the note is an advisory AI
+ * suggestion, and that is all.
  *
  * @param {object|null|undefined} result - The service reply
- * @returns {{text: string, provider: string|null, model: string|null, generatedAt: string|null}|null}
+ * @returns {{gap: string, evidence: string[], actions: string[], nextCheck: string|null}|null}
  */
 export function readInsight(result) {
   if (!result?.ok || !result.data || typeof result.data !== "object") return null;
 
   const data = result.data;
-  const text = typeof data.insight_summary === "string" ? data.insight_summary.trim() : "";
-  if (!text) return null;
+  const gap = line(data.insight_summary);
+  if (!gap) return null;
 
   return {
-    text,
-    provider: typeof data.provider === "string" ? data.provider : null,
-    model: typeof data.model === "string" ? data.model : null,
-    generatedAt: typeof data.generated_at === "string" ? data.generated_at : null,
+    gap,
+    evidence: lines(data.evidence, NOTE_LIMITS.evidence),
+    actions: lines(data.recommended_actions, NOTE_LIMITS.actions),
+    nextCheck: line(data.next_check) || null,
   };
+}
+
+/** Said in a toast when "Ask again" fails and the previous note stays. */
+export const REFRESH_FAILED =
+  "A new note could not be prepared. Your previous note is still shown.";
+
+/**
+ * The panel's state once a request has answered.
+ *
+ * A new note replaces the old one only when it arrived and could be read.
+ * When "Ask again" fails, the note on screen stays exactly as it was and the
+ * failure is reported separately, so asking again can never cost a teacher
+ * the note they were reading. With no note to keep, the reason is shown in
+ * its place.
+ *
+ * @param {{insight: object|null}} previous - The state before the request
+ * @param {object|null|undefined} result - The service reply
+ * @returns {{loading: false, insight: object|null, reason: string|null, failure: string|null}}
+ */
+export function settleInsight(previous, result) {
+  const insight = readInsight(result);
+  if (insight) return { loading: false, insight, reason: null, failure: null };
+
+  if (previous?.insight) {
+    return { loading: false, insight: previous.insight, reason: null, failure: REFRESH_FAILED };
+  }
+  // A reply that answered but held no readable note is, to a teacher, the
+  // same as no reply.
+  const failed = result && !result.ok ? result : { ok: false, status: null, code: "unreadable" };
+  return { loading: false, insight: null, reason: insightUnavailableReason(failed), failure: null };
 }
 
 /**

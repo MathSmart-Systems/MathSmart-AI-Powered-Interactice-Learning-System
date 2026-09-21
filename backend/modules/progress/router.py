@@ -206,9 +206,20 @@ async def read_learning_path(
 
 @router.get("/progress/me")
 async def read_own_progress(actor: CurrentActor, connection: ActorDb) -> dict[str, Any]:
-    """The caller's own progress. No learner identifier is read from the request."""
+    """The caller's own progress. No learner identifier is read from the request.
+
+    `active_intervention_count` is replaced here with the learner's own count.
+    The shared summary reads it through a `security_invoker` view, and a
+    learner cannot see intervention rows, so for a learner that figure is 0
+    however much help they are getting. The replacement is one integer from a
+    function that answers for the caller only and carries no severity, reason,
+    note or status — the dashboard shows it as a supportive notice and nothing
+    more.
+    """
     student_id = await _own_student_id(connection, actor)
-    return await _progress_for(connection, student_id)
+    body = await _progress_for(connection, student_id)
+    body["data"]["active_intervention_count"] = await repository.own_support_count(connection)
+    return body
 
 
 @router.get("/progress/{student_id}")

@@ -26,6 +26,12 @@ const { describe, beforeEach } = test;
 /** Every student screen that owns a first-load skeleton, and how to know it. */
 const SCREENS = [
   {
+    name: "Dashboard",
+    path: "/student/dashboard",
+    announces: "Loading your dashboard",
+    heading: /^Good (morning|afternoon|evening)/,
+  },
+  {
     name: "Assessments",
     path: "/student/assessments",
     announces: "Loading your assessments",

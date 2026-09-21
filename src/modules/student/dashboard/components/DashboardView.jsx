@@ -1,5 +1,4 @@
 import React from "react";
-import { Award, BookOpen, FileCheck2, TrendingUp } from "lucide-react";
 
 import { STUDENT_ROUTE } from "../utils/dashboard-model";
 
@@ -7,249 +6,131 @@ import { CompetencyProgressList } from "./CompetencyProgressList";
 import { DashboardHeader } from "./DashboardHeader";
 import { GrowthPlot } from "./GrowthPlot";
 import { LearningPathPreview } from "./LearningPathPreview";
-import { ModuleCompletion } from "./ModuleCompletion";
 import { NextStep } from "./NextStep";
+import { ReadyForYou } from "./ReadyForYou";
 import { RecentActivityList } from "./RecentActivityList";
 import { EmptyNote, Section } from "./Section";
+import { StatStrip } from "./StatStrip";
 import { SupportNotice } from "./SupportNotice";
 
 /**
- * The learner dashboard conforming to the MathSmart UI/UX reference.
+ * The learner's dashboard: where they are, and what to do next.
  *
- * Provides:
- * 1. Welcome Header banner with ARAL badge and diagnostic status.
- * 2. Dominant Next Action Hero Card with gradient surface and clear CTA.
- * 3. Learning Metrics Grid (4 high-level KPI cards).
- * 4. Two-Column Layout:
- *    - Left 2 cols (lg:col-span-2): Growth plot & module completion, learning path roadmap, competency progress.
- *    - Right 1 col (lg:col-span-1): Recent activity list and teacher guidance support note.
+ * Read top to bottom it answers four questions in order — what should I do
+ * now, how am I doing, what is open to me, and what have I done — and each
+ * number appears once. The version this replaced showed the same growth figure
+ * three times and the same scores twice, in two different roundings, across
+ * four tiles and the panel beneath them.
+ *
+ * Nothing on this page is worked out here. Scores, bands, growth, path order,
+ * the next step and what is open to sit are all the API's answers; the page
+ * chooses which of them to show and in what words.
  */
 export function DashboardView({ model, pathUnavailable = false }) {
-  const currentScoreText =
-    model.plot.currentScore !== null ? `${model.plot.currentScore}%` : "—";
-  const diagnosticScoreText =
-    model.plot.diagnosticScore !== null ? `${model.plot.diagnosticScore}%` : model.diagnostic.label;
-  const growthVal = model.plot.growthValue;
-  const growthScoreText =
-    growthVal !== null && growthVal !== undefined
-      ? growthVal > 0
-        ? `+${growthVal}%`
-        : `${growthVal}%`
-      : "—";
-
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
-      {/* 1. Welcome Banner */}
+    <div className="mx-auto flex max-w-6xl flex-col gap-5 pb-10">
       <DashboardHeader learner={model.learner} diagnostic={model.diagnostic} />
 
-      {/* 2. Dominant Next Step Action Card */}
       <NextStep action={model.nextAction} headingId="next-step-heading" />
 
-      {/* 3. Learning Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1: Overall Progress */}
-        <div className="bg-card p-5 rounded-2xl border border-border shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Overall Progress</span>
-              <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                <TrendingUp className="size-4" aria-hidden="true" />
+      {model.support ? <SupportNotice notice={model.support} /> : null}
+
+      <StatStrip
+        plot={model.plot}
+        mastery={model.mastery}
+        modules={model.modules}
+        diagnosticComplete={model.diagnostic.isComplete}
+      />
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
+          <ReadyForYou ready={model.ready} />
+
+          <Section
+            id="learning-path-heading"
+            title="Your learning path"
+            description="Your lessons in the order your diagnostic suggested."
+            link={{ href: STUDENT_ROUTE.MY_LEARNING, label: "Open My Learning" }}
+          >
+            {pathUnavailable ? (
+              <EmptyNote>
+                Your learning path could not be loaded just now. Everything else on this page is
+                up to date. Reload the page to try again.
+              </EmptyNote>
+            ) : model.path.isEmpty ? (
+              <EmptyNote>
+                {model.diagnostic.isComplete
+                  ? "Your path is being prepared from your diagnostic. It will appear here when it is ready."
+                  : "Your path is built from your diagnostic. Finish the diagnostic and your lessons will appear here."}
+              </EmptyNote>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <LearningPathPreview items={model.path.preview} />
+                {model.path.remaining > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {model.path.remaining} more{" "}
+                    {model.path.remaining === 1 ? "lesson is" : "lessons are"} on your path.
+                  </p>
+                ) : null}
               </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-foreground font-display">
-                {currentScoreText}
-              </span>
-              {model.plot.growth?.text ? (
-                <span className="text-xs font-semibold text-primary">{model.plot.growth.text}</span>
-              ) : null}
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Weighted competency mastery</p>
+            )}
+          </Section>
+
+          <Section
+            id="competency-heading"
+            title="Competency progress"
+            description="Where you stand on each topic you have worked on."
+            link={{ href: STUDENT_ROUTE.PROGRESS, label: "See full progress" }}
+          >
+            {model.competencies.isEmpty ? (
+              <EmptyNote>
+                No scores yet. They appear here once your first assessment is marked.
+              </EmptyNote>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <CompetencyProgressList competencies={model.competencies.preview} />
+                {model.competencies.remaining > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {model.competencies.remaining} more on your progress page.
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </Section>
         </div>
 
-        {/* Metric 2: Diagnostic Baseline */}
-        <div className="bg-card p-5 rounded-2xl border border-border shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Diagnostic Baseline</span>
-              <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                <FileCheck2 className="size-4" aria-hidden="true" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-foreground font-display">
-                {diagnosticScoreText}
-              </span>
-              <span className="text-xs text-primary font-semibold">
-                {model.diagnostic.label === "Completed" ? "Evaluated" : "Initial screening"}
-              </span>
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2 truncate">
-            {model.diagnostic.summary}
-          </p>
-        </div>
-
-        {/* Metric 3: Score Trajectory */}
-        <div className="bg-card p-5 rounded-2xl border border-border shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Score Trajectory</span>
-              <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                <Award className="size-4" aria-hidden="true" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-foreground font-display">
-                {growthScoreText}
-              </span>
-              <span className="text-xs text-muted-foreground font-medium">overall growth</span>
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Growth across completed activities</p>
-        </div>
-
-        {/* Metric 4: Modules Completed */}
-        <div className="bg-card p-5 rounded-2xl border border-border shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Modules Completed</span>
-              <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                <BookOpen className="size-4" aria-hidden="true" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-foreground font-display">
-                {model.modules.finished}
-              </span>
-              <span className="text-xs text-muted-foreground">of {model.modules.total}</span>
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2">
-            {model.modules.percent}% of Grade 6 path completed
-          </p>
-        </div>
-      </div>
-
-      {/* 4. Two-Column Layout: Learning Journey & Progress / Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left 2 Columns: Growth Plot, Learning Path, Competencies */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Section: How you are improving */}
+        <div className="flex min-w-0 flex-col gap-5">
           <Section
             id="growth-heading"
             title="How you are improving"
             description={
               model.plot.diagnosticScore === null
-                ? "Your first point goes on this plot as soon as your diagnostic is marked."
-                : "Your diagnostic plotted the first point. Everything you finish moves the second one."
+                ? "Your first point appears here once your diagnostic is marked."
+                : "Your diagnostic is the first point. Everything you finish moves the second."
             }
-            link={{ href: STUDENT_ROUTE.PROGRESS, label: "See full progress" }}
           >
-            <div className="flex flex-col gap-6 pt-2">
-              <GrowthPlot
-                diagnosticScore={model.plot.diagnosticScore}
-                currentScore={model.plot.currentScore}
-                growthValue={model.plot.growthValue}
-                growth={model.plot.growth}
-              />
-
-              <div className="border-t border-border/80 pt-5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Module completion
-                </h3>
-                <div className="mt-3">
-                  <ModuleCompletion
-                    finished={model.modules.finished}
-                    total={model.modules.total}
-                    percent={model.modules.percent}
-                  />
-                </div>
-              </div>
-            </div>
+            <GrowthPlot
+              diagnosticScore={model.plot.diagnosticScore}
+              currentScore={model.plot.currentScore}
+              growthValue={model.plot.growthValue}
+              growth={model.plot.growth}
+            />
           </Section>
 
-          {/* Section: Your learning path */}
-          <Section
-            id="learning-path-heading"
-            title="Your learning path"
-            description="The order MathSmart recommends, built from what your diagnostic found."
-            link={{ href: STUDENT_ROUTE.MY_LEARNING, label: "Open My Learning" }}
-          >
-            {pathUnavailable ? (
-              <EmptyNote>
-                Your learning path could not be loaded just now. Everything else on this page
-                is up to date. Reload the page to try again.
-              </EmptyNote>
-            ) : model.path.isEmpty ? (
-              <EmptyNote>
-                No modules are on your path yet. Your teacher builds it from your diagnostic
-                and the Grade 6 competencies, and it will appear here as soon as it is ready.
-              </EmptyNote>
-            ) : (
-              <div className="space-y-3 pt-1">
-                <LearningPathPreview items={model.path.preview} />
-                {model.path.remaining > 0 ? (
-                  <p className="text-xs text-muted-foreground pt-1">
-                    {model.path.remaining} more{" "}
-                    {model.path.remaining === 1 ? "step is" : "steps are"} on your path.
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </Section>
-
-          {/* Section: Competency progress */}
-          <Section
-            id="competency-heading"
-            title="Competency progress"
-            description="Where you stand on each Grade 6 competency MathSmart is tracking for you."
-            link={{ href: STUDENT_ROUTE.ASSESSMENTS, label: "Go to assessments" }}
-          >
-            {model.competencies.isEmpty ? (
-              <EmptyNote>
-                No competency scores have been recorded yet. They appear here once your first
-                assessment is marked.
-              </EmptyNote>
-            ) : (
-              <div className="space-y-3 pt-1">
-                <CompetencyProgressList competencies={model.competencies.preview} />
-                {model.competencies.remaining > 0 ? (
-                  <p className="text-xs text-muted-foreground pt-1">
-                    {model.competencies.remaining} more{" "}
-                    {model.competencies.remaining === 1 ? "competency is" : "competencies are"}{" "}
-                    tracked on your progress page.
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </Section>
-        </div>
-
-        {/* Right 1 Column: Recently finished & Teacher Guidance */}
-        <div className="space-y-6">
-          {/* Section: Recently finished */}
           <Section
             id="recent-activity-heading"
             title="Recently finished"
-            description="The work MathSmart has marked for you, newest first."
+            description="Your marked work, newest first."
             link={{ href: STUDENT_ROUTE.ACTIVITIES, label: "All activities" }}
           >
             {model.activity.isEmpty ? (
               <EmptyNote>
-                Nothing has been marked yet. Your first finished activity or assessment will be
-                listed here with its score.
+                Nothing marked yet. Your first finished activity or assessment will show here.
               </EmptyNote>
             ) : (
-              <div className="pt-1">
-                <RecentActivityList activity={model.activity.preview} />
-              </div>
+              <RecentActivityList activity={model.activity.preview} />
             )}
           </Section>
-
-          {/* Teacher Guidance / Support Notice */}
-          {model.support ? <SupportNotice notice={model.support} /> : null}
         </div>
       </div>
     </div>

@@ -206,6 +206,10 @@ select ok(has_table_privilege('service_role', 'app.student_profiles'::regclass, 
 --                            teacher may attach or dismiss; neither writes any
 --                            deterministic field, and neither is a column the
 --                            caller may set directly.
+--   own_open_intervention_count  a learner may know their teacher is helping,
+--                            and nothing else: one integer for the caller's
+--                            own open cases, read past a table learners may
+--                            not select from.
 --   set_account_status,      role and account_status are not in the column
 --   reset_diagnostic         grant for `authenticated`, and voiding an attempt
 --                            spans three tables that must agree
@@ -247,7 +251,8 @@ select is(
   || 'is_active_account,may_start_reassessment,module_activity_passed,'
   || 'module_has_required_activity,module_is_locked_for,module_is_satisfied,'
   || 'module_section_ids,'
-  || 'open_intervention,purge_learner_audit_trail,record_audit_event,'
+  || 'open_intervention,own_open_intervention_count,purge_learner_audit_trail,'
+  || 'record_audit_event,'
   || 'refresh_learning_path,refresh_path_after_activity_attempt,'
   || 'refresh_path_after_insert,refresh_path_after_module_progress,reset_diagnostic,'
   || 'save_assessment_answers,save_module_progress,set_account_status,'

@@ -666,6 +666,11 @@ export function normalizeCase(item) {
  * and `?severity=HIGH&status=In+Progress` says what it is.
  */
 export const QUEUE_FILTER_PARAMS = Object.freeze({
+  // One learner's cases. The teacher dashboard links here from a learner who
+  // needs support, and the queue has to open on that learner rather than on
+  // everybody. The API has always filtered by `student_id`; only the address
+  // could not say it.
+  studentId: "student",
   severity: "severity",
   status: "status",
   competencyId: "competency",

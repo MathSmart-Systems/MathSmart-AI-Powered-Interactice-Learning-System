@@ -71,21 +71,43 @@ function buildDashboardQuery(gradeId, sectionId) {
   return qs ? `/teacher-admin/dashboard?${qs}` : "/teacher-admin/dashboard";
 }
 
+/** Why the dashboard could not be read, in words a teacher can act on. */
+export const DASHBOARD_ERROR = Object.freeze({
+  unconfigured: "The dashboard service is not configured for this deployment.",
+  session: "Your session has ended. Sign in again to see the dashboard.",
+  forbidden: "The dashboard is available to Teacher/Administrator accounts.",
+  unavailable: "The dashboard could not be loaded. Try again in a moment.",
+});
+
+function reasonFor(status) {
+  if (status === 401) return "session";
+  if (status === 403) return "forbidden";
+  return "unavailable";
+}
+
 /**
  * Server-side loader for the Teacher Dashboard.
  *
+ * The section comes from the address, so a filtered dashboard survives a
+ * refresh, a bookmark and the back button, and the first thing painted is the
+ * section the teacher asked for rather than the whole school.
+ *
+ * A failed dashboard read is an error, never a page of zeros. The section
+ * directory is read beside it and returned even then, so the filter stays on
+ * screen and a teacher can pick a different section or try again without
+ * losing the page around them.
+ *
  * @param {object} [params]
- * @param {string|null} [params.gradeId]
  * @param {string|null} [params.sectionId]
- * @returns {Promise<{state: string, model: object, error?: string}>}
+ * @returns {Promise<{state: string, model: object, error?: string, classesUnavailable?: boolean}>}
  */
-export async function readDashboardData({ gradeId = null, sectionId = null } = {}) {
+export async function readDashboardData({ sectionId = null } = {}) {
   const base = apiBaseUrl();
   if (!base) {
     return {
       state: DASHBOARD_STATE.ERROR,
       model: buildDashboardModel(),
-      error: "API base URL is not configured.",
+      error: DASHBOARD_ERROR.unconfigured,
     };
   }
 
@@ -94,37 +116,33 @@ export async function readDashboardData({ gradeId = null, sectionId = null } = {
     return {
       state: DASHBOARD_STATE.ERROR,
       model: buildDashboardModel(),
-      error: "Authentication session unavailable.",
+      error: DASHBOARD_ERROR.session,
     };
   }
 
   const [dashboardRes, classesRes] = await Promise.all([
-    readFromApi(buildDashboardQuery(gradeId, sectionId), token, base),
+    readFromApi(buildDashboardQuery(null, sectionId), token, base),
     readFromApi("/teacher-admin/classes", token, base),
   ]);
 
-  if (!dashboardRes.ok) {
+  const sections = classesRes.ok && Array.isArray(classesRes.data) ? classesRes.data : [];
+
+  if (!dashboardRes.ok || !dashboardRes.data || typeof dashboardRes.data !== "object") {
     return {
       state: DASHBOARD_STATE.ERROR,
-      model: buildDashboardModel(),
-      error: "Unable to load dashboard data from service.",
+      model: buildDashboardModel({ sections, selectedSectionId: sectionId }),
+      error: DASHBOARD_ERROR[reasonFor(dashboardRes.status)],
+      classesUnavailable: !classesRes.ok,
     };
   }
 
-  const dashboardData = dashboardRes.data || {};
-  const sectionsData = classesRes.ok && Array.isArray(classesRes.data) ? classesRes.data : [];
-
-  const model = buildDashboardModel({
-    totals: dashboardData.totals || {},
-    competencies: dashboardData.competencies || [],
-    priorityLearners: dashboardData.priority_learners || [],
-    sections: sectionsData,
-    selectedSectionId: sectionId,
-  });
-
   return {
-    state: model.hasData ? DASHBOARD_STATE.READY : DASHBOARD_STATE.EMPTY,
-    model,
+    state: DASHBOARD_STATE.READY,
+    model: buildDashboardModel({
+      dashboard: dashboardRes.data,
+      sections,
+      selectedSectionId: sectionId,
+    }),
     classesUnavailable: !classesRes.ok,
   };
 }

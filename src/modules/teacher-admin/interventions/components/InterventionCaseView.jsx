@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { AIInsightPanel } from "./AIInsightPanel";
 import { CaseStatusBadge } from "./CaseStatusBadge";
 import { InterventionRecordForm } from "./InterventionRecordForm";
-import { CaseToast } from "./CaseToast";
+import { Toast } from "@/modules/shared";
 import { ReportPrintPane } from "./ReportPrintPane";
 import { StudentDrillDownModal } from "./StudentDrillDownModal";
 import { useInterventionActions } from "../hooks/useInterventionActions";
@@ -317,7 +317,7 @@ export function InterventionCaseView({ caseDetail: initialDetail, filters, at = 
         onPrint={setPrintReport}
       />
 
-      <CaseToast toast={toast} onDismiss={() => setToast(null)} />
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       <ReportPrintPane report={printReport} />
     </div>

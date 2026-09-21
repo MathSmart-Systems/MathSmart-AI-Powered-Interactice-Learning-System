@@ -31,6 +31,24 @@ export function formatPoints(value) {
 }
 
 /**
+ * Growth as a signed number of points, for a figure rather than a sentence.
+ *
+ * "+5 points", "−8 points" or "No change". Growth is the difference between
+ * two percentages, so it is counted in points; the dashboard used to print it
+ * as "-8.33%", which read as a percentage of something and was not rounded.
+ */
+export function formatGrowthPoints(value) {
+  const growth = toNumber(value);
+  if (growth === null) return null;
+
+  const rounded = Math.round(growth);
+  if (rounded === 0) return "No change";
+
+  const size = Math.abs(rounded);
+  return `${rounded > 0 ? "+" : "−"}${size} ${size === 1 ? "point" : "points"}`;
+}
+
+/**
  * How a learner's growth reads in words.
  *
  * The direction is returned alongside the sentence so the interface can pair it

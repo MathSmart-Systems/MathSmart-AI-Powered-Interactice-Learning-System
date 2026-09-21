@@ -94,8 +94,9 @@ describe("the dominant next action", () => {
 
     assert.equal(model.nextAction.kind, "module");
     assert.equal(model.nextAction.title, "Fractions on a number line");
-    assert.equal(model.nextAction.cta, "Start this module");
-    assert.equal(model.nextAction.href, STUDENT_ROUTE.MY_LEARNING);
+    assert.equal(model.nextAction.cta, "Start this lesson");
+    // The lesson itself, not the list it sits in.
+    assert.equal(model.nextAction.href, STUDENT_ROUTE.module(pathItem().module.id));
     assert.equal(model.nextAction.meta.minutes, 15);
   });
 
@@ -106,7 +107,7 @@ describe("the dominant next action", () => {
       pathItems: [pathItem({ status: "in_progress" })],
     });
 
-    assert.equal(model.nextAction.cta, "Continue this module");
+    assert.equal(model.nextAction.cta, "Continue this lesson");
     assert.equal(model.nextAction.eyebrow, "Carry on");
     assert.equal(model.nextAction.meta.statusLabel, "In progress");
   });
@@ -116,9 +117,9 @@ describe("the dominant next action", () => {
       learner: learner(),
       progress: progress({
         recommended_next_action: {
-          type: "dashboard",
+          type: "path_complete",
           resource_id: null,
-          label: "Return to Dashboard",
+          label: "Path complete",
         },
       }),
       pathItems: [pathItem({ status: "completed" })],
@@ -133,9 +134,9 @@ describe("the dominant next action", () => {
       learner: learner(),
       progress: progress({
         recommended_next_action: {
-          type: "dashboard",
+          type: "diagnostic",
           resource_id: null,
-          label: "Return to Dashboard",
+          label: "Take the diagnostic",
         },
       }),
       pathItems: [pathItem({ status: "locked" })],
@@ -151,15 +152,17 @@ describe("the dominant next action", () => {
       learner: learner(),
       progress: progress({
         recommended_next_action: {
-          type: "dashboard",
+          type: "diagnostic",
           resource_id: null,
-          label: "Return to Dashboard",
+          label: "Take the diagnostic",
         },
       }),
       pathItems: [],
     });
 
     assert.equal(model.nextAction.kind, "no_path");
+    // Only what is true: the path is being prepared, not already waiting.
+    assert.equal(model.nextAction.title, "Your learning path is not ready yet");
     assert.equal(model.nextAction.href, STUDENT_ROUTE.MY_LEARNING);
   });
 
@@ -176,7 +179,7 @@ describe("the dominant next action", () => {
   });
 
   it("only ever points at a route that exists", () => {
-    const routes = new Set(Object.values(STUDENT_ROUTE));
+    const routes = new Set(Object.values(STUDENT_ROUTE).filter((value) => typeof value === "string"));
     const cases = [
       { diagnostic_status: "not_started", items: [] },
       { diagnostic_status: "in_progress", items: [] },
@@ -189,12 +192,14 @@ describe("the dominant next action", () => {
       const model = buildDashboardModel({
         learner: learner({ diagnostic_status }),
         progress: progress({
-          recommended_next_action: { type: "dashboard", resource_id: null, label: "x" },
+          recommended_next_action: { type: "path_complete", resource_id: null, label: "x" },
         }),
         pathItems: items,
       });
 
-      assert.ok(routes.has(model.nextAction.href), `${model.nextAction.href} is not a route`);
+      const href = model.nextAction.href;
+      const isLesson = href.startsWith(`${STUDENT_ROUTE.MY_LEARNING}/`);
+      assert.ok(routes.has(href) || isLesson, `${href} is not a route`);
     }
   });
 });
@@ -238,7 +243,10 @@ describe("learner support", () => {
     });
 
     assert.equal(model.support.tone, "support");
-    assert.equal(model.support.heading, "Your teacher is setting up extra help");
+    assert.equal(
+      model.support.heading,
+      "Your teacher is preparing extra support for your learning",
+    );
 
     const body = model.support.body.toLowerCase();
     for (const word of ["fail", "behind", "problem", "weak", "poor"]) {
@@ -386,7 +394,6 @@ describe("the learning path", () => {
     );
     assert.equal(model.path.preview.length, 4);
     assert.equal(model.path.remaining, 1);
-    assert.equal(model.path.activeCount, 3);
   });
 });
 
@@ -410,3 +417,116 @@ describe("recent activity", () => {
     assert.equal(new Set(model.activity.items.map((row) => row.id)).size, 2);
   });
 });
+
+describe("the approved additions", () => {
+  it("honours the API saying the path is complete", () => {
+    const model = buildDashboardModel({
+      learner: learner(),
+      progress: progress({
+        recommended_next_action: { type: "path_complete", resource_id: null, label: "Done" },
+      }),
+      pathItems: [],
+    });
+
+    assert.equal(model.nextAction.kind, "all_done");
+  });
+
+  it("never prints a percentage of a path that does not exist", () => {
+    const model = buildDashboardModel({
+      learner: learner(),
+      progress: progress({ modules_completed_count: 0, total_modules_count: 0 }),
+      pathItems: [],
+    });
+
+    // The view used to render "null% of Grade 6 path completed".
+    assert.equal(model.modules.percent, null);
+    assert.equal(model.modules.hasPath, false);
+  });
+
+  it("reads the mastered count the API already sends", () => {
+    const model = buildDashboardModel({
+      learner: learner(),
+      progress: progress({ competencies_mastered_count: 2, total_competencies_count: 4 }),
+      pathItems: [],
+    });
+
+    assert.deepEqual(model.mastery, { mastered: 2, total: 4 });
+  });
+
+  it("shows a support notice from the learner's own open count", () => {
+    const model = buildDashboardModel({
+      learner: learner({ monitoring_status: "active" }),
+      progress: progress({ monitoring_status: "active", active_intervention_count: 1 }),
+      pathItems: [],
+    });
+
+    assert.equal(model.support.heading, "Your teacher is preparing extra support for your learning");
+    // Supportive, never clinical: no case vocabulary reaches the learner.
+    for (const word of ["intervention", "severity", "HIGH", "case"]) {
+      assert.ok(!model.support.body.includes(word), `the notice mentions "${word}"`);
+      assert.ok(!model.support.heading.includes(word), `the heading mentions "${word}"`);
+    }
+  });
+
+  it("offers only the practice the server says is open", () => {
+    const model = buildDashboardModel({
+      learner: learner(),
+      progress: progress(),
+      pathItems: [],
+      activities: [
+        { id: "a1", title: "Open on path", is_ready: true, path_status: "in_progress" },
+        { id: "a2", title: "Locked", is_ready: true, path_status: "locked" },
+        { id: "a3", title: "Finished", is_ready: true, path_status: "completed" },
+        { id: "a4", title: "Not deliverable", is_ready: false, path_status: "available" },
+        { id: "a5", title: "Open practice", is_ready: true, path_status: null },
+      ],
+    });
+
+    assert.deepEqual(model.ready.activities.map((item) => item.id), ["a1", "a5"]);
+    assert.equal(model.ready.activityCount, 2);
+    assert.equal(model.ready.activities[0].href, STUDENT_ROUTE.activity("a1"));
+  });
+
+  it("offers only the assessments the server says can be sat, and never the diagnostic", () => {
+    const model = buildDashboardModel({
+      learner: learner(),
+      progress: progress(),
+      pathItems: [],
+      assessments: [
+        { id: "s1", title: "Quiz", type: "unit_quiz", is_ready: true, availability: "available" },
+        { id: "s2", title: "Started", type: "unit_quiz", is_ready: true, availability: "in_progress" },
+        { id: "s3", title: "Retake", type: "unit_quiz", is_ready: true, availability: "reassessment" },
+        { id: "s4", title: "Done", type: "unit_quiz", is_ready: true, availability: "completed" },
+        { id: "s5", title: "Diagnostic", type: "diagnostic", is_ready: true, availability: "available" },
+        { id: "s6", title: "Empty paper", type: "unit_quiz", is_ready: false, availability: "available" },
+      ],
+    });
+
+    assert.deepEqual(model.ready.assessments.map((item) => item.id), ["s1", "s2", "s3"]);
+    assert.equal(model.ready.assessmentCount, 3);
+    assert.equal(model.ready.assessments[0].href, STUDENT_ROUTE.assessment("s1"));
+  });
+
+  it("tells an unreadable list apart from an empty one", () => {
+    const unreadable = buildDashboardModel({
+      learner: learner(),
+      progress: progress(),
+      pathItems: [],
+      activities: null,
+      assessments: null,
+    });
+    const empty = buildDashboardModel({
+      learner: learner(),
+      progress: progress(),
+      pathItems: [],
+      activities: [],
+      assessments: [],
+    });
+
+    assert.equal(unreadable.ready.activities, null);
+    assert.equal(unreadable.ready.activityCount, null);
+    assert.deepEqual(empty.ready.activities, []);
+    assert.equal(empty.ready.activityCount, 0);
+  });
+});
+

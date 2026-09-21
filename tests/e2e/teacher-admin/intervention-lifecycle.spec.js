@@ -392,7 +392,7 @@ describe("teacher interventions, end to end", () => {
     expect(await lines.count()).toBeLessThanOrEqual(5);
 
     // One plan, not a teaching note and a remediation idea saying it twice.
-    await expect(view.getByText("Teaching note (advisory)")).toHaveCount(0);
+    await expect(view.getByRole("heading", { name: "Teaching note", exact: true })).toHaveCount(0);
     await expect(view.getByText("Remediation idea (advisory)")).toHaveCount(0);
   });
 
